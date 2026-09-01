@@ -1,0 +1,92 @@
+name: repopilot
+
+x-app-environment: &app-environment
+  DATABASE_URL: postgresql+asyncpg://repopilot:repopilot@postgres:5432/repopilot
+  LANGGRAPH_DATABASE_URL: postgresql://repopilot:repopilot@postgres:5432/repopilot?sslmode=disable
+  REDIS_URL: redis://redis:6379/0
+  MODEL_PROVIDER: ${MODEL_PROVIDER:-mock}
+  MODEL_NAME: ${MODEL_NAME:-gpt-4.1-mini}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+  WORKSPACE_ROOT: /workspaces
+  SANDBOX_BACKEND: docker
+  SANDBOX_IMAGE: repopilot-sandbox:local
+  SANDBOX_TIMEOUT_SECONDS: ${SANDBOX_TIMEOUT_SECONDS:-120}
+  RUNNING_IN_CONTAINER: "true"
+  API_KEY: ${API_KEY:-}
+  GITHUB_WRITE_ENABLED: ${GITHUB_WRITE_ENABLED:-false}
+  GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+  GITHUB_ALLOWED_OWNERS: ${GITHUB_ALLOWED_OWNERS:-xsw932187210}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: repopilot
+      POSTGRES_PASSWORD: repopilot
+      POSTGRES_DB: repopilot
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U repopilot -d repopilot"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - redis-data:/data
+
+  sandbox:
+    image: repopilot-sandbox:local
+    build:
+      context: .
+      dockerfile: Dockerfile.sandbox
+    command: ["python", "-c", "print('sandbox image ready')"]
+
+  api:
+    build: .
+    environment: *app-environment
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - workspaces:/workspaces
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  worker:
+    build: .
+    command: ["python", "-m", "repopilot.worker"]
+    group_add:
+      - "${DOCKER_SOCKET_GID:-0}"
+    environment: *app-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      sandbox:
+        condition: service_completed_successfully
+    volumes:
+      - workspaces:/workspaces
+      - /var/run/docker.sock:/var/run/docker.sock
+
+volumes:
+  postgres-data:
+  redis-data:
+  workspaces:
