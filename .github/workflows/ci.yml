@@ -18,4 +18,18 @@ jobs:
           cache: pip
       - run: pip install ".[dev]"
       - run: ruff check .
-      - run: pytest -q
+      - name: Run tests with coverage floor
+        run: pytest --cov=repopilot --cov-report=term-missing --cov-fail-under=70 -q
+      - name: Run deterministic workflow benchmark
+        run: >-
+          python -m repopilot.evaluation
+          --provider mock
+          --output reports/mock-evaluation.json
+          --fail-on-regression
+      - name: Upload benchmark evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mock-evaluation-${{ github.run_id }}
+          path: reports/mock-evaluation.json
+          if-no-files-found: error

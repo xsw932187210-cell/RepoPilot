@@ -44,7 +44,7 @@ class Settings(BaseSettings):
 
     github_write_enabled: bool = False
     github_token: str = ""
-    github_allowed_owners: str = "xsw932187210"
+    github_allowed_owners: str = "xsw932187210-cell"
 
     @property
     def allowed_github_owners(self) -> set[str]:

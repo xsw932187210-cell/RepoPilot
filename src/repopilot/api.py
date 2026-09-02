@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hmac
 import json
+from collections import Counter, defaultdict
 from contextlib import asynccontextmanager
 from typing import Annotated
 
@@ -13,7 +14,15 @@ from redis.asyncio import Redis
 from repopilot.config import Settings, get_settings
 from repopilot.db import Database
 from repopilot.events import EventBus, JobQueue
-from repopilot.models import ApprovalRequest, EventView, TaskCreate, TaskStatus, TaskView
+from repopilot.models import (
+    ApprovalRequest,
+    EventView,
+    NodeMetric,
+    TaskCreate,
+    TaskMetrics,
+    TaskStatus,
+    TaskView,
+)
 from repopilot.security import (
     SecurityError,
     parse_test_command,
@@ -70,6 +79,32 @@ async def require_api_key(
 Protected = Annotated[None, Depends(require_api_key)]
 
 
+def summarize_task_metrics(task: TaskView) -> TaskMetrics:
+    metrics = [
+        NodeMetric.model_validate(metric)
+        for metric in (task.result or {}).get("node_metrics", [])
+    ]
+    runs: Counter[str] = Counter()
+    durations: defaultdict[str, int] = defaultdict(int)
+    for metric in metrics:
+        runs[metric.node] += 1
+        durations[metric.node] += metric.duration_ms
+    wall_time_ms = max(0, int((task.updated_at - task.created_at).total_seconds() * 1_000))
+    sandbox_time_ms = sum(
+        metric.duration_ms for metric in metrics if metric.node == "test_runner"
+    )
+    return TaskMetrics(
+        task_id=task.id,
+        status=task.status,
+        wall_time_ms=wall_time_ms,
+        node_time_ms=sum(metric.duration_ms for metric in metrics),
+        node_runs=dict(runs),
+        node_duration_ms=dict(durations),
+        iterations=max((metric.iteration for metric in metrics), default=0),
+        sandbox_time_ms=sandbox_time_ms,
+    )
+
+
 @app.get("/health")
 async def health(request: Request) -> dict[str, str]:
     _, _, _, _, redis = resources(request)
@@ -108,6 +143,15 @@ async def get_task(task_id: str, request: Request, _: Protected) -> TaskView:
     if task is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     return task
+
+
+@app.get("/api/v1/tasks/{task_id}/metrics", response_model=TaskMetrics)
+async def get_task_metrics(task_id: str, request: Request, _: Protected) -> TaskMetrics:
+    _, database, _, _, _ = resources(request)
+    task = await database.get_task(task_id)
+    if task is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return summarize_task_metrics(task)
 
 
 @app.get("/api/v1/tasks/{task_id}/events", response_model=list[EventView])

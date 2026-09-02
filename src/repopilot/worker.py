@@ -33,6 +33,7 @@ def result_summary(result: dict[str, Any]) -> dict[str, Any]:
         "changed_files": result.get("changed_files", []),
         "review": result.get("review"),
         "test_result": result.get("test_result"),
+        "node_metrics": result.get("node_metrics", []),
         "pull_request_url": result.get("pull_request_url"),
         "error": result.get("error"),
     }
@@ -161,6 +162,7 @@ class Worker:
             "max_iterations": task.max_iterations,
             "reviewer_feedback": [],
             "iteration": 0,
+            "node_metrics": [],
             "status": "queued",
         }
 

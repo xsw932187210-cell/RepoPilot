@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, TypedDict
+import operator
+from typing import Annotated, Any, TypedDict
 
 
 class RepoPilotState(TypedDict, total=False):
@@ -24,6 +25,7 @@ class RepoPilotState(TypedDict, total=False):
     test_result: dict[str, Any]
     review: dict[str, Any]
     iteration: int
+    node_metrics: Annotated[list[dict[str, Any]], operator.add]
 
     human_approved: bool
     human_feedback: str

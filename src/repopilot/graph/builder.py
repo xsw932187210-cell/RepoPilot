@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,14 @@ class TaskCancelled(RuntimeError):
     pass
 
 
+def elapsed_ms(started: float) -> int:
+    return max(0, int((time.perf_counter() - started) * 1_000))
+
+
+def node_metric(node: str, duration_ms: int, iteration: int = 0) -> dict[str, Any]:
+    return {"node": node, "duration_ms": duration_ms, "iteration": iteration}
+
+
 @dataclass(slots=True)
 class GraphDependencies:
     settings: Settings
@@ -38,14 +47,18 @@ class GraphDependencies:
         node: str,
         message: str,
         payload: dict[str, Any] | None = None,
+        duration_ms: int | None = None,
     ) -> None:
         if self.events:
+            event_payload = dict(payload or {})
+            if duration_ms is not None:
+                event_payload["duration_ms"] = duration_ms
             await self.events.publish(
                 state["task_id"],
                 kind="node_update",
                 node=node,
                 message=message,
-                payload=payload,
+                payload=event_payload,
             )
 
     async def ensure_active(self, state: RepoPilotState) -> None:
@@ -55,25 +68,44 @@ class GraphDependencies:
 
 def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
     async def prepare(state: RepoPilotState) -> dict[str, Any]:
+        started = time.perf_counter()
         await deps.ensure_active(state)
-        await deps.emit(state, "prepare", "Preparing isolated repository workspace")
         workspace = await deps.workspaces.prepare(
             state["task_id"], state["repository_url"], state["base_branch"]
         )
-        return {"workspace": str(workspace), "status": "running", "iteration": 0}
+        duration_ms = elapsed_ms(started)
+        await deps.emit(
+            state,
+            "prepare",
+            "Prepared isolated repository workspace",
+            duration_ms=duration_ms,
+        )
+        return {
+            "workspace": str(workspace),
+            "status": "running",
+            "iteration": 0,
+            "node_metrics": [node_metric("prepare", duration_ms)],
+        }
 
     async def planner(state: RepoPilotState) -> dict[str, Any]:
+        started = time.perf_counter()
         await deps.ensure_active(state)
         plan = await deps.model.plan(state["issue_title"], state["issue_body"])
+        duration_ms = elapsed_ms(started)
         await deps.emit(
             state,
             "planner",
             "Planner produced a bounded execution plan",
             {"steps": plan.steps, "risks": plan.risk_notes},
+            duration_ms,
         )
-        return {"plan": plan.model_dump()}
+        return {
+            "plan": plan.model_dump(),
+            "node_metrics": [node_metric("planner", duration_ms)],
+        }
 
     async def researcher(state: RepoPilotState) -> dict[str, Any]:
+        started = time.perf_counter()
         await deps.ensure_active(state)
         plan = PlanOutput.model_validate(state["plan"])
         context = deps.workspaces.inspect(
@@ -81,31 +113,52 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
             f"{state['issue_title']}\n{state['issue_body']}",
             plan.search_terms,
         )
+        duration_ms = elapsed_ms(started)
         await deps.emit(
             state,
             "researcher",
             f"Researcher selected {len(context.files)} relevant files",
             {"files": list(context.files)},
+            duration_ms,
         )
-        return {"research_tree": context.tree, "research_files": context.files}
+        return {
+            "research_tree": context.tree,
+            "research_files": context.files,
+            "node_metrics": [
+                node_metric("researcher", duration_ms, state.get("iteration", 0))
+            ],
+        }
 
     async def test_analyst(state: RepoPilotState) -> dict[str, Any]:
+        started = time.perf_counter()
         await deps.ensure_active(state)
         command = state["test_command"]
         strategy = f"Run `{command}` in a network-disabled container and require exit code 0."
+        duration_ms = elapsed_ms(started)
         await deps.emit(
             state,
             "test_analyst",
             "Test analyst defined deterministic acceptance evidence",
+            duration_ms=duration_ms,
         )
-        return {"test_strategy": strategy}
+        return {
+            "test_strategy": strategy,
+            "node_metrics": [node_metric("test_analyst", duration_ms)],
+        }
 
     async def coder(state: RepoPilotState) -> dict[str, Any]:
+        started = time.perf_counter()
         await deps.ensure_active(state)
         context = RepositoryContext(
             tree=state.get("research_tree", []), files=state.get("research_files", {})
         )
         plan = PlanOutput.model_validate(state["plan"])
+        if state.get("iteration", 0) > 0:
+            context = deps.workspaces.inspect(
+                Path(state["workspace"]),
+                f"{state['issue_title']}\n{state['issue_body']}",
+                plan.search_terms,
+            )
         changes = await deps.model.propose_changes(
             state["issue_title"],
             state["issue_body"],
@@ -113,25 +166,43 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
             context,
             state.get("reviewer_feedback", []),
         )
-        changed_files = deps.workspaces.apply_edits(Path(state["workspace"]), changes.edits)
+        iteration_changes = deps.workspaces.apply_edits(
+            Path(state["workspace"]), changes.edits
+        )
+        edits_by_path = {
+            edit.path: edit for edit in map(FileEdit.model_validate, state.get("edits", []))
+        }
+        edits_by_path.update({edit.path: edit for edit in changes.edits})
+        changed_files = sorted(
+            set(state.get("changed_files", [])) | set(iteration_changes)
+        )
         diff = await deps.workspaces.diff(Path(state["workspace"]))
         iteration = state.get("iteration", 0) + 1
+        duration_ms = elapsed_ms(started)
         await deps.emit(
             state,
             "coder",
-            f"Coder completed iteration {iteration} with {len(changed_files)} file edits",
-            {"changed_files": changed_files, "summary": changes.summary},
+            f"Coder completed iteration {iteration} with {len(iteration_changes)} new file edits",
+            {
+                "changed_files": changed_files,
+                "iteration_changes": iteration_changes,
+                "summary": changes.summary,
+            },
+            duration_ms,
         )
         return {
-            "edits": [edit.model_dump() for edit in changes.edits],
+            "edits": [edit.model_dump() for edit in edits_by_path.values()],
             "changed_files": changed_files,
             "diff": diff,
             "iteration": iteration,
+            "node_metrics": [node_metric("coder", duration_ms, iteration)],
         }
 
     async def test_runner(state: RepoPilotState) -> dict[str, Any]:
+        started = time.perf_counter()
         await deps.ensure_active(state)
         result = await deps.sandbox.run(Path(state["workspace"]), state["test_command"])
+        duration_ms = elapsed_ms(started)
         await deps.emit(
             state,
             "test_runner",
@@ -141,13 +212,21 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
                 "duration_ms": result.duration_ms,
                 "timed_out": result.timed_out,
             },
+            duration_ms,
         )
-        return {"test_result": result.model_dump()}
+        return {
+            "test_result": result.model_dump(),
+            "node_metrics": [
+                node_metric("test_runner", duration_ms, state.get("iteration", 0))
+            ],
+        }
 
     async def reviewer(state: RepoPilotState) -> dict[str, Any]:
+        started = time.perf_counter()
         await deps.ensure_active(state)
         result = SandboxResult.model_validate(state["test_result"])
         review = await deps.model.review(state["issue_title"], state.get("diff", ""), result)
+        duration_ms = elapsed_ms(started)
         await deps.emit(
             state,
             "reviewer",
@@ -155,18 +234,26 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
             if review.approved
             else "Reviewer requested another bounded iteration",
             {"approved": review.approved, "feedback": review.feedback},
+            duration_ms,
         )
-        return {"review": review.model_dump(), "reviewer_feedback": review.feedback}
+        return {
+            "review": review.model_dump(),
+            "reviewer_feedback": review.feedback,
+            "node_metrics": [
+                node_metric("reviewer", duration_ms, state.get("iteration", 0))
+            ],
+        }
 
     def after_review(state: RepoPilotState) -> str:
         review = ReviewOutput.model_validate(state["review"])
         if review.approved:
             return "approval"
         if state.get("iteration", 0) < state.get("max_iterations", 2):
-            return "researcher"
+            return "coder"
         return "failed"
 
     def approval(state: RepoPilotState) -> dict[str, Any]:
+        started = time.perf_counter()
         decision = interrupt(
             {
                 "question": (
@@ -180,16 +267,21 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
         )
         approved = bool(decision.get("approved")) if isinstance(decision, dict) else bool(decision)
         feedback = str(decision.get("feedback", "")) if isinstance(decision, dict) else ""
+        duration_ms = elapsed_ms(started)
         return {
             "human_approved": approved,
             "human_feedback": feedback,
             "status": "approved" if approved else "cancelled",
+            "node_metrics": [
+                node_metric("approval", duration_ms, state.get("iteration", 0))
+            ],
         }
 
     def after_approval(state: RepoPilotState) -> str:
         return "finalize" if state.get("human_approved") else "cancelled"
 
     async def finalize(state: RepoPilotState) -> dict[str, Any]:
+        started = time.perf_counter()
         edits = [FileEdit.model_validate(item) for item in state.get("edits", [])]
         result = await deps.publisher.publish(
             task_id=state["task_id"],
@@ -198,6 +290,7 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
             issue_title=state["issue_title"],
             edits=edits,
         )
+        duration_ms = elapsed_ms(started)
         await deps.emit(
             state,
             "finalize",
@@ -207,10 +300,19 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
                 "branch": result.branch,
                 "publish_reason": result.reason,
             },
+            duration_ms,
         )
-        return {"status": "completed", "pull_request_url": result.pull_request_url}
+        return {
+            "status": "completed",
+            "pull_request_url": result.pull_request_url,
+            "node_metrics": [
+                node_metric("finalize", duration_ms, state.get("iteration", 0))
+            ],
+        }
 
     async def failed(state: RepoPilotState) -> dict[str, Any]:
+        started = time.perf_counter()
+        duration_ms = elapsed_ms(started)
         await deps.emit(
             state,
             "failed",
@@ -219,12 +321,32 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
                 "iteration": state.get("iteration", 0),
                 "feedback": state.get("reviewer_feedback", []),
             },
+            duration_ms,
         )
-        return {"status": "failed", "error": "Reviewer rejected all bounded iterations"}
+        return {
+            "status": "failed",
+            "error": "Reviewer rejected all bounded iterations",
+            "node_metrics": [
+                node_metric("failed", duration_ms, state.get("iteration", 0))
+            ],
+        }
 
     async def cancelled(state: RepoPilotState) -> dict[str, Any]:
-        await deps.emit(state, "cancelled", "Human rejected the side-effecting action")
-        return {"status": "cancelled", "error": state.get("human_feedback", "")}
+        started = time.perf_counter()
+        duration_ms = elapsed_ms(started)
+        await deps.emit(
+            state,
+            "cancelled",
+            "Human rejected the side-effecting action",
+            duration_ms=duration_ms,
+        )
+        return {
+            "status": "cancelled",
+            "error": state.get("human_feedback", ""),
+            "node_metrics": [
+                node_metric("cancelled", duration_ms, state.get("iteration", 0))
+            ],
+        }
 
     graph = StateGraph(RepoPilotState)
     graph.add_node("prepare", prepare)
@@ -249,7 +371,7 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
     graph.add_conditional_edges(
         "reviewer",
         after_review,
-        {"approval": "approval", "researcher": "researcher", "failed": "failed"},
+        {"approval": "approval", "coder": "coder", "failed": "failed"},
     )
     graph.add_conditional_edges(
         "approval", after_approval, {"finalize": "finalize", "cancelled": "cancelled"}
