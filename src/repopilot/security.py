@@ -13,6 +13,8 @@ class SecurityError(ValueError):
 _REPO_PATH = re.compile(r"^/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:\.git)?$")
 _BRANCH = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,119}$")
 _ALLOWED_TEST_COMMANDS = {"python", "python3", "pytest", "ruff"}
+_ALLOWED_PYTHON_MODULES = {"pytest", "unittest"}
+_DEMO_REPOSITORIES = {"buggy-calculator", "benchmark-suite"}
 _SENSITIVE_PATTERNS = [
     re.compile(r"gh[pousr]_[A-Za-z0-9_]{20,}"),
     re.compile(r"sk-[A-Za-z0-9_-]{20,}"),
@@ -21,8 +23,11 @@ _SENSITIVE_PATTERNS = [
 
 
 def validate_repository_url(url: str) -> tuple[str, str]:
-    if url == "demo://buggy-calculator":
-        return "demo", "buggy-calculator"
+    if url.startswith("demo://"):
+        demo_name = url.removeprefix("demo://")
+        if demo_name not in _DEMO_REPOSITORIES:
+            raise SecurityError("Unknown bundled demo repository")
+        return "demo", demo_name
     parsed = urlparse(url)
     if parsed.scheme != "https" or parsed.hostname not in {"github.com", "www.github.com"}:
         raise SecurityError("Only public GitHub HTTPS repositories are accepted")
@@ -60,8 +65,18 @@ def parse_test_command(command: str) -> list[str]:
     if not parts or parts[0] not in _ALLOWED_TEST_COMMANDS:
         raise SecurityError(f"Test command must start with one of {sorted(_ALLOWED_TEST_COMMANDS)}")
     forbidden = {";", "&&", "||", "|", ">", ">>", "<", "`"}
-    if any(part in forbidden or "\n" in part or "\r" in part for part in parts):
+    if any(
+        part in forbidden or "\n" in part or "\r" in part or "\x00" in part
+        for part in parts
+    ):
         raise SecurityError("Shell control operators are forbidden")
+    if parts[0] in {"python", "python3"}:
+        if len(parts) < 3 or parts[1] != "-m" or parts[2] not in _ALLOWED_PYTHON_MODULES:
+            raise SecurityError(
+                "Python test commands must use -m pytest or -m unittest; inline code is forbidden"
+            )
+    if parts[0] == "ruff" and (len(parts) < 2 or parts[1] != "check"):
+        raise SecurityError("Only ruff check is allowed")
     return parts
 
 

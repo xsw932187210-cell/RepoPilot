@@ -95,7 +95,7 @@ class WorkspaceManager:
         if (workspace / ".git").is_dir():
             return workspace
         workspace.mkdir(parents=True, exist_ok=False)
-        if repository_url == "demo://buggy-calculator":
+        if repository_url.startswith("demo://"):
             await self._prepare_demo(workspace)
             return workspace
 

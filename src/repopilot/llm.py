@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Protocol
 
 from langchain_openai import ChatOpenAI
@@ -7,6 +8,112 @@ from langchain_openai import ChatOpenAI
 from repopilot.config import Settings
 from repopilot.models import CodeChangeOutput, FileEdit, PlanOutput, ReviewOutput, SandboxResult
 from repopilot.repository import RepositoryContext
+
+
+@dataclass(frozen=True, slots=True)
+class DeterministicFix:
+    selectors: tuple[str, ...]
+    path: str
+    old: str
+    new: str
+    reason: str
+
+
+_DETERMINISTIC_FIXES = (
+    DeterministicFix(
+        selectors=("add(a, b)", "add returning", "subtracts b"),
+        path="calculator.py",
+        old=(
+            "def add(a: int, b: int) -> int:\n"
+            '    """Return the sum of two integers."""\n'
+            "    return a - b"
+        ),
+        new=(
+            "def add(a: int, b: int) -> int:\n"
+            '    """Return the sum of two integers."""\n'
+            "    return a + b"
+        ),
+        reason="Correct addition so it no longer subtracts the second operand.",
+    ),
+    DeterministicFix(
+        selectors=("add(a, b)", "add returning", "subtracts b"),
+        path="arithmetic.py",
+        old=(
+            "def add(a: int, b: int) -> int:\n"
+            '    """Return the sum of two integers."""\n'
+            "    return a - b"
+        ),
+        new=(
+            "def add(a: int, b: int) -> int:\n"
+            '    """Return the sum of two integers."""\n'
+            "    return a + b"
+        ),
+        reason="Correct addition so it no longer subtracts the second operand.",
+    ),
+    DeterministicFix(
+        selectors=("slugify",),
+        path="text_utils.py",
+        old='return value.strip().replace(" ", "_")',
+        new='return "-".join(value.strip().lower().split())',
+        reason="Normalize case and collapse whitespace into URL-safe hyphen separators.",
+    ),
+    DeterministicFix(
+        selectors=("clamp",),
+        path="number_utils.py",
+        old="return min(lower, max(value, upper))",
+        new="return max(lower, min(value, upper))",
+        reason="Apply the lower and upper bounds in the correct order.",
+    ),
+    DeterministicFix(
+        selectors=("pagination offset", "page offset"),
+        path="pagination.py",
+        old="return (page - 1) * page_size + 1",
+        new="return (page - 1) * page_size",
+        reason="Use a zero-based database offset without the extra element.",
+    ),
+    DeterministicFix(
+        selectors=("deduplicate", "first-seen order"),
+        path="collections_utils.py",
+        old="return list(set(items))",
+        new="return list(dict.fromkeys(items))",
+        reason="Remove duplicates while preserving deterministic first-seen order.",
+    ),
+    DeterministicFix(
+        selectors=("normalize_email", "email normalization"),
+        path="identity.py",
+        old="return email.strip()",
+        new="return email.strip().lower()",
+        reason="Canonicalize email casing after trimming surrounding whitespace.",
+    ),
+    DeterministicFix(
+        selectors=("retry backoff", "exponential backoff"),
+        path="retry.py",
+        old="return base_seconds * attempt",
+        new="return base_seconds * (2**attempt)",
+        reason="Calculate exponential rather than linear retry delay.",
+    ),
+    DeterministicFix(
+        selectors=("inclusive_days", "inclusive day"),
+        path="dates.py",
+        old="return (end - start).days",
+        new="return (end - start).days + 1",
+        reason="Count both range endpoints in the inclusive duration.",
+    ),
+    DeterministicFix(
+        selectors=("parse_bool", "boolean parser"),
+        path="config_utils.py",
+        old="return bool(value)",
+        new='return value.strip().lower() in {"1", "true", "yes", "on"}',
+        reason="Parse recognized truthy strings instead of using string truthiness.",
+    ),
+    DeterministicFix(
+        selectors=("cache key", "tenant namespace"),
+        path="cache.py",
+        old="return user_id",
+        new='return f"{tenant_id}:{user_id}"',
+        reason="Namespace cache entries by tenant to prevent cross-tenant collisions.",
+    ),
+)
 
 
 class AgentModel(Protocol):
@@ -54,19 +161,24 @@ class MockAgentModel:
         reviewer_feedback: list[str],
     ) -> CodeChangeOutput:
         del plan, reviewer_feedback
+        issue_text = f"{issue_title}\n{issue_body}".lower()
         edits: list[FileEdit] = []
-        for path, content in context.files.items():
-            if path.endswith("calculator.py") and "return a - b" in content:
-                fixed = content.replace("return a - b", "return a + b", 1)
+        for rule in _DETERMINISTIC_FIXES:
+            if not any(selector in issue_text for selector in rule.selectors):
+                continue
+            for path, content in context.files.items():
+                if not path.endswith(rule.path) or rule.old not in content:
+                    continue
+                fixed = content.replace(rule.old, rule.new, 1)
                 edits.append(
                     FileEdit(
                         path=path,
                         content=fixed,
-                        reason=(
-                            "Correct the add function to perform addition rather than subtraction."
-                        ),
+                        reason=rule.reason,
                     )
                 )
+                break
+            if edits:
                 break
         return CodeChangeOutput(
             summary=(

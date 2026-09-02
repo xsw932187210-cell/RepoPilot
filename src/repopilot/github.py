@@ -21,8 +21,13 @@ class PublishResult:
 class GitHubPublisher:
     """A narrowly scoped GitHub REST tool, invoked only after HITL approval."""
 
-    def __init__(self, settings: Settings):
+    def __init__(
+        self,
+        settings: Settings,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ):
         self.settings = settings
+        self.transport = transport
 
     async def publish(
         self,
@@ -51,7 +56,11 @@ class GitHubPublisher:
             "X-GitHub-Api-Version": "2022-11-28",
         }
         api = f"https://api.github.com/repos/{owner}/{repo}"
-        async with httpx.AsyncClient(headers=headers, timeout=30) as client:
+        async with httpx.AsyncClient(
+            headers=headers,
+            timeout=30,
+            transport=self.transport,
+        ) as client:
             base_ref = await self._json(client, "GET", f"{api}/git/ref/heads/{base_branch}")
             base_sha = base_ref["object"]["sha"]
             base_commit = await self._json(client, "GET", f"{api}/git/commits/{base_sha}")

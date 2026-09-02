@@ -18,7 +18,7 @@ class TaskStatus(StrEnum):
 
 class TaskCreate(BaseModel):
     repository_url: str = Field(
-        description="A public GitHub HTTPS URL or demo://buggy-calculator."
+        description="A public GitHub HTTPS URL or an allowlisted bundled demo URI."
     )
     issue_title: str = Field(min_length=3, max_length=240)
     issue_body: str = Field(min_length=3, max_length=12_000)
@@ -101,3 +101,20 @@ class SandboxResult(BaseModel):
     @property
     def passed(self) -> bool:
         return not self.timed_out and self.exit_code == 0
+
+
+class NodeMetric(BaseModel):
+    node: str
+    duration_ms: int = Field(ge=0)
+    iteration: int = Field(default=0, ge=0)
+
+
+class TaskMetrics(BaseModel):
+    task_id: str
+    status: TaskStatus
+    wall_time_ms: int = Field(ge=0)
+    node_time_ms: int = Field(ge=0)
+    node_runs: dict[str, int]
+    node_duration_ms: dict[str, int]
+    iterations: int = Field(ge=0)
+    sandbox_time_ms: int = Field(ge=0)

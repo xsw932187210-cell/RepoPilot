@@ -42,6 +42,7 @@ async def test_graph_repairs_demo_and_requires_approval(tmp_path: Path) -> None:
             "max_iterations": 2,
             "reviewer_feedback": [],
             "iteration": 0,
+            "node_metrics": [],
             "status": "queued",
         },
         config=config,
@@ -52,6 +53,15 @@ async def test_graph_repairs_demo_and_requires_approval(tmp_path: Path) -> None:
     )
     assert result["review"]["approved"] is True, result["review"]
     assert result["__interrupt__"]
+    assert {metric["node"] for metric in result["node_metrics"]} >= {
+        "prepare",
+        "planner",
+        "researcher",
+        "test_analyst",
+        "coder",
+        "test_runner",
+        "reviewer",
+    }
 
     completed = await graph.ainvoke(
         Command(resume={"approved": True, "feedback": "ship it"}), config=config
@@ -90,6 +100,7 @@ async def test_human_can_reject_verified_change(tmp_path: Path) -> None:
             "max_iterations": 1,
             "reviewer_feedback": [],
             "iteration": 0,
+            "node_metrics": [],
         },
         config=config,
     )

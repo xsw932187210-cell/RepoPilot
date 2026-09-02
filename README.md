@@ -17,9 +17,11 @@ and API in this repository were implemented specifically for RepoPilot.
 - Durable PostgreSQL checkpoints and `Command(resume=...)` human approval.
 - Redis dispatch, idempotency lock, cancellation flag, and event fan-out.
 - FastAPI task API plus replayable event history and SSE progress.
+- Per-node latency, retry, sandbox, and wall-time metrics through a task metrics endpoint.
 - Network-disabled Docker test sandbox with resource, capability, command, and path controls.
 - Governed GitHub REST tool that can create a draft PR only after tests, review, and approval.
-- Offline mock model and fixture repository for deterministic CI and evaluation.
+- Ten-scenario offline benchmark and mock model for deterministic CI regression testing.
+- Automated lint, test, and 70% line-coverage quality gates on every push and pull request.
 - OpenAI-compatible model adapter for real repository tasks.
 
 ## Quick start
@@ -30,6 +32,7 @@ Requirements: Docker Desktop and Docker Compose.
 cp .env.example .env
 docker compose up --build -d
 ./scripts/smoke.sh
+./scripts/recovery_smoke.sh
 ```
 
 The default `MODEL_PROVIDER=mock` requires no API key and repairs the bundled calculator fixture.
@@ -86,17 +89,24 @@ GITHUB_ALLOWED_OWNERS=your-account-or-organization
 The token should be fine-grained and limited to the intended repositories. RepoPilot never needs
 permission to merge a pull request.
 
+Use a feature branch and pull request for repository changes. The included PR template requires
+test, evaluation, recovery, security, and resume-claim evidence before review.
+
 ## Evaluation
 
-Run the offline dataset without an LLM key:
+Run the deterministic ten-scenario workflow regression suite without an LLM key:
 
 ```bash
-docker compose run --rm api sh -c \
-  'pip install -q --user ".[dev]" && python -m repopilot.evaluation --dataset evals/cases.jsonl'
+make eval
 ```
 
-The report includes task success, test pass, HITL, iteration, and latency evidence. Add realistic
-issues with hidden tests before quoting any metric in a resume.
+The report includes completion, test pass, exact change scope, HITL, iteration, category, and
+latency evidence. CI stores the JSON report as a workflow artifact and fails if any deterministic
+case regresses. This mock result measures workflow reliability, not LLM coding ability.
+
+After configuring an OpenAI-compatible model in the ignored `.env`, run `make eval-real` for a
+separately labelled model-quality report. See [docs/evaluation.md](docs/evaluation.md) for the
+evidence contract and rules for defensible resume metrics.
 
 ## Development
 
@@ -104,17 +114,20 @@ issues with hidden tests before quoting any metric in a resume.
 python3.12 -m venv .venv
 source .venv/bin/activate
 pip install ".[dev]"
-pytest -q
+pytest --cov=repopilot --cov-report=term-missing --cov-fail-under=70 -q
 ruff check .
 ```
 
-See [docs/architecture.md](docs/architecture.md) for trust boundaries and recovery semantics.
+See [docs/architecture.md](docs/architecture.md) for trust boundaries, recovery semantics, and
+observability. With the Compose stack running, `make smoke-recovery` demonstrates worker restart
+and checkpoint resume at the human-approval boundary.
 
 ## Current scope
 
 Version 0.1 focuses on one reliable path: issue to verified change to human approval to optional
 draft PR. Slack/Linear triggers, MCP packaging, a web dashboard, multi-language sandbox images,
-and benchmark expansion are deliberately left for later iterations rather than claimed as done.
+and broad real-repository benchmarks are deliberately left for later iterations rather than
+claimed as done.
 
 ## License
 
