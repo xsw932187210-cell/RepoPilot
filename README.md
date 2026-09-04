@@ -14,6 +14,8 @@ and API in this repository were implemented specifically for RepoPilot.
 
 - Explicit LangGraph state machine with Planner, Researcher, Test Analyst, Coder, and Reviewer roles.
 - Parallel research/test-analysis fan-out and a bounded reviewer feedback loop.
+- Explainable BM25 + Python AST symbol retrieval with source/test dependency expansion and a
+  bounded context budget.
 - Durable PostgreSQL checkpoints and `Command(resume=...)` human approval.
 - Redis dispatch, idempotency lock, cancellation flag, and event fan-out.
 - FastAPI task API plus replayable event history and SSE progress.
@@ -101,8 +103,9 @@ make eval
 ```
 
 The report includes completion, test pass, exact change scope, HITL, iteration, category, and
-latency evidence. CI stores the JSON report as a workflow artifact and fails if any deterministic
-case regresses. This mock result measures workflow reliability, not LLM coding ability.
+latency evidence, plus retrieval Recall@3, Recall@5, and mean reciprocal rank. CI stores the JSON
+report as a workflow artifact and fails if any deterministic case regresses. This mock result
+measures workflow and retrieval reliability, not LLM coding ability.
 
 After configuring an OpenAI-compatible model in the ignored `.env`, run `make eval-real` for a
 separately labelled model-quality report. See [docs/evaluation.md](docs/evaluation.md) for the
@@ -119,8 +122,9 @@ ruff check .
 ```
 
 See [docs/architecture.md](docs/architecture.md) for trust boundaries, recovery semantics, and
-observability. With the Compose stack running, `make smoke-recovery` demonstrates worker restart
-and checkpoint resume at the human-approval boundary.
+observability, and [docs/retrieval.md](docs/retrieval.md) for the retrieval scoring and evidence
+contract. With the Compose stack running, `make smoke-recovery` demonstrates worker restart and
+checkpoint resume at the human-approval boundary.
 
 ## Current scope
 

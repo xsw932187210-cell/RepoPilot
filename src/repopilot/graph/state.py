@@ -17,6 +17,13 @@ class RepoPilotState(TypedDict, total=False):
     plan: dict[str, Any]
     research_tree: list[str]
     research_files: dict[str, str]
+    research_evidence: list[dict[str, Any]]
+    retrieval_query_terms: list[str]
+    retrieval_strategy: str
+    retrieval_candidate_count: int
+    retrieval_selected_chars: int
+    retrieval_skipped_for_budget: int
+    initial_retrieval: dict[str, Any]
     test_strategy: str
     reviewer_feedback: list[str]
     edits: list[dict[str, Any]]

@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     workspace_root: Path = Path("./workspaces")
     demo_repository_root: Path = Path("./examples/buggy_calculator")
     max_context_files: int = Field(default=12, ge=1, le=30)
+    max_context_chars: int = Field(default=70_000, ge=10_000, le=500_000)
     max_file_bytes: int = Field(default=120_000, ge=1_000, le=500_000)
     max_iterations: int = Field(default=2, ge=1, le=5)
 

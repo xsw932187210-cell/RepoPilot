@@ -43,6 +43,28 @@ def percentile(values: list[int], quantile: float) -> int:
     return ordered[index]
 
 
+def retrieval_metrics(
+    expected_files: set[str], ranked_files: list[str]
+) -> dict[str, Any]:
+    if not expected_files:
+        raise ValueError("Retrieval evaluation requires non-empty expected_files")
+    ranked = list(dict.fromkeys(ranked_files))
+    target_ranks = [
+        rank for rank, path in enumerate(ranked, start=1) if path in expected_files
+    ]
+    first_relevant_rank = min(target_ranks, default=None)
+    return {
+        "retrieval_target_hit": expected_files.issubset(ranked),
+        "retrieval_target_recall": len(expected_files.intersection(ranked)) / len(expected_files),
+        "retrieval_recall_at_3": len(expected_files.intersection(ranked[:3])) / len(expected_files),
+        "retrieval_recall_at_5": len(expected_files.intersection(ranked[:5])) / len(expected_files),
+        "retrieval_first_relevant_rank": first_relevant_rank,
+        "retrieval_reciprocal_rank": (
+            1 / first_relevant_rank if first_relevant_rank is not None else 0.0
+        ),
+    }
+
+
 async def evaluate_case(
     case: dict[str, Any],
     repository_root: Path,
@@ -57,6 +79,9 @@ async def evaluate_case(
             model_temperature=base_settings.model_temperature,
             workspace_root=Path(temp) / "workspaces",
             demo_repository_root=repository_root,
+            max_context_files=base_settings.max_context_files,
+            max_context_chars=base_settings.max_context_chars,
+            max_file_bytes=base_settings.max_file_bytes,
             sandbox_backend="local",
             sandbox_timeout_seconds=base_settings.sandbox_timeout_seconds,
             github_write_enabled=False,
@@ -96,14 +121,20 @@ async def evaluate_case(
 
         expected_files = set(case.get("expected_files", []))
         changed_files = set(result.get("changed_files", []))
+        initial_retrieval = result["initial_retrieval"]
+        ranked_retrieval = initial_retrieval["selected_files"]
         test_result = result.get("test_result", {})
         completed = result.get("status") == "completed"
         tests_passed = test_result.get("exit_code") == 0 and not test_result.get(
             "timed_out", False
         )
         scope_match = changed_files == expected_files
+        retrieval = retrieval_metrics(expected_files, ranked_retrieval)
         node_metrics = result.get("node_metrics", [])
-        success = completed and tests_passed and scope_match and interrupted
+        success = (
+            completed and tests_passed and scope_match and interrupted
+            and retrieval["retrieval_target_hit"]
+        )
         return {
             "name": case["name"],
             "category": case.get("category", "uncategorized"),
@@ -113,6 +144,13 @@ async def evaluate_case(
             "interrupted_for_approval": interrupted,
             "tests_passed": tests_passed,
             "scope_match": scope_match,
+            **retrieval,
+            "retrieval_strategy": initial_retrieval["strategy"],
+            "retrieval_evidence": initial_retrieval["evidence"],
+            "retrieved_files": ranked_retrieval,
+            "retrieval_candidate_count": initial_retrieval["candidate_count"],
+            "retrieval_selected_chars": initial_retrieval["selected_chars"],
+            "retrieval_skipped_for_budget": initial_retrieval["skipped_for_budget"],
             "expected_files": sorted(expected_files),
             "changed_files": sorted(changed_files),
             "iterations": result.get("iteration", 0),
@@ -164,6 +202,12 @@ async def run(
         "metadata": {
             "dataset": str(dataset),
             "dataset_sha256": dataset_hash,
+            "retrieval_phase": "first_pass_before_edits",
+            "retrieval_config": {
+                "max_context_files": base_settings.max_context_files,
+                "max_context_chars": base_settings.max_context_chars,
+                "max_file_bytes": base_settings.max_file_bytes,
+            },
             "provider": base_settings.model_provider,
             "model": (
                 "deterministic-mock-v1"
@@ -190,6 +234,37 @@ async def run(
             if total
             else 0,
             "scope_match_rate": sum(bool(item["scope_match"]) for item in results) / total
+            if total
+            else 0,
+            "retrieval_all_targets_hit_rate": sum(
+                bool(item["retrieval_target_hit"]) for item in results
+            )
+            / total
+            if total
+            else 0,
+            "retrieval_target_recall": statistics.fmean(
+                float(item["retrieval_target_recall"]) for item in results
+            )
+            if total
+            else 0,
+            "retrieval_recall_at_3": statistics.fmean(
+                float(item["retrieval_recall_at_3"]) for item in results
+            )
+            if total
+            else 0,
+            "retrieval_recall_at_5": statistics.fmean(
+                float(item["retrieval_recall_at_5"]) for item in results
+            )
+            if total
+            else 0,
+            "retrieval_mrr": statistics.fmean(
+                float(item["retrieval_reciprocal_rank"]) for item in results
+            )
+            if total
+            else 0,
+            "mean_retrieved_files": statistics.fmean(
+                len(item["retrieved_files"]) for item in results
+            )
             if total
             else 0,
             "hitl_rate": sum(bool(item["interrupted_for_approval"]) for item in results)

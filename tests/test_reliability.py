@@ -91,13 +91,18 @@ class RejectOnceModel(MockAgentModel):
         reviewer_feedback: list[str],
     ) -> CodeChangeOutput:
         self.coder_contexts.append(context)
-        return await super().propose_changes(
+        changes = await super().propose_changes(
             issue_title,
             issue_body,
             plan,
             context,
             reviewer_feedback,
         )
+        if len(self.coder_contexts) == 1:
+            changes.edits[0].content += (
+                "\n# Marker distinguishes first-pass and retry context sizes.\n"
+            )
+        return changes
 
     async def review(
         self,
@@ -129,6 +134,10 @@ async def test_reviewer_feedback_triggers_only_a_bounded_retry(tmp_path: Path) -
     assert len(model.coder_contexts) == 2
     assert any("return a - b" in content for content in model.coder_contexts[0].files.values())
     assert any("return a + b" in content for content in model.coder_contexts[1].files.values())
+    assert result["initial_retrieval"]["evidence"] == model.coder_contexts[0].evidence
+    assert result["initial_retrieval"]["selected_chars"] == model.coder_contexts[0].selected_chars
+    assert result["retrieval_selected_chars"] == model.coder_contexts[1].selected_chars
+    assert result["initial_retrieval"]["selected_chars"] != result["retrieval_selected_chars"]
     assert sum(metric["node"] == "reviewer" for metric in result["node_metrics"]) == 2
 
 

@@ -31,6 +31,19 @@ def node_metric(node: str, duration_ms: int, iteration: int = 0) -> dict[str, An
     return {"node": node, "duration_ms": duration_ms, "iteration": iteration}
 
 
+def context_state(context: RepositoryContext) -> dict[str, Any]:
+    return {
+        "research_tree": context.tree,
+        "research_files": context.files,
+        "research_evidence": context.evidence,
+        "retrieval_query_terms": context.query_terms,
+        "retrieval_strategy": context.strategy,
+        "retrieval_candidate_count": context.candidate_count,
+        "retrieval_selected_chars": context.selected_chars,
+        "retrieval_skipped_for_budget": context.skipped_for_budget,
+    }
+
+
 @dataclass(slots=True)
 class GraphDependencies:
     settings: Settings
@@ -113,17 +126,26 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
             f"{state['issue_title']}\n{state['issue_body']}",
             plan.search_terms,
         )
+        retrieval = {
+            "selected_files": list(context.files),
+            "query_terms": context.query_terms,
+            "strategy": context.strategy,
+            "candidate_count": context.candidate_count,
+            "selected_chars": context.selected_chars,
+            "skipped_for_budget": context.skipped_for_budget,
+            "evidence": context.evidence,
+        }
         duration_ms = elapsed_ms(started)
         await deps.emit(
             state,
             "researcher",
             f"Researcher selected {len(context.files)} relevant files",
-            {"files": list(context.files)},
+            {"files": list(context.files), **retrieval},
             duration_ms,
         )
         return {
-            "research_tree": context.tree,
-            "research_files": context.files,
+            **context_state(context),
+            "initial_retrieval": retrieval,
             "node_metrics": [
                 node_metric("researcher", duration_ms, state.get("iteration", 0))
             ],
@@ -150,7 +172,15 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
         started = time.perf_counter()
         await deps.ensure_active(state)
         context = RepositoryContext(
-            tree=state.get("research_tree", []), files=state.get("research_files", {})
+            tree=state.get("research_tree", []),
+            files=state.get("research_files", {}),
+            evidence=state.get("research_evidence", []),
+            query_terms=state.get("retrieval_query_terms", []),
+            strategy=state.get("retrieval_strategy", "legacy"),
+            candidate_count=state.get("retrieval_candidate_count", 0),
+            selected_chars=state.get("retrieval_selected_chars", 0),
+            skipped_for_budget=state.get("retrieval_skipped_for_budget", 0),
+            max_chars=deps.settings.max_context_chars,
         )
         plan = PlanOutput.model_validate(state["plan"])
         if state.get("iteration", 0) > 0:
@@ -191,6 +221,7 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
             duration_ms,
         )
         return {
+            **context_state(context),
             "edits": [edit.model_dump() for edit in edits_by_path.values()],
             "changed_files": changed_files,
             "diff": diff,

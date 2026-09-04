@@ -93,6 +93,8 @@ def summarize_task_metrics(task: TaskView) -> TaskMetrics:
     sandbox_time_ms = sum(
         metric.duration_ms for metric in metrics if metric.node == "test_runner"
     )
+    retrieval = (task.result or {}).get("retrieval", {})
+    selected_files = retrieval.get("selected_files", [])
     return TaskMetrics(
         task_id=task.id,
         status=task.status,
@@ -102,6 +104,10 @@ def summarize_task_metrics(task: TaskView) -> TaskMetrics:
         node_duration_ms=dict(durations),
         iterations=max((metric.iteration for metric in metrics), default=0),
         sandbox_time_ms=sandbox_time_ms,
+        retrieval_strategy=retrieval.get("strategy"),
+        retrieval_candidate_files=int(retrieval.get("candidate_count", 0)),
+        retrieval_selected_files=len(selected_files),
+        retrieval_context_chars=int(retrieval.get("selected_chars", 0)),
     )
 
 

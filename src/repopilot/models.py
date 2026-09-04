@@ -118,3 +118,7 @@ class TaskMetrics(BaseModel):
     node_duration_ms: dict[str, int]
     iterations: int = Field(ge=0)
     sandbox_time_ms: int = Field(ge=0)
+    retrieval_strategy: str | None = None
+    retrieval_candidate_files: int = Field(default=0, ge=0)
+    retrieval_selected_files: int = Field(default=0, ge=0)
+    retrieval_context_chars: int = Field(default=0, ge=0)
