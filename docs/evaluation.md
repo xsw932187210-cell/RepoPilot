@@ -12,6 +12,7 @@ software-delivery workflow itself:
 - the task reaches completion;
 - the sandboxed test command passes;
 - the changed-file set exactly matches the case contract;
+- the expected implementation file appears in the ranked retrieval context;
 - the graph pauses for human approval;
 - iteration and latency fields are recorded.
 
@@ -24,6 +25,13 @@ make eval
 The CI job also saves `reports/mock-evaluation.json` as a downloadable workflow artifact. A failure
 in any case fails the quality gate. These results are a regression baseline for orchestration,
 state, tools, and policy—not a measurement of LLM coding quality.
+
+The report also exposes retrieval target recall, Recall@3, Recall@5, mean reciprocal rank, selected
+file count, and context characters. These use the initial retrieval snapshot, before any code edits,
+and record retrieval limits in report metadata. Recall is the fraction of expected files found,
+macro-averaged over cases; all-target hit rate is reported separately. These numbers use the small
+bundled fixture and prove ranking regression behavior only; they must not be presented as
+large-codebase retrieval quality.
 
 ## Real-model evaluation
 

@@ -8,7 +8,7 @@ flowchart LR
   Q --> W[Worker]
   W --> G[LangGraph]
   G --> P[Planner]
-  P --> R[Researcher]
+  P --> R[Researcher: BM25 + AST symbols]
   P --> T[Test analyst]
   R --> C[Coder]
   T --> C
@@ -52,6 +52,17 @@ cancellation flags, and live event fan-out. PostgreSQL owns task history, events
 `scripts/recovery_smoke.sh` exercises this contract at the human-approval checkpoint: it creates a
 task, waits for the persisted interrupt, restarts the worker, submits the decision, and verifies
 that the same task completes without repeating the test runner.
+
+## Repository retrieval
+
+The researcher uses a deterministic hybrid retriever before any code-generation call. It combines
+BM25 lexical relevance, path matches, Python AST symbols, and one-hop source/test dependencies.
+Every selected file has component scores and match evidence in graph state and task results. A
+hard character budget limits model context; selected file contents are included whole rather than
+silently truncated, so the coder is not asked to rewrite a file from a partial body.
+
+This is an offline, explainable retrieval baseline. It does not claim embedding search, semantic
+reranking, or large-repository quality. See `docs/retrieval.md` for the evaluation contract.
 
 ## Observability
 

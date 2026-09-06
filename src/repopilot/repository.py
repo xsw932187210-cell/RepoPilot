@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import os
-import re
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from repopilot.config import Settings
 from repopilot.models import FileEdit
+from repopilot.retrieval import HybridCodeRetriever
 from repopilot.security import (
     SecurityError,
     safe_workspace_path,
@@ -40,19 +41,57 @@ _TEXT_SUFFIXES = {
     ".yml",
 }
 _IGNORED_PARTS = {".git", ".venv", "node_modules", "dist", "build", "vendor"}
-_WORD = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")
 
 
 @dataclass(slots=True)
 class RepositoryContext:
     tree: list[str]
     files: dict[str, str]
+    evidence: list[dict[str, Any]] = field(default_factory=list)
+    query_terms: list[str] = field(default_factory=list)
+    strategy: str = "legacy"
+    candidate_count: int = 0
+    selected_chars: int = 0
+    skipped_for_budget: int = 0
+    max_chars: int = 70_000
 
-    def render(self, max_chars: int = 70_000) -> str:
-        chunks = ["Repository tree:\n" + "\n".join(self.tree[:200])]
+    def render(self, max_chars: int | None = None) -> str:
+        limit = self.max_chars if max_chars is None else min(max_chars, self.max_chars)
+        if limit <= 0:
+            return ""
+        evidence_lines = [
+            (
+                f"- {item.get('path')} score={item.get('score')} "
+                f"terms={item.get('matched_terms', [])} "
+                f"symbols={item.get('matched_symbols', [])} "
+                f"related={item.get('related_paths', [])}"
+            )
+            for item in self.evidence
+        ]
+        prefix = "\n".join(
+            [
+                f"Retrieval strategy: {self.strategy}",
+                f"Query terms: {', '.join(self.query_terms)}",
+                "Retrieval evidence:",
+                *evidence_lines,
+                "Repository tree:",
+                *self.tree[:200],
+            ]
+        )
+        file_sections: list[str] = []
         for path, content in self.files.items():
-            chunks.append(f"\n--- {path} ---\n{content}")
-        return "\n".join(chunks)[:max_chars]
+            file_sections.append(f"\n--- {path} ---\n{content}")
+
+        file_budget = max(0, limit - min(12_000, limit // 4))
+        rendered_files: list[str] = []
+        rendered_file_chars = 0
+        for section in file_sections:
+            if rendered_file_chars + len(section) > file_budget:
+                continue
+            rendered_files.append(section)
+            rendered_file_chars += len(section)
+        prefix_budget = max(0, limit - rendered_file_chars)
+        return f"{prefix[:prefix_budget]}{''.join(rendered_files)}"
 
 
 async def run_process(
@@ -150,30 +189,29 @@ class WorkspaceManager:
             ):
                 all_files.append(relative)
 
-        terms = {term.lower() for term in search_terms if len(term) >= 3}
-        terms.update(word.lower() for word in _WORD.findall(issue_text))
-        scored: list[tuple[int, Path, str]] = []
+        contents: dict[str, str] = {}
         for relative in all_files:
             absolute = safe_workspace_path(workspace, str(relative))
             try:
                 content = absolute.read_text(encoding="utf-8")
             except UnicodeDecodeError:
                 continue
-            haystack = f"{relative}\n{content}".lower()
-            score = sum(
-                3 if term in str(relative).lower() else 1
-                for term in terms
-                if term in haystack
-            )
-            if relative.name.lower().startswith("test") or "tests" in relative.parts:
-                score += 1
-            scored.append((score, relative, content))
+            contents[str(relative)] = content
 
-        scored.sort(key=lambda item: (-item[0], str(item[1])))
-        selected = scored[: self.settings.max_context_files]
+        result = HybridCodeRetriever(
+            max_files=self.settings.max_context_files,
+            max_context_chars=self.settings.max_context_chars,
+        ).retrieve(contents, issue_text=issue_text, search_terms=search_terms)
         return RepositoryContext(
             tree=sorted(str(path) for path in all_files),
-            files={str(path): content for _, path, content in selected},
+            files={hit.path: hit.content for hit in result.hits},
+            evidence=[hit.evidence() for hit in result.hits],
+            query_terms=list(result.query_terms),
+            strategy=result.strategy,
+            candidate_count=result.candidate_count,
+            selected_chars=result.selected_chars,
+            skipped_for_budget=result.skipped_for_budget,
+            max_chars=self.settings.max_context_chars,
         )
 
     def apply_edits(self, workspace: Path, edits: list[FileEdit]) -> list[str]:
