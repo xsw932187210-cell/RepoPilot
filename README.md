@@ -20,8 +20,10 @@ and API in this repository were implemented specifically for RepoPilot.
 - Redis dispatch, idempotency lock, cancellation flag, and event fan-out.
 - FastAPI task API plus replayable event history and SSE progress.
 - Per-node latency, retry, sandbox, and wall-time metrics through a task metrics endpoint.
-- Network-disabled Docker test sandbox with resource, capability, command, and path controls.
-- Governed GitHub REST tool that can create a draft PR only after tests, review, and approval.
+- Network-disabled Docker test sandbox using a disposable per-task snapshot plus resource,
+  capability, command, and path controls.
+- Governed GitHub REST tool that can create a draft PR only after a non-empty diff, passing tests,
+  separate review, and human approval.
 - Ten-scenario offline benchmark and mock model for deterministic CI regression testing.
 - Automated lint, test, and 70% line-coverage quality gates on every push and pull request.
 - OpenAI-compatible model adapter for real repository tasks.

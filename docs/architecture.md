@@ -27,9 +27,12 @@ flowchart LR
 1. Repository URLs are limited to public GitHub HTTPS URLs plus one bundled demo URI.
 2. Model-generated paths are resolved under the task workspace and may not access `.git`.
 3. Test commands are parsed to argument arrays; shell operators and arbitrary executables are rejected.
-4. Tests execute without network access, Linux capabilities, or privilege escalation.
-5. GitHub writes require an allowlisted owner, runtime enablement, a token, reviewer approval,
-   passing tests, and a LangGraph human interrupt.
+4. Tests execute from a disposable snapshot of the current task workspace, without inheriting the
+   worker's mounts, network access, Linux capabilities, or privilege escalation. Symlinks and
+   special files are rejected when the snapshot is built.
+5. GitHub writes require a non-empty diff, passing tests, an allowlisted owner, runtime enablement,
+   a token, reviewer approval, and a LangGraph human interrupt. Deterministic checks override an
+   incorrect model approval and feed their evidence into the bounded retry loop.
 6. Tokens and credential-bearing URLs are never placed in graph state or task events.
 
 The worker's Docker-socket mount is an administrative trust boundary: access to that socket is

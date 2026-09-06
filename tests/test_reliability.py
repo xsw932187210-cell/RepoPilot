@@ -235,6 +235,13 @@ async def test_local_sandbox_converts_timeout_to_evidence(
 
 
 class FakeContainer:
+    def put_archive(self, path: str, data: object) -> bool:
+        del path, data
+        return True
+
+    def start(self) -> None:
+        pass
+
     def wait(self, timeout: int) -> dict[str, int]:
         del timeout
         return {"StatusCode": 0}
@@ -251,7 +258,7 @@ class FakeContainers:
     def __init__(self) -> None:
         self.kwargs: dict[str, object] = {}
 
-    def run(self, **kwargs: object) -> FakeContainer:
+    def create(self, **kwargs: object) -> FakeContainer:
         self.kwargs = kwargs
         return FakeContainer()
 

@@ -257,6 +257,27 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
         await deps.ensure_active(state)
         result = SandboxResult.model_validate(state["test_result"])
         review = await deps.model.review(state["issue_title"], state.get("diff", ""), result)
+        gate_feedback: list[str] = []
+        if not result.passed:
+            failure = "timed out" if result.timed_out else f"exited with code {result.exit_code}"
+            gate_feedback.append(
+                f"Deterministic gate: the sandbox test command {failure}. "
+                "Resolve the test failure and rerun the configured command successfully."
+            )
+        if not state.get("diff", "").strip():
+            gate_feedback.append(
+                "Deterministic gate: no repository diff was produced. "
+                "Produce a scoped code change that addresses the issue before requesting approval."
+            )
+        if gate_feedback:
+            review = review.model_copy(
+                update={
+                    "approved": False,
+                    "summary": "Deterministic validation rejected the candidate change.",
+                    "feedback": (gate_feedback + review.feedback)[:10],
+                    "risk_level": "high" if review.risk_level == "high" else "medium",
+                }
+            )
         duration_ms = elapsed_ms(started)
         await deps.emit(
             state,
@@ -277,7 +298,8 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
 
     def after_review(state: RepoPilotState) -> str:
         review = ReviewOutput.model_validate(state["review"])
-        if review.approved:
+        tests_passed = SandboxResult.model_validate(state["test_result"]).passed
+        if review.approved and tests_passed and state.get("diff", "").strip():
             return "approval"
         if state.get("iteration", 0) < state.get("max_iterations", 2):
             return "coder"
@@ -356,7 +378,9 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
         )
         return {
             "status": "failed",
-            "error": "Reviewer rejected all bounded iterations",
+            "error": (
+                "Candidate failed deterministic or reviewer validation within the retry budget"
+            ),
             "node_metrics": [
                 node_metric("failed", duration_ms, state.get("iteration", 0))
             ],
