@@ -55,7 +55,7 @@ async def test_graph_repairs_demo_and_requires_approval(tmp_path: Path) -> None:
         result["test_result"]["stderr"],
     )
     assert result["review"]["approved"] is True, result["review"]
-    assert result["retrieval_strategy"] == "hybrid-bm25-symbol-v1"
+    assert result["retrieval_strategy"] == "hybrid-bm25-symbol-v2"
     assert "calculator.py" in result["research_files"]
     assert result["research_evidence"]
     assert result["__interrupt__"]

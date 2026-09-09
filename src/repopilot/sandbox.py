@@ -126,6 +126,7 @@ class DockerSandbox:
             "network_disabled": True,
             "mem_limit": self.settings.sandbox_memory,
             "pids_limit": 128,
+            "init": True,
             "cap_drop": ["ALL"],
             "security_opt": ["no-new-privileges"],
             "user": "10001:10001",

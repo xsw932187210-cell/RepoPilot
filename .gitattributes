@@ -1,0 +1,2 @@
+# Pinned third-party defect overlays are verified byte-for-byte against manifest hashes.
+evals/real/overlays/** -whitespace

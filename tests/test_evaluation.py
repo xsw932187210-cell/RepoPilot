@@ -55,6 +55,20 @@ async def test_evaluation_uses_configured_retrieval_limits() -> None:
 
 
 @pytest.mark.asyncio
+async def test_legacy_local_evaluator_refuses_model_generated_code() -> None:
+    with pytest.raises(ValueError, match="real-task Docker"):
+        await evaluate_case(
+            {"name": "unsafe-local-real"},
+            Path("unused"),
+            Settings(
+                _env_file=None,
+                model_provider="openai",
+                openai_api_key="fixture-not-a-secret",  # noqa: S106 - non-secret fixture
+            ),
+        )
+
+
+@pytest.mark.asyncio
 async def test_ten_case_mock_regression_baseline() -> None:
     project_root = Path(__file__).parents[1]
     report = await run(project_root / "evals" / "cases.jsonl", provider="mock")
@@ -68,10 +82,7 @@ async def test_ten_case_mock_regression_baseline() -> None:
     assert report["summary"]["retrieval_recall_at_5"] == 1.0
     assert report["summary"]["retrieval_mrr"] == 1.0
     assert report["summary"]["mean_retrieved_files"] <= 12
-    assert all(
-        case["retrieval_strategy"] == "hybrid-bm25-symbol-v1"
-        for case in report["cases"]
-    )
+    assert all(case["retrieval_strategy"] == "hybrid-bm25-symbol-v2" for case in report["cases"])
     assert report["metadata"]["provider"] == "mock"
     assert report["metadata"]["model"] == "deterministic-mock-v1"
     assert report["metadata"]["retrieval_phase"] == "first_pass_before_edits"

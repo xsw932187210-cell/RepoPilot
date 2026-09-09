@@ -17,8 +17,13 @@ _ALLOWED_PYTHON_MODULES = {"pytest", "unittest"}
 _DEMO_REPOSITORIES = {"buggy-calculator", "benchmark-suite"}
 _SENSITIVE_PATTERNS = [
     re.compile(r"gh[pousr]_[A-Za-z0-9_]{20,}"),
+    re.compile(r"github_pat_[A-Za-z0-9_]{20,}"),
     re.compile(r"sk-[A-Za-z0-9_-]{20,}"),
+    re.compile(r"AIza[A-Za-z0-9_-]{25,}"),
     re.compile(r"(?i)(authorization:\s*bearer\s+)[^\s]+"),
+    re.compile(r"(?i)((?:api[_-]?key|access[_-]?token)\s*[:=]\s*)[^\s&,;]+"),
+    re.compile(r"(?i)([?&](?:api[_-]?key|access[_-]?token|token)=)[^&#\s]+"),
+    re.compile(r"(?i)(https?://)[^/@\s]+@"),
 ]
 
 

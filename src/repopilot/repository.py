@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 import shutil
+import signal
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -47,6 +48,7 @@ _IGNORED_PARTS = {".git", ".venv", "node_modules", "dist", "build", "vendor"}
 class RepositoryContext:
     tree: list[str]
     files: dict[str, str]
+    editable_paths: tuple[str, ...] | None = None
     evidence: list[dict[str, Any]] = field(default_factory=list)
     query_terms: list[str] = field(default_factory=list)
     strategy: str = "legacy"
@@ -106,14 +108,18 @@ async def run_process(
         env=env,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        start_new_session=True,
     )
     try:
-        stdout, stderr = await asyncio.wait_for(
-            process.communicate(), timeout=timeout_seconds
-        )
-    except TimeoutError:
-        process.kill()
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout_seconds)
+    except (TimeoutError, asyncio.CancelledError) as exc:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
         await process.wait()
+        if isinstance(exc, asyncio.CancelledError):
+            raise
         raise TimeoutError(f"Command timed out: {args[0]}") from None
     return process.returncode, stdout.decode(errors="replace"), stderr.decode(errors="replace")
 
@@ -205,6 +211,7 @@ class WorkspaceManager:
         return RepositoryContext(
             tree=sorted(str(path) for path in all_files),
             files={hit.path: hit.content for hit in result.hits},
+            editable_paths=tuple(hit.path for hit in result.hits),
             evidence=[hit.evidence() for hit in result.hits],
             query_terms=list(result.query_terms),
             strategy=result.strategy,
@@ -214,15 +221,37 @@ class WorkspaceManager:
             max_chars=self.settings.max_context_chars,
         )
 
-    def apply_edits(self, workspace: Path, edits: list[FileEdit]) -> list[str]:
-        changed: list[str] = []
+    def apply_edits(
+        self,
+        workspace: Path,
+        edits: list[FileEdit],
+        *,
+        expected_contents: dict[str, str] | None = None,
+    ) -> list[str]:
+        # Validate the complete proposal before making any edit. The graph has one
+        # writer; this additionally catches stale model context at the write boundary.
+        # It is not a transaction protocol for arbitrary concurrent filesystem writers.
+        prepared: list[tuple[FileEdit, Path, str | None]] = []
+        seen: set[Path] = set()
         for edit in edits:
             target = safe_workspace_path(workspace, edit.path)
-            encoded = edit.content.encode("utf-8")
-            if len(encoded) > self.settings.max_file_bytes:
+            if target in seen:
+                raise SecurityError(f"Duplicate generated edit: {edit.path}")
+            seen.add(target)
+            if len(edit.content.encode("utf-8")) > self.settings.max_file_bytes:
                 raise SecurityError(f"Generated file is too large: {edit.path}")
-            target.parent.mkdir(parents=True, exist_ok=True)
             previous = target.read_text(encoding="utf-8") if target.exists() else None
+            if expected_contents is not None:
+                if edit.path not in expected_contents:
+                    raise SecurityError(f"Generated edit is outside supplied context: {edit.path}")
+                if previous != expected_contents[edit.path]:
+                    raise SecurityError(
+                        f"Workspace changed since model context was read: {edit.path}"
+                    )
+            prepared.append((edit, target, previous))
+        changed: list[str] = []
+        for edit, target, previous in prepared:
+            target.parent.mkdir(parents=True, exist_ok=True)
             if previous != edit.content:
                 target.write_text(edit.content, encoding="utf-8")
                 changed.append(edit.path)
