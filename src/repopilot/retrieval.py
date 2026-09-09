@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import math
 import re
+import warnings
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import PurePosixPath
@@ -12,9 +13,7 @@ _CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 _GENERIC_SYMBOL = re.compile(
     r"\b(?:class|def|function|fn|func|interface|struct|type)\s+([A-Za-z_]\w*)"
 )
-_GENERIC_IMPORT = re.compile(
-    r"(?:\bfrom\s+['\"]([^'\"]+)['\"]|\brequire\(['\"]([^'\"]+)['\"]\))"
-)
+_GENERIC_IMPORT = re.compile(r"(?:\bfrom\s+['\"]([^'\"]+)['\"]|\brequire\(['\"]([^'\"]+)['\"]\))")
 _STOP_WORDS = {
     "a",
     "an",
@@ -100,14 +99,16 @@ class RetrievalResult:
     candidate_count: int
     selected_chars: int
     skipped_for_budget: int
-    strategy: str = "hybrid-bm25-symbol-v1"
+    strategy: str = "hybrid-bm25-symbol-v2"
 
 
 def _python_metadata(content: str) -> tuple[set[str], set[str]]:
     symbols: set[str] = set()
     imports: set[str] = set()
     try:
-        tree = ast.parse(content)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", SyntaxWarning)
+            tree = ast.parse(content)
     except (SyntaxError, ValueError, RecursionError):
         return symbols, imports
 
@@ -219,8 +220,10 @@ class HybridCodeRetriever:
         search_terms: list[str],
     ) -> RetrievalResult:
         documents = [_document(path, content) for path, content in sorted(files.items())]
-        query_terms = tuple(sorted(set(tokenize("\n".join([issue_text, *search_terms])))))
+        raw_query = "\n".join([issue_text, *search_terms])
+        query_terms = tuple(sorted(set(tokenize(raw_query))))
         query_set = set(query_terms)
+        query_identifiers = {match.group(0).casefold() for match in _IDENTIFIER.finditer(raw_query)}
         if not documents:
             return RetrievalResult(
                 hits=(),
@@ -259,23 +262,21 @@ class HybridCodeRetriever:
 
             matched_path_terms = sorted(query_set & document.path_tokens)
             matched_symbols = tuple(
-                symbol
-                for symbol in document.symbols
-                if query_set.intersection(tokenize(symbol))
+                symbol for symbol in document.symbols if query_set.intersection(tokenize(symbol))
             )
-            path_score = 1.75 * len(matched_path_terms)
+            exact_rule_name = _normalized_stem(document.path) in query_identifiers
+            path_score = 1.75 * len(matched_path_terms) + (8.0 if exact_rule_name else 0.0)
             matched_symbol_terms = {
-                term
-                for symbol in matched_symbols
-                for term in tokenize(symbol)
-                if term in query_set
+                term for symbol in matched_symbols for term in tokenize(symbol) if term in query_set
             }
             symbol_score = 2.5 * len(matched_symbol_terms)
             relevance_score = lexical + path_score + symbol_score
             role_score = (
                 -0.5 * relevance_score
                 if document.is_test
-                else 3.0 if matched_path_terms or matched_symbols else 0.0
+                else 3.0
+                if matched_path_terms or matched_symbols
+                else 0.0
             )
             base_scores[document.path] = {
                 "lexical": lexical,
@@ -317,9 +318,10 @@ class HybridCodeRetriever:
         for document in documents:
             components = base_scores[document.path]
             dependency_score = dependency_scores[document.path]
-            score = sum(
-                float(components[key]) for key in ("lexical", "path", "symbol", "role")
-            ) + dependency_score
+            score = (
+                sum(float(components[key]) for key in ("lexical", "path", "symbol", "role"))
+                + dependency_score
+            )
             ranked.append(
                 RetrievalHit(
                     path=document.path,

@@ -17,6 +17,7 @@ class RepoPilotState(TypedDict, total=False):
     plan: dict[str, Any]
     research_tree: list[str]
     research_files: dict[str, str]
+    research_editable_paths: list[str] | None
     research_evidence: list[dict[str, Any]]
     retrieval_query_terms: list[str]
     retrieval_strategy: str
@@ -32,6 +33,7 @@ class RepoPilotState(TypedDict, total=False):
     test_result: dict[str, Any]
     review: dict[str, Any]
     iteration: int
+    policy_retry_count: int
     node_metrics: Annotated[list[dict[str, Any]], operator.add]
 
     human_approved: bool

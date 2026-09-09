@@ -1,4 +1,4 @@
-.PHONY: up down build logs test lint smoke smoke-recovery eval eval-real
+.PHONY: up down build logs test lint smoke smoke-recovery eval eval-real eval-real-reproduce eval-real-retrieval
 
 up:
 	docker compose up --build -d
@@ -29,4 +29,17 @@ eval:
 	docker compose run --rm api sh -c 'pip install -q --user ".[dev]" && python -m repopilot.evaluation --provider mock --dataset evals/cases.jsonl --fail-on-regression'
 
 eval-real:
-	docker compose run --rm api sh -c 'pip install -q --user ".[dev]" && python -m repopilot.evaluation --provider openai --model "$${MODEL_NAME}" --dataset evals/cases.jsonl'
+	bash scripts/eval_real.sh
+
+eval-real-reproduce:
+	bash scripts/eval_real.sh --reproduce-only
+
+eval-real-retrieval:
+	docker run --rm --network none \
+		-v "$$(pwd)/src:/app/src:ro" \
+		-v "$$(pwd)/scripts/eval_real_retrieval.py:/app/scripts/eval_real_retrieval.py:ro" \
+		-v "$$(pwd)/evals:/app/evals:ro" \
+		-v "$$(pwd)/reports/real-corpus-cache/thefuck:/source:ro" \
+		-v "$$(pwd)/reports:/app/reports" \
+		repopilot-eval-tools:local python scripts/eval_real_retrieval.py \
+			--source /source --output reports/real-retrieval.json

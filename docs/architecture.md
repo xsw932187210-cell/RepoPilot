@@ -14,8 +14,8 @@ flowchart LR
   T --> C
   C --> S[Docker test runner]
   S --> V[Reviewer]
-  V -->|bounded retry| C
-  V -->|verified| H[HITL interrupt]
+  V -->|medium/high risk: one bounded remediation| C
+  V -->|approved, low-risk, or second candidate| H[HITL interrupt]
   H -->|approved| GH[Governed GitHub tool]
   G --> CP[(PostgreSQL checkpoints)]
   W --> E[(Task and event tables)]
@@ -45,9 +45,11 @@ Every graph node is checkpointed by `AsyncPostgresSaver`. The stable `graph_thre
 the task record is the recovery cursor. Approval resumes the same thread with
 `Command(resume=...)`; it does not rebuild the workflow from scratch.
 
-When review requests another bounded iteration, the coder refreshes repository context from the
-already modified workspace before applying the feedback. Previous edits remain accumulated in
-state, and the configured maximum iteration count prevents an unbounded agent loop.
+When deterministic validation fails, or when the reviewer reports a concrete medium/high-risk
+finding, the coder refreshes repository context from the already modified workspace before
+applying feedback. A low-risk or evidence-only reviewer concern goes directly to HITL; after one
+review-driven remediation, the next candidate is also escalated. Previous edits remain
+accumulated in state, and the configured maximum iteration count prevents an unbounded agent loop.
 
 Redis is intentionally not the source of truth. It owns dispatch, short-lived locks,
 cancellation flags, and live event fan-out. PostgreSQL owns task history, events, and graph state.
