@@ -10,6 +10,9 @@ This is an independent learning and portfolio project inspired by the architectu
 self-hosted: the orchestration, persistence, queue, security boundaries, evaluation harness,
 and API in this repository were implemented specifically for RepoPilot.
 
+See [Openspec.md](Openspec.md) for the current behavioral contracts, verified evidence,
+known limitations, and acceptance criteria for the next iterations (Chinese).
+
 ## What it demonstrates
 
 - Explicit LangGraph state machine with Planner, Researcher, Test Analyst, Coder, and Reviewer roles.
