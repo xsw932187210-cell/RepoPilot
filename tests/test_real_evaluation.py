@@ -18,6 +18,21 @@ def test_offline_harness_protects_acceptance_files(tmp_path):
         manager.apply_edits(tmp_path, [FileEdit(path="thefuck/new.py", content="pass")])
 
 
+def test_offline_harness_keeps_existing_source_editable(tmp_path):
+    source = tmp_path / "thefuck" / "rules" / "example.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("old", encoding="utf-8")
+    manager = OfflineWorkspace(Settings(_env_file=None), None, tmp_path, tmp_path)
+    manager.original = {"thefuck/rules/example.py": "old"}
+
+    assert manager.apply_edits(
+        tmp_path,
+        [FileEdit(path="thefuck/rules/example.py", content="new")],
+        expected_contents={"thefuck/rules/example.py": "old"},
+    ) == ["thefuck/rules/example.py"]
+    assert source.read_text(encoding="utf-8") == "new"
+
+
 def test_initial_retrieval_policy_is_shared(tmp_path):
     manager = OfflineWorkspace(Settings(_env_file=None), None, tmp_path, tmp_path)
     manager.original = {"thefuck/rules/example.py": "source"}

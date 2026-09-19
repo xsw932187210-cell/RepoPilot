@@ -46,7 +46,7 @@ def test_invalid_second_edit_does_not_partially_apply(tmp_path: Path, path: str)
 def test_duplicate_edits_rejected_and_same_context_succeeds(tmp_path: Path) -> None:
     (tmp_path / "a.py").write_text("old")
     manager = WorkspaceManager(Settings(_env_file=None))
-    with pytest.raises(SecurityError, match="Duplicate"):
+    with pytest.raises(SecurityError, match="duplicate_path"):
         manager.apply_edits(tmp_path, [edit("a.py", "one"), edit("a.py", "two")])
     assert (tmp_path / "a.py").read_text() == "old"
     assert manager.apply_edits(

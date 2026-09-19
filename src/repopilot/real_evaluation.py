@@ -25,6 +25,7 @@ from repopilot.acceptance import (
     AcceptanceRunner,
     compare_acceptance,
 )
+from repopilot.capabilities import real_evaluation_policy
 from repopilot.config import Settings
 from repopilot.eval_report import build_eval_report, render_markdown
 from repopilot.eval_runtime import EvaluationConfig, EvaluationRuntime, ModelCallBudget
@@ -40,7 +41,12 @@ from repopilot.real_tasks import (
 )
 from repopilot.repository import WorkspaceManager
 from repopilot.sandbox import DockerSandbox
-from repopilot.security import SecurityError, redact_secrets
+from repopilot.security import (
+    CapabilityAction,
+    CapabilityError,
+    CapabilityReason,
+    redact_secrets,
+)
 
 
 def save_json(path: Path, value: object) -> None:
@@ -91,7 +97,10 @@ class OfflineWorkspace(WorkspaceManager):
     """One writer, no Git history; identical issue-only initial retrieval in both arms."""
 
     def __init__(self, settings: Settings, task: RealTask, source: Path, destination: Path):
-        super().__init__(settings)
+        super().__init__(
+            settings,
+            capability_policy=real_evaluation_policy(max_file_bytes=settings.max_file_bytes),
+        )
         self.task, self.source, self.destination = task, source, destination
         self.original: dict[str, str] = {}
 
@@ -116,13 +125,17 @@ class OfflineWorkspace(WorkspaceManager):
 
     def apply_edits(self, workspace: Path, edits: list[FileEdit], **kwargs):
         for edit in edits:
-            if not edit.path.startswith("thefuck/") or not edit.path.endswith(".py"):
-                raise SecurityError(
-                    "Real-corpus candidates may edit only existing thefuck Python source: "
-                    f"{edit.path}"
+            normalized, _ = self._capability_path(
+                workspace, edit.path, CapabilityAction.WRITE
+            )
+            if normalized.value not in self.original:
+                raise CapabilityError(
+                    CapabilityReason.WRITE_DENIED,
+                    CapabilityAction.WRITE,
+                    normalized.value,
+                    "real-corpus candidates may edit only exported existing source files",
+                    policy_version=self.capability_policy.version,
                 )
-            if edit.path not in self.original:
-                raise SecurityError("Real-corpus candidate attempted to add an untracked path")
         return super().apply_edits(workspace, edits, **kwargs)
 
     async def diff(self, workspace: Path) -> str:

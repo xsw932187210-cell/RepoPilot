@@ -24,6 +24,7 @@ class RepoPilotState(TypedDict, total=False):
     retrieval_candidate_count: int
     retrieval_selected_chars: int
     retrieval_skipped_for_budget: int
+    capability_policy_version: str
     initial_retrieval: dict[str, Any]
     test_strategy: str
     reviewer_feedback: list[str]

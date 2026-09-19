@@ -56,6 +56,8 @@ async def test_graph_repairs_demo_and_requires_approval(tmp_path: Path) -> None:
     )
     assert result["review"]["approved"] is True, result["review"]
     assert result["retrieval_strategy"] == "hybrid-bm25-symbol-v2"
+    assert result["capability_policy_version"] == "workspace-capabilities-v1"
+    assert "tests/test_calculator.py" not in result["research_editable_paths"]
     assert "calculator.py" in result["research_files"]
     assert result["research_evidence"]
     assert result["__interrupt__"]
