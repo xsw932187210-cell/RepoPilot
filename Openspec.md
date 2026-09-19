@@ -890,13 +890,13 @@ smoke 使用已经运行的服务。若 `.env` 选择真实模型，应按 [READ
 
 - 实现基线：`origin/codex/submission-safety-gates@cb2199d`，其 PR #3 尚未合并且已包含合并的 PR #4；开始时本地未跟踪的 `Openspec.md` 与既有 README 修改先原样保存为 `973f483`，再带入本轮分支，没有覆盖已有修改。
 - 已核实的硬依赖：无；任务卡所列入口和旧行为均以源码与现有测试核对，未把后续 CH-02B/CH-05A 扩入本轮。
-- 本轮分支及代码提交：`codex/ch-02a-capability-model` / `a2cb1d5`；规范和交接文档随本分支后续提交。
+- 本轮分支及代码提交：`codex/ch-02a-capability-model` / 代码 `a2cb1d5`、规范交接 `e346b54`；其后仅回填真实 PR 地址。
 - 变更范围：新增不可变的 `workspace-capabilities-v1` read/write/create policy 与稳定拒绝原因；统一路径规范化和大小写折叠身份；在真实写边界完成全批预检、链接/硬链接/特殊文件保护、create scope/扩展名/大小/expected-absent 限制；默认保护测试、构建/CI 与凭据路径；真实评测注入更严格的既有 `thefuck/**/*.py` 范围。未实现 delete/rename、文件系统事务或 CH-02B 的结构化模型反馈/持久化计数。
 - 验证记录：2026-09-19，macOS arm64、Python 3.13.5、Docker Engine 29.5.3；`ruff check .` 退出 0；相关测试 `pytest -q tests/test_capabilities.py tests/test_graph.py tests/test_real_evaluation.py tests/test_reliability.py tests/test_retrieval.py tests/test_runtime_boundaries.py` 为 47 passed；完整 `pytest --cov=repopilot --cov-report=term-missing --cov-fail-under=70 -q` 为 111 passed、80.35% coverage；隔离 Compose project 下 `make eval` 退出 0，确定性数据集 10/10 成功、测试/范围/检索目标均为 100%，随后已清理该 project 的容器、网络和数据卷。
 - 故障验证：批次第二项尝试改只读测试时，整批在首个写入前拒绝且第一项源文件保持原样；Coder 刷新上下文后的一次合法源文件重试成功。重复/大小写别名、穿越、符号链接、硬链接、FIFO、凭据、默认 create、新建范围/扩展名/大小及 expected-absent 失败均有负向用例；受信任 test-write override 和受限 create 有正常用例；真实评测旧策略继续拒绝验收文件与新路径。
 - 实验身份：本卡不作真实模型质量主张，也未消耗模型 API；`make eval` 使用 `mock` / `deterministic-mock-v1`，数据集 `evals/cases.jsonl`，SHA-256 `6e5c1012e81c11d9a4cda4d2d5f761313398f5383bb0a3a71960e6569b25bdf7`。
 - 证据及限制：实现与回归测试在 `src/repopilot/capabilities.py`、`src/repopilot/security.py`、`src/repopilot/repository.py`、`src/repopilot/real_evaluation.py` 和上述测试；契约说明见 `docs/workspace-capabilities.md`。全批预检不覆盖预检后的对抗性 TOCTOU，也不能回滚逐文件写入中途的 I/O 失败；policy override 当前为受信任 Python 配置，默认图未向模型开放 create。
 - 兼容与恢复：无数据库迁移和旧数据转换；默认行为有意收紧，过去可能被修改的测试/构建/CI/凭据路径现在会被拒绝。回滚可 revert 本轮代码提交；本轮未产生需要恢复的持久化数据，隔离评测资源已清理。
-- PR / 合并：待创建；目标基线为 `codex/submission-safety-gates@cb2199d`，不会自动合并，且须先处理其上游 PR #3。
+- PR / 合并：[PR #5](https://github.com/xsw932187210-cell/RepoPilot/pull/5)；目标基线为 `codex/submission-safety-gates@cb2199d`，当前 `OPEN`、GitHub 显示 1/1 checks passed 且无基线冲突；未合并，也未触发自动合并，且须先处理其上游 PR #3。
 - 规范更新：RP-03、当前差距、CH-02A 状态、文档索引、架构与运行时正确性已更新；CH-02A 标为 `VERIFIED`，含义仅为上述环境验收通过，尚非 `MERGED`。
 - 下一张建议：CH-09；其硬依赖为无，完成后可继续 CH-10，再满足 CH-02B 的剩余硬依赖；本轮不执行。
