@@ -1,6 +1,6 @@
 # RepoPilot 项目规范与迭代验收
 
-> 更新日期：2026-09-18；实现基线：`8dde486`；最近完整真实模型评测：2026-09-09。
+> 更新日期：2026-09-19；实现基线：`a2cb1d5`；最近完整真实模型评测：2026-09-09。
 > 本文是现有项目的规范入口，记录当前行为、证据和后续变更的验收标准。
 > 本次建立的是单文件规范，尚未接入 OpenSpec CLI，也不代表已建立其提案、归档或自动校验流程。
 > 规划版本：Roadmap v2。第 8 节包含 34 张执行任务卡；CH-01～CH-08 保留为主题编号，具体开发选带字母的子任务。
@@ -111,12 +111,15 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 ### RP-03：单写者与修改预检
 
 - 图内只有 Coder 调用 `apply_edits()`；只读并行节点汇合后才进入写阶段。
-- 写入前预检整个修改批次：路径包含关系、重复目标、文件大小、目标是否在提供的上下文内、当前内容是否匹配 `expected_contents`。
+- 受信任的 `workspace-capabilities-v1` 分别表达 read、write 和 create；Issue、仓库文本、图状态与模型输出只能请求路径，不能扩大 policy。delete/rename 在 v1 中以 `action_not_supported` 拒绝。
+- 默认允许读取普通文本，但凭据类文件不进入上下文；测试和构建/CI 配置可读不可写，现有源码/文档才是默认可写类别。修改测试只能由服务端受信任 policy 显式开启。
+- 写入前预检整个修改批次：同一规范化路径用于策略匹配、大小写折叠身份、去重、上下文查找和文件访问；穿越、别名、符号链接、硬链接、特殊文件、超限内容、越出上下文和过期 `expected_contents` 均拒绝。
+- 默认不允许新建文件。受信任 policy 如显式允许 create，还必须同时满足目录、扩展名、字节上限和调用方提供的 `expected_absent`，并使用排他创建避免静默覆盖。
 - 某项预检失败时不开始批次写入；允许在一次 Coder 节点调用内刷新上下文并纠正一次，第二次违反策略则抛错。
 - 实际写入为逐文件操作；通过预检不等于原子事务。外部进程在检查后改文件、写到一半发生 I/O 错误，仍可能产生竞态或部分写入。
-- 通用 `WorkspaceManager` 当前以提供的上下文作为写入范围，默认选中的测试文件也可能在范围内。真实评测的 `OfflineWorkspace` 另外强制只允许修改已有 `thefuck/**/*.py`；禁止测试修改的保证不能泛化到全部应用任务。
+- 真实评测仍注入更严格的 policy：只允许修改导出时已记录的 `thefuck/**/*.py`，不允许新路径，且独立验收 overlay 只在另一个全新工作区中加入。
 
-验证入口：[test_runtime_boundaries.py](tests/test_runtime_boundaries.py)、[test_reliability.py](tests/test_reliability.py)、[test_real_evaluation.py](tests/test_real_evaluation.py)。
+验证入口：[能力策略说明](docs/workspace-capabilities.md)、[test_capabilities.py](tests/test_capabilities.py)、[test_runtime_boundaries.py](tests/test_runtime_boundaries.py)、[test_reliability.py](tests/test_reliability.py)、[test_real_evaluation.py](tests/test_real_evaluation.py)。
 
 ### RP-04：测试、审查与返工
 
@@ -194,8 +197,8 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 
 | 缺口 | 当前表现 | 对应后续变更 |
 | --- | --- | --- |
-| 模型生成策略违规修改 | 全批次拒绝；节点内仅给一次纠正，仍违规则失败 | CH-02 |
-| 通用任务可写范围不够细 | 上下文内测试文件默认可能被编辑 | CH-02 |
+| 策略拒绝后的模型反馈 | 全批次拒绝，并有稳定内部 reason；节点内仅给一次文本纠正，还没有 CH-02B 的受控结构化反馈与全任务计数 | CH-02B |
+| 项目级权限适配 | 默认测试/构建/凭据受保护，create 关闭；特例目前由服务端 Python policy 注入，还没有版本化项目 manifest | CH-07A |
 | 预检后外部改写 / 写入中断 | 无文件锁或多文件回滚保证 | CH-05 |
 | 审批等待期间基线变化 | 发布时读取当前分支，未绑定测试时的基线与候选 | CH-03 |
 | 队列出队后崩溃 / 锁到期 | 无自动回收或阻止过期 Worker 副作用的机制 | CH-04 |
@@ -215,7 +218,7 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 
 ## 8. 后续变更清单及验收标准
 
-本节所有任务初始状态均为 **TODO（待开始）**。规划不代表实现，也不要求在投简历前完成全部任务。第 3～6 节仍描述当前基线，只有交付并验证后才修改其中的能力表述。
+本节任务在 Roadmap v2 建立时均为 **TODO（待开始）**，当前状态以各卡片为准。规划不代表实现，也不要求在投简历前完成全部任务。第 3～6 节描述当前基线，只有交付并验证后才修改其中的能力表述。
 
 ### 8.1 新对话的执行协议
 
@@ -269,7 +272,7 @@ S/M/L 表示相对范围：S 通常是独立诊断或小接口；M 是一组紧�
 - **M4：小范围多人使用**：有明确使用者时再做 CH-12、CH-16、CH-17、CH-08C、CH-08D；保留默认关闭 GitHub 写入的方式。
 - **M5：可选探索**：CH-05B、CH-08B、CH-14、CH-15、CH-20。只有当前瓶颈或使用需求支持时启动；不为技术栈数量把它们设为简历前置条件。
 
-建议下一张卡：**CH-02A**；如果希望先理解当前失败，选 **CH-01A**。涉及数据库的新功能之前先完成 **CH-09**。执行顺序始终以各卡硬依赖为准。
+CH-02A 已验证后，建议下一张卡选择 **CH-09**，为 CH-10 的持久化调用账本建立迁移与版本化状态基础；如果希望先理解当前效果问题，可独立选择 **CH-01A**。执行顺序始终以各卡硬依赖为准。
 
 ### 8.4 跨任务接口约定（待实现设计，不是现有字段）
 
@@ -343,7 +346,7 @@ S/M/L 表示相对范围：S 通常是独立诊断或小接口；M 是一组紧�
 
 #### CH-02A：通用可读/可写能力模型
 
-- **状态**：TODO。**优先级/规模**：P0 / M。**硬依赖**：无。
+- **状态**：VERIFIED（`a2cb1d5`，PR 未合并）。**优先级/规模**：P0 / M。**硬依赖**：无。
 - **入口**：`repository.py`、`security.py`、`llm.py`、`real_evaluation.py`；已有 `test_runtime_boundaries.py`、`test_real_evaluation.py`。
 - **实施步骤**：
   1. 定义受信任的版本化 policy，分别表达 read、write 和 create；首版 delete/rename 默认拒绝并明确错误类型。来自 Issue、仓库文本或模型的配置不能自行扩大权限。
@@ -803,11 +806,12 @@ smoke 使用已经运行的服务。若 `.env` 选择真实模型，应按 [READ
 - [README](README.md)：项目入口与启动方式。
 - [架构](docs/architecture.md)：组件、图与信任边界。
 - [运行时正确性](docs/runtime-correctness.md)：机制失效时的行为与限制。
+- [工作区能力策略](docs/workspace-capabilities.md)：版本化 read/write/create 权限、拒绝原因与边界。
 - [检索契约](docs/retrieval.md)：检索排序、预算与评分口径。
 - [评测说明](docs/evaluation.md)、[真实任务集](docs/real-task-corpus.md)、[真实评测协议](docs/real-evaluation-protocol.md)：复现与实验约束。
 - [2026-09-09 真实评测结果](docs/real-evaluation-results-2026-09-09.md)：当前可引用的实测依据。
 
-当前可对外表述为“LangGraph 单写者、多角色代码修复工作流，具备只读并行分析、有界检索、Docker 测试、HITL 和审批 checkpoint 恢复，并完成真实缺陷对照评测”。不得由此延伸出“已实现多写者并发冲突解决”“分布式 exactly-once”“多 Agent 提升修复率”或“通用仓库测试不可修改”等尚无充分实现或证据的结论。
+当前可对外表述为“LangGraph 单写者、多角色代码修复工作流，具备只读并行分析、有界检索、版本化工作区能力策略、Docker 测试、HITL 和审批 checkpoint 恢复，并完成真实缺陷对照评测；默认策略下测试与构建/CI 配置可读但不可写”。不得由此延伸出“已实现多写者并发冲突解决”“分布式 exactly-once”“文件系统事务”或“多 Agent 提升修复率”等尚无充分实现或证据的结论。
 
 ## 11. 新对话开场与收尾模板
 
@@ -881,3 +885,18 @@ smoke 使用已经运行的服务。若 `.env` 选择真实模型，应按 [READ
 - 规划最初位于本地 `codex/docs-openspec`；是否提交、推送或合并以接手时 Git/PR 实际状态为准。
 - 建议先选 CH-02A；偏向先理解效果问题可选 CH-01A；需要持久化新字段的任务先完成 CH-09。
 - 后续在此追加实际交付摘要，并更新对应任务卡状态。
+
+### 2026-09-19 · CH-02A · 通用可读/可写能力模型
+
+- 实现基线：`origin/codex/submission-safety-gates@cb2199d`，其 PR #3 尚未合并且已包含合并的 PR #4；开始时本地未跟踪的 `Openspec.md` 与既有 README 修改先原样保存为 `973f483`，再带入本轮分支，没有覆盖已有修改。
+- 已核实的硬依赖：无；任务卡所列入口和旧行为均以源码与现有测试核对，未把后续 CH-02B/CH-05A 扩入本轮。
+- 本轮分支及代码提交：`codex/ch-02a-capability-model` / `a2cb1d5`；规范和交接文档随本分支后续提交。
+- 变更范围：新增不可变的 `workspace-capabilities-v1` read/write/create policy 与稳定拒绝原因；统一路径规范化和大小写折叠身份；在真实写边界完成全批预检、链接/硬链接/特殊文件保护、create scope/扩展名/大小/expected-absent 限制；默认保护测试、构建/CI 与凭据路径；真实评测注入更严格的既有 `thefuck/**/*.py` 范围。未实现 delete/rename、文件系统事务或 CH-02B 的结构化模型反馈/持久化计数。
+- 验证记录：2026-09-19，macOS arm64、Python 3.13.5、Docker Engine 29.5.3；`ruff check .` 退出 0；相关测试 `pytest -q tests/test_capabilities.py tests/test_graph.py tests/test_real_evaluation.py tests/test_reliability.py tests/test_retrieval.py tests/test_runtime_boundaries.py` 为 47 passed；完整 `pytest --cov=repopilot --cov-report=term-missing --cov-fail-under=70 -q` 为 111 passed、80.35% coverage；隔离 Compose project 下 `make eval` 退出 0，确定性数据集 10/10 成功、测试/范围/检索目标均为 100%，随后已清理该 project 的容器、网络和数据卷。
+- 故障验证：批次第二项尝试改只读测试时，整批在首个写入前拒绝且第一项源文件保持原样；Coder 刷新上下文后的一次合法源文件重试成功。重复/大小写别名、穿越、符号链接、硬链接、FIFO、凭据、默认 create、新建范围/扩展名/大小及 expected-absent 失败均有负向用例；受信任 test-write override 和受限 create 有正常用例；真实评测旧策略继续拒绝验收文件与新路径。
+- 实验身份：本卡不作真实模型质量主张，也未消耗模型 API；`make eval` 使用 `mock` / `deterministic-mock-v1`，数据集 `evals/cases.jsonl`，SHA-256 `6e5c1012e81c11d9a4cda4d2d5f761313398f5383bb0a3a71960e6569b25bdf7`。
+- 证据及限制：实现与回归测试在 `src/repopilot/capabilities.py`、`src/repopilot/security.py`、`src/repopilot/repository.py`、`src/repopilot/real_evaluation.py` 和上述测试；契约说明见 `docs/workspace-capabilities.md`。全批预检不覆盖预检后的对抗性 TOCTOU，也不能回滚逐文件写入中途的 I/O 失败；policy override 当前为受信任 Python 配置，默认图未向模型开放 create。
+- 兼容与恢复：无数据库迁移和旧数据转换；默认行为有意收紧，过去可能被修改的测试/构建/CI/凭据路径现在会被拒绝。回滚可 revert 本轮代码提交；本轮未产生需要恢复的持久化数据，隔离评测资源已清理。
+- PR / 合并：待创建；目标基线为 `codex/submission-safety-gates@cb2199d`，不会自动合并，且须先处理其上游 PR #3。
+- 规范更新：RP-03、当前差距、CH-02A 状态、文档索引、架构与运行时正确性已更新；CH-02A 标为 `VERIFIED`，含义仅为上述环境验收通过，尚非 `MERGED`。
+- 下一张建议：CH-09；其硬依赖为无，完成后可继续 CH-10，再满足 CH-02B 的剩余硬依赖；本轮不执行。

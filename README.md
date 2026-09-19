@@ -18,8 +18,9 @@ known limitations, and acceptance criteria for the next iterations (Chinese).
 - Explicit LangGraph state machine with Planner, Researcher, Test Analyst, Coder, and Reviewer roles.
 - Parallel research/test-analysis fan-out, deterministic-failure retries, one bounded remediation
   for concrete reviewer findings, and reviewer-risk escalation to the human approval gate.
-- Single graph writer with full-batch edit preflight, stale-context rejection, and one bounded
-  Coder correction after a tool-policy denial; rejected batches never partially touch the tree.
+- Single graph writer with a versioned read/write/create policy, full-batch edit preflight,
+  read-only tests/build configuration, stale-context rejection, and one bounded Coder correction;
+  policy-rejected batches never partially touch the tree.
 - Explainable BM25 + Python AST symbol retrieval with source/test dependency expansion and a
   bounded context budget.
 - Durable PostgreSQL checkpoints and `Command(resume=...)` human approval.
