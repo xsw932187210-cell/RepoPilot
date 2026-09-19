@@ -10,19 +10,31 @@ This is an independent learning and portfolio project inspired by the architectu
 self-hosted: the orchestration, persistence, queue, security boundaries, evaluation harness,
 and API in this repository were implemented specifically for RepoPilot.
 
+See [Openspec.md](Openspec.md) for the current behavioral contracts, verified evidence,
+known limitations, and acceptance criteria for the next iterations (Chinese).
+
 ## What it demonstrates
 
 - Explicit LangGraph state machine with Planner, Researcher, Test Analyst, Coder, and Reviewer roles.
-- Parallel research/test-analysis fan-out and a bounded reviewer feedback loop.
+- Parallel research/test-analysis fan-out, deterministic-failure retries, one bounded remediation
+  for concrete reviewer findings, and reviewer-risk escalation to the human approval gate.
+- Single graph writer with a versioned read/write/create policy, full-batch edit preflight,
+  read-only tests/build configuration, stale-context rejection, and one bounded Coder correction;
+  policy-rejected batches never partially touch the tree.
 - Explainable BM25 + Python AST symbol retrieval with source/test dependency expansion and a
   bounded context budget.
 - Durable PostgreSQL checkpoints and `Command(resume=...)` human approval.
 - Redis dispatch, idempotency lock, cancellation flag, and event fan-out.
 - FastAPI task API plus replayable event history and SSE progress.
 - Per-node latency, retry, sandbox, and wall-time metrics through a task metrics endpoint.
-- Network-disabled Docker test sandbox with resource, capability, command, and path controls.
-- Governed GitHub REST tool that can create a draft PR only after tests, review, and approval.
+- Network-disabled Docker test sandbox using a disposable per-task snapshot plus resource,
+  capability, command, and path controls.
+- Governed GitHub REST tool that can create a draft PR only after a non-empty diff, passing tests,
+  separate review, and human approval.
 - Ten-scenario offline benchmark and mock model for deterministic CI regression testing.
+- Twenty pinned BugsInPy defects from The Fuck with a Docker reproduction validator,
+  resumable per-case real-model evaluation, one-shot baseline comparison, and sanitized
+  failure/latency reports; this is a one-project pilot, not a broad benchmark claim.
 - Automated lint, test, and 70% line-coverage quality gates on every push and pull request.
 - OpenAI-compatible model adapter for real repository tasks.
 
@@ -39,6 +51,15 @@ docker compose up --build -d
 
 The default `MODEL_PROVIDER=mock` requires no API key and repairs the bundled calculator fixture.
 Open <http://localhost:8000/docs> for the API.
+
+The smoke scripts exercise the stack that is already running. If `.env` currently selects a real
+provider, recreate the API and worker with an explicit mock override before collecting deterministic
+smoke evidence:
+
+```bash
+MODEL_PROVIDER=mock MODEL_NAME=deterministic-mock-v1 OPENAI_API_KEY= OPENAI_BASE_URL= \
+  docker compose up --build -d --force-recreate api worker
+```
 
 To use a real OpenAI-compatible model, edit `.env`:
 
@@ -110,6 +131,20 @@ measures workflow and retrieval reliability, not LLM coding ability.
 After configuring an OpenAI-compatible model in the ignored `.env`, run `make eval-real` for a
 separately labelled model-quality report. See [docs/evaluation.md](docs/evaluation.md) for the
 evidence contract and rules for defensible resume metrics.
+
+The first complete 20-case paired run is documented in
+[docs/real-evaluation-results-2026-09-09.md](docs/real-evaluation-results-2026-09-09.md). It records
+the negative result as well as the successes: the current multi-agent path did not beat the
+one-shot baseline, so no quality-lift claim is made.
+
+To validate the real corpus without spending model quota, run `make eval-real-reproduce` first.
+The real-model protocol uses the same pinned manifest and Docker image identity, resumes completed
+case/mode pairs, and keeps quota-pending pairs separate from ordinary failures; see
+[docs/real-evaluation-protocol.md](docs/real-evaluation-protocol.md).
+
+Run `make eval-real-retrieval` to measure issue-only target-file ranking on the same commits without
+calling a model. Its local JSON report is separate from both repair quality and the mock workflow
+regression.
 
 ## Development
 

@@ -17,6 +17,9 @@ from repopilot.llm import AgentModel
 from repopilot.models import FileEdit, PlanOutput, ReviewOutput, SandboxResult
 from repopilot.repository import RepositoryContext, WorkspaceManager
 from repopilot.sandbox import DockerSandbox, LocalSandbox
+from repopilot.security import SecurityError
+
+MAX_POLICY_RETRIES = 1
 
 
 class TaskCancelled(RuntimeError):
@@ -35,12 +38,16 @@ def context_state(context: RepositoryContext) -> dict[str, Any]:
     return {
         "research_tree": context.tree,
         "research_files": context.files,
+        "research_editable_paths": (
+            list(context.editable_paths) if context.editable_paths is not None else None
+        ),
         "research_evidence": context.evidence,
         "retrieval_query_terms": context.query_terms,
         "retrieval_strategy": context.strategy,
         "retrieval_candidate_count": context.candidate_count,
         "retrieval_selected_chars": context.selected_chars,
         "retrieval_skipped_for_budget": context.skipped_for_budget,
+        "capability_policy_version": context.capability_policy_version,
     }
 
 
@@ -133,6 +140,8 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
             "candidate_count": context.candidate_count,
             "selected_chars": context.selected_chars,
             "skipped_for_budget": context.skipped_for_budget,
+            "editable_files": list(context.editable_paths or ()),
+            "capability_policy_version": context.capability_policy_version,
             "evidence": context.evidence,
         }
         duration_ms = elapsed_ms(started)
@@ -146,9 +155,7 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
         return {
             **context_state(context),
             "initial_retrieval": retrieval,
-            "node_metrics": [
-                node_metric("researcher", duration_ms, state.get("iteration", 0))
-            ],
+            "node_metrics": [node_metric("researcher", duration_ms, state.get("iteration", 0))],
         }
 
     async def test_analyst(state: RepoPilotState) -> dict[str, Any]:
@@ -174,6 +181,11 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
         context = RepositoryContext(
             tree=state.get("research_tree", []),
             files=state.get("research_files", {}),
+            editable_paths=(
+                tuple(state["research_editable_paths"])
+                if state.get("research_editable_paths") is not None
+                else None
+            ),
             evidence=state.get("research_evidence", []),
             query_terms=state.get("retrieval_query_terms", []),
             strategy=state.get("retrieval_strategy", "legacy"),
@@ -181,6 +193,7 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
             selected_chars=state.get("retrieval_selected_chars", 0),
             skipped_for_budget=state.get("retrieval_skipped_for_budget", 0),
             max_chars=deps.settings.max_context_chars,
+            capability_policy_version=state.get("capability_policy_version", "legacy"),
         )
         plan = PlanOutput.model_validate(state["plan"])
         if state.get("iteration", 0) > 0:
@@ -189,23 +202,45 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
                 f"{state['issue_title']}\n{state['issue_body']}",
                 plan.search_terms,
             )
-        changes = await deps.model.propose_changes(
-            state["issue_title"],
-            state["issue_body"],
-            plan,
-            context,
-            state.get("reviewer_feedback", []),
-        )
-        iteration_changes = deps.workspaces.apply_edits(
-            Path(state["workspace"]), changes.edits
-        )
+        model_feedback = list(state.get("reviewer_feedback", []))
+        policy_retries = 0
+        while True:
+            changes = await deps.model.propose_changes(
+                state["issue_title"],
+                state["issue_body"],
+                plan,
+                context,
+                model_feedback,
+            )
+            try:
+                iteration_changes = deps.workspaces.apply_edits(
+                    Path(state["workspace"]),
+                    changes.edits,
+                    expected_contents=context.files,
+                )
+                break
+            except SecurityError as error:
+                if policy_retries >= MAX_POLICY_RETRIES:
+                    raise
+                policy_retries += 1
+                model_feedback = [
+                    *model_feedback,
+                    (
+                        f"Tool policy rejected the complete proposal: {error}. "
+                        "No edits were applied. Retry using only exact allowed paths and "
+                        "the latest supplied file contents."
+                    ),
+                ][-10:]
+                context = deps.workspaces.inspect(
+                    Path(state["workspace"]),
+                    f"{state['issue_title']}\n{state['issue_body']}",
+                    plan.search_terms,
+                )
         edits_by_path = {
             edit.path: edit for edit in map(FileEdit.model_validate, state.get("edits", []))
         }
         edits_by_path.update({edit.path: edit for edit in changes.edits})
-        changed_files = sorted(
-            set(state.get("changed_files", [])) | set(iteration_changes)
-        )
+        changed_files = sorted(set(state.get("changed_files", [])) | set(iteration_changes))
         diff = await deps.workspaces.diff(Path(state["workspace"]))
         iteration = state.get("iteration", 0) + 1
         duration_ms = elapsed_ms(started)
@@ -217,6 +252,7 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
                 "changed_files": changed_files,
                 "iteration_changes": iteration_changes,
                 "summary": changes.summary,
+                "policy_retries": policy_retries,
             },
             duration_ms,
         )
@@ -226,6 +262,7 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
             "changed_files": changed_files,
             "diff": diff,
             "iteration": iteration,
+            "policy_retry_count": state.get("policy_retry_count", 0) + policy_retries,
             "node_metrics": [node_metric("coder", duration_ms, iteration)],
         }
 
@@ -247,9 +284,7 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
         )
         return {
             "test_result": result.model_dump(),
-            "node_metrics": [
-                node_metric("test_runner", duration_ms, state.get("iteration", 0))
-            ],
+            "node_metrics": [node_metric("test_runner", duration_ms, state.get("iteration", 0))],
         }
 
     async def reviewer(state: RepoPilotState) -> dict[str, Any]:
@@ -257,27 +292,69 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
         await deps.ensure_active(state)
         result = SandboxResult.model_validate(state["test_result"])
         review = await deps.model.review(state["issue_title"], state.get("diff", ""), result)
+        gate_feedback: list[str] = []
+        if not result.passed:
+            failure = "timed out" if result.timed_out else f"exited with code {result.exit_code}"
+            gate_feedback.append(
+                f"Deterministic gate: the sandbox test command {failure}. "
+                "Resolve the test failure and rerun the configured command successfully."
+            )
+        if not state.get("diff", "").strip():
+            gate_feedback.append(
+                "Deterministic gate: no repository diff was produced. "
+                "Produce a scoped code change that addresses the issue before requesting approval."
+            )
+        if gate_feedback:
+            review = review.model_copy(
+                update={
+                    "approved": False,
+                    "summary": "Deterministic validation rejected the candidate change.",
+                    "feedback": (gate_feedback + review.feedback)[:10],
+                    "risk_level": "high" if review.risk_level == "high" else "medium",
+                }
+            )
         duration_ms = elapsed_ms(started)
+        deterministic_passed = result.passed and bool(state.get("diff", "").strip())
+        can_retry_review = (
+            deterministic_passed
+            and not review.approved
+            and review.risk_level in {"medium", "high"}
+            and state.get("iteration", 0) < state.get("max_iterations", 2)
+        )
+        if review.approved:
+            message = "Reviewer approved the candidate change"
+        elif can_retry_review:
+            message = "Reviewer requested one bounded remediation pass"
+        elif deterministic_passed:
+            message = "Reviewer flagged risk for the human approval decision"
+        else:
+            message = "Reviewer feedback will accompany a bounded deterministic retry"
         await deps.emit(
             state,
             "reviewer",
-            "Reviewer approved the candidate change"
-            if review.approved
-            else "Reviewer requested another bounded iteration",
+            message,
             {"approved": review.approved, "feedback": review.feedback},
             duration_ms,
         )
         return {
             "review": review.model_dump(),
             "reviewer_feedback": review.feedback,
-            "node_metrics": [
-                node_metric("reviewer", duration_ms, state.get("iteration", 0))
-            ],
+            "node_metrics": [node_metric("reviewer", duration_ms, state.get("iteration", 0))],
         }
 
     def after_review(state: RepoPilotState) -> str:
+        tests_passed = SandboxResult.model_validate(state["test_result"]).passed
         review = ReviewOutput.model_validate(state["review"])
-        if review.approved:
+        # A speculative low-risk rejection is escalated to the human. One concrete
+        # medium/high-risk finding may request bounded remediation; the next result
+        # is escalated even if the model reviewer still objects.
+        if tests_passed and state.get("diff", "").strip():
+            if (
+                not review.approved
+                and review.risk_level in {"medium", "high"}
+                and state.get("iteration", 0) < state.get("max_iterations", 2)
+            ):
+                return "coder"
             return "approval"
         if state.get("iteration", 0) < state.get("max_iterations", 2):
             return "coder"
@@ -303,9 +380,7 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
             "human_approved": approved,
             "human_feedback": feedback,
             "status": "approved" if approved else "cancelled",
-            "node_metrics": [
-                node_metric("approval", duration_ms, state.get("iteration", 0))
-            ],
+            "node_metrics": [node_metric("approval", duration_ms, state.get("iteration", 0))],
         }
 
     def after_approval(state: RepoPilotState) -> str:
@@ -336,9 +411,7 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
         return {
             "status": "completed",
             "pull_request_url": result.pull_request_url,
-            "node_metrics": [
-                node_metric("finalize", duration_ms, state.get("iteration", 0))
-            ],
+            "node_metrics": [node_metric("finalize", duration_ms, state.get("iteration", 0))],
         }
 
     async def failed(state: RepoPilotState) -> dict[str, Any]:
@@ -356,10 +429,10 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
         )
         return {
             "status": "failed",
-            "error": "Reviewer rejected all bounded iterations",
-            "node_metrics": [
-                node_metric("failed", duration_ms, state.get("iteration", 0))
-            ],
+            "error": (
+                "Candidate failed deterministic or reviewer validation within the retry budget"
+            ),
+            "node_metrics": [node_metric("failed", duration_ms, state.get("iteration", 0))],
         }
 
     async def cancelled(state: RepoPilotState) -> dict[str, Any]:
@@ -374,9 +447,7 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
         return {
             "status": "cancelled",
             "error": state.get("human_feedback", ""),
-            "node_metrics": [
-                node_metric("cancelled", duration_ms, state.get("iteration", 0))
-            ],
+            "node_metrics": [node_metric("cancelled", duration_ms, state.get("iteration", 0))],
         }
 
     graph = StateGraph(RepoPilotState)

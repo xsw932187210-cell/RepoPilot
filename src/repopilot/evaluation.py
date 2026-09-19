@@ -43,15 +43,11 @@ def percentile(values: list[int], quantile: float) -> int:
     return ordered[index]
 
 
-def retrieval_metrics(
-    expected_files: set[str], ranked_files: list[str]
-) -> dict[str, Any]:
+def retrieval_metrics(expected_files: set[str], ranked_files: list[str]) -> dict[str, Any]:
     if not expected_files:
         raise ValueError("Retrieval evaluation requires non-empty expected_files")
     ranked = list(dict.fromkeys(ranked_files))
-    target_ranks = [
-        rank for rank, path in enumerate(ranked, start=1) if path in expected_files
-    ]
+    target_ranks = [rank for rank, path in enumerate(ranked, start=1) if path in expected_files]
     first_relevant_rank = min(target_ranks, default=None)
     return {
         "retrieval_target_hit": expected_files.issubset(ranked),
@@ -70,6 +66,11 @@ async def evaluate_case(
     repository_root: Path,
     base_settings: Settings,
 ) -> dict[str, Any]:
+    if base_settings.model_provider != "mock":
+        raise ValueError(
+            "The bundled local evaluator is restricted to the deterministic mock; "
+            "use the real-task Docker evaluation harness for model-produced code."
+        )
     with tempfile.TemporaryDirectory(prefix="repopilot-eval-") as temp:
         settings = Settings(
             model_provider=base_settings.model_provider,
@@ -125,14 +126,15 @@ async def evaluate_case(
         ranked_retrieval = initial_retrieval["selected_files"]
         test_result = result.get("test_result", {})
         completed = result.get("status") == "completed"
-        tests_passed = test_result.get("exit_code") == 0 and not test_result.get(
-            "timed_out", False
-        )
+        tests_passed = test_result.get("exit_code") == 0 and not test_result.get("timed_out", False)
         scope_match = changed_files == expected_files
         retrieval = retrieval_metrics(expected_files, ranked_retrieval)
         node_metrics = result.get("node_metrics", [])
         success = (
-            completed and tests_passed and scope_match and interrupted
+            completed
+            and tests_passed
+            and scope_match
+            and interrupted
             and retrieval["retrieval_target_hit"]
         )
         return {
@@ -182,7 +184,7 @@ async def run(
 ) -> dict[str, Any]:
     repository_root = await find_benchmark_repository()
     dataset_text = await asyncio.to_thread(dataset.read_text, encoding="utf-8")
-    dataset_hash = hashlib.sha256(dataset_text.encode()).hexdigest()[:12]
+    dataset_hash = hashlib.sha256(dataset_text.encode()).hexdigest()
     cases = [json.loads(line) for line in dataset_text.splitlines() if line.strip()]
     if max_cases is not None:
         cases = cases[:max_cases]
@@ -193,9 +195,7 @@ async def run(
     if model_name is not None:
         base_settings.model_name = model_name
 
-    results = [
-        await evaluate_case(case, repository_root, base_settings) for case in cases
-    ]
+    results = [await evaluate_case(case, repository_root, base_settings) for case in cases]
     total = len(results)
     durations = [int(item["duration_ms"]) for item in results]
     return {
@@ -224,9 +224,7 @@ async def run(
         "summary": {
             "count": total,
             "successful": sum(bool(item["success"]) for item in results),
-            "success_rate": sum(bool(item["success"]) for item in results) / total
-            if total
-            else 0,
+            "success_rate": sum(bool(item["success"]) for item in results) / total if total else 0,
             "task_completion_rate": sum(bool(item["completed"]) for item in results) / total
             if total
             else 0,
@@ -267,13 +265,10 @@ async def run(
             )
             if total
             else 0,
-            "hitl_rate": sum(bool(item["interrupted_for_approval"]) for item in results)
-            / total
+            "hitl_rate": sum(bool(item["interrupted_for_approval"]) for item in results) / total
             if total
             else 0,
-            "mean_iterations": statistics.fmean(
-                int(item["iterations"]) for item in results
-            )
+            "mean_iterations": statistics.fmean(int(item["iterations"]) for item in results)
             if total
             else 0,
             "median_duration_ms": int(statistics.median(durations)) if durations else 0,

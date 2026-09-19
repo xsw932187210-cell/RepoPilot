@@ -14,8 +14,8 @@ flowchart LR
   T --> C
   C --> S[Docker test runner]
   S --> V[Reviewer]
-  V -->|bounded retry| C
-  V -->|verified| H[HITL interrupt]
+  V -->|medium/high risk: one bounded remediation| C
+  V -->|approved, low-risk, or second candidate| H[HITL interrupt]
   H -->|approved| GH[Governed GitHub tool]
   G --> CP[(PostgreSQL checkpoints)]
   W --> E[(Task and event tables)]
@@ -25,11 +25,19 @@ flowchart LR
 ## Trust boundaries
 
 1. Repository URLs are limited to public GitHub HTTPS URLs plus one bundled demo URI.
-2. Model-generated paths are resolved under the task workspace and may not access `.git`.
+2. A service-owned, versioned capability policy separates readable files from writable existing
+   files and trusted creation scopes. The default keeps tests and build/CI configuration read-only,
+   excludes credential-like files from context, and denies creation, deletion, and rename. Paths
+   use one normalized identity for matching, deduplication, context lookup, and access; traversal,
+   `.git`, case aliases, symbolic links, hard links, and special files are rejected. See
+   [workspace capability policy](workspace-capabilities.md).
 3. Test commands are parsed to argument arrays; shell operators and arbitrary executables are rejected.
-4. Tests execute without network access, Linux capabilities, or privilege escalation.
-5. GitHub writes require an allowlisted owner, runtime enablement, a token, reviewer approval,
-   passing tests, and a LangGraph human interrupt.
+4. Tests execute from a disposable snapshot of the current task workspace, without inheriting the
+   worker's mounts, network access, Linux capabilities, or privilege escalation. Symlinks and
+   special files are rejected when the snapshot is built.
+5. GitHub writes require a non-empty diff, passing tests, an allowlisted owner, runtime enablement,
+   a token, reviewer approval, and a LangGraph human interrupt. Deterministic checks override an
+   incorrect model approval and feed their evidence into the bounded retry loop.
 6. Tokens and credential-bearing URLs are never placed in graph state or task events.
 
 The worker's Docker-socket mount is an administrative trust boundary: access to that socket is
@@ -42,9 +50,11 @@ Every graph node is checkpointed by `AsyncPostgresSaver`. The stable `graph_thre
 the task record is the recovery cursor. Approval resumes the same thread with
 `Command(resume=...)`; it does not rebuild the workflow from scratch.
 
-When review requests another bounded iteration, the coder refreshes repository context from the
-already modified workspace before applying the feedback. Previous edits remain accumulated in
-state, and the configured maximum iteration count prevents an unbounded agent loop.
+When deterministic validation fails, or when the reviewer reports a concrete medium/high-risk
+finding, the coder refreshes repository context from the already modified workspace before
+applying feedback. A low-risk or evidence-only reviewer concern goes directly to HITL; after one
+review-driven remediation, the next candidate is also escalated. Previous edits remain
+accumulated in state, and the configured maximum iteration count prevents an unbounded agent loop.
 
 Redis is intentionally not the source of truth. It owns dispatch, short-lived locks,
 cancellation flags, and live event fan-out. PostgreSQL owns task history, events, and graph state.

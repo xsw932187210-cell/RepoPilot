@@ -24,9 +24,7 @@ def test_hybrid_retrieval_combines_symbols_and_dependency_neighbors() -> None:
             "        return False\n"
         ),
         "src/email/service.py": (
-            "class EmailSender:\n"
-            "    def send_message(self, value: str) -> None:\n"
-            "        pass\n"
+            "class EmailSender:\n    def send_message(self, value: str) -> None:\n        pass\n"
         ),
         "tests/test_billing.py": (
             "from src.billing.service import PaymentProcessor\n\n"
@@ -41,7 +39,7 @@ def test_hybrid_retrieval_combines_symbols_and_dependency_neighbors() -> None:
         search_terms=["refund payment"],
     )
 
-    assert result.strategy == "hybrid-bm25-symbol-v1"
+    assert result.strategy == "hybrid-bm25-symbol-v2"
     assert result.hits[0].path == "src/billing/service.py"
     assert "PaymentProcessor" in result.hits[0].matched_symbols
     billing_test = next(hit for hit in result.hits if hit.path == "tests/test_billing.py")
@@ -92,18 +90,18 @@ def test_repository_context_exposes_evidence_and_respects_render_budget(
         "    assert OrderService().submit_order('o-1') == 'o-1'\n",
         encoding="utf-8",
     )
-    context = WorkspaceManager(
-        Settings(max_context_files=2, max_context_chars=10_000)
-    ).inspect(
+    context = WorkspaceManager(Settings(max_context_files=2, max_context_chars=10_000)).inspect(
         workspace,
         "OrderService submit_order should preserve the id",
         ["submit order"],
     )
 
     rendered = context.render()
-    assert context.strategy == "hybrid-bm25-symbol-v1"
+    assert context.strategy == "hybrid-bm25-symbol-v2"
     assert context.candidate_count == 2
     assert len(context.files) == 2
+    assert context.editable_paths == ("src/orders.py",)
+    assert context.capability_policy_version == "workspace-capabilities-v1"
     assert len(rendered) <= 10_000
     assert "Retrieval evidence:" in rendered
     assert source.read_text(encoding="utf-8") in rendered
@@ -164,3 +162,21 @@ def test_deeply_nested_python_falls_back_to_text_retrieval() -> None:
         search_terms=[],
     )
     assert [hit.path for hit in result.hits] == ["deep_expression.py"]
+
+
+def test_exact_rule_identifier_outweighs_generic_content_matches() -> None:
+    files = {
+        "rules/no_command.py": "def match(command):\n    return False\n",
+        **{
+            f"rules/generic_{index}.py": "command not found installed executable " * 20
+            for index in range(15)
+        },
+    }
+    result = HybridCodeRetriever(max_files=3, max_context_chars=10_000).retrieve(
+        files,
+        issue_text="The no_command rule should ignore not-found text for installed commands",
+        search_terms=[],
+    )
+
+    assert result.hits[0].path == "rules/no_command.py"
+    assert result.hits[0].path_score >= 8

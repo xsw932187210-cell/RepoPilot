@@ -1,7 +1,7 @@
 # Code retrieval contract
 
 RepoPilot retrieves a bounded, explainable code context before the coder model runs. This iteration
-uses an offline hybrid strategy named `hybrid-bm25-symbol-v1`; it requires no embedding service or
+uses an offline hybrid strategy named `hybrid-bm25-symbol-v2`; it requires no embedding service or
 external network call.
 
 ## Ranking pipeline
@@ -10,7 +10,8 @@ external network call.
    dependencies, binary files, and files above the configured safety limit.
 2. Tokenize prose, paths, `snake_case`, and `camelCase` identifiers.
 3. Score document content with BM25 (`k1=1.5`, `b=0.75`).
-4. Add explicit path-match and Python AST class/function symbol scores. Apply an
+4. Add explicit path-match, exact filename/rule-identifier, and Python AST class/function symbol
+   scores. Apply an
    implementation-first prior for code-change tasks so repeated assertions do not rank a test
    above the source symbol they exercise.
 5. Build one-hop Python import and source/test counterpart edges, then boost neighbors of the top
@@ -47,9 +48,11 @@ Recall is the fraction of expected files retrieved, not an all-or-nothing per-ca
 recall is a macro-average over cases; MRR uses the first relevant file's rank. Reports record the
 context-file, character, and file-size limits alongside the dataset hash.
 
-Run `make eval` to reproduce the report. The bundled fixture is intentionally small, so a perfect
-score is only a workflow regression signal. Defensible large-repository claims require a separate,
-versioned corpus with real repositories and issue-level ground truth.
+Run `make eval` to reproduce the bundled regression report. Run `make eval-real-retrieval` for the
+separate issue-only diagnostic over the 20 pinned real-defect commits; it uses expected fix paths
+only after ranking for measurement and does not call a model. The bundled fixture and the current
+one-project real corpus are both limited in scope, so neither supports a broad large-repository
+retrieval claim.
 
 ## Known limits
 

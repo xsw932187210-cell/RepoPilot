@@ -16,6 +16,7 @@ from repopilot.graph.builder import TaskCancelled
 from repopilot.llm import MockAgentModel
 from repopilot.models import (
     CodeChangeOutput,
+    FileEdit,
     PlanOutput,
     ReviewOutput,
     SandboxResult,
@@ -99,9 +100,9 @@ class RejectOnceModel(MockAgentModel):
             reviewer_feedback,
         )
         if len(self.coder_contexts) == 1:
-            changes.edits[0].content += (
-                "\n# Marker distinguishes first-pass and retry context sizes.\n"
-            )
+            changes.edits[
+                0
+            ].content += "\n# Marker distinguishes first-pass and retry context sizes.\n"
         return changes
 
     async def review(
@@ -116,29 +117,113 @@ class RejectOnceModel(MockAgentModel):
                 approved=False,
                 summary="Request one bounded retry.",
                 feedback=["Re-check the scoped change."],
-                risk_level="medium",
+                risk_level="low",
             )
         return await super().review(issue_title, diff, test_result)
 
 
 @pytest.mark.asyncio
-async def test_reviewer_feedback_triggers_only_a_bounded_retry(tmp_path: Path) -> None:
+async def test_reviewer_risk_is_escalated_without_speculative_rewrite(tmp_path: Path) -> None:
     model = RejectOnceModel()
     result = await build_graph(dependencies(tmp_path, model), InMemorySaver()).ainvoke(
         graph_input("bounded-retry"),
         config={"configurable": {"thread_id": "bounded-retry"}},
     )
     assert result.get("__interrupt__"), result
+    assert result["iteration"] == 1
+    assert model.review_calls == 1
+    assert len(model.coder_contexts) == 1
+    assert any("return a - b" in content for content in model.coder_contexts[0].files.values())
+    assert result["initial_retrieval"]["evidence"] == model.coder_contexts[0].evidence
+    assert result["initial_retrieval"]["selected_chars"] == model.coder_contexts[0].selected_chars
+    assert result["retrieval_selected_chars"] == model.coder_contexts[0].selected_chars
+    assert result["review"]["approved"] is False
+    assert result["reviewer_feedback"] == ["Re-check the scoped change."]
+    assert sum(metric["node"] == "reviewer" for metric in result["node_metrics"]) == 1
+
+
+class ConcreteRiskModel(RejectOnceModel):
+    async def review(
+        self,
+        issue_title: str,
+        diff: str,
+        test_result: SandboxResult,
+    ) -> ReviewOutput:
+        self.review_calls += 1
+        if self.review_calls == 1:
+            return ReviewOutput(
+                approved=False,
+                summary="A concrete typo is visible in the diff.",
+                feedback=["Remove the concrete typo before approval."],
+                risk_level="medium",
+            )
+        return await MockAgentModel.review(self, issue_title, diff, test_result)
+
+
+@pytest.mark.asyncio
+async def test_concrete_reviewer_risk_gets_one_bounded_remediation(tmp_path: Path) -> None:
+    model = ConcreteRiskModel()
+    result = await build_graph(dependencies(tmp_path, model), InMemorySaver()).ainvoke(
+        graph_input("concrete-review-risk"),
+        config={"configurable": {"thread_id": "concrete-review-risk"}},
+    )
+
+    assert result.get("__interrupt__"), result
     assert result["iteration"] == 2
     assert model.review_calls == 2
     assert len(model.coder_contexts) == 2
-    assert any("return a - b" in content for content in model.coder_contexts[0].files.values())
-    assert any("return a + b" in content for content in model.coder_contexts[1].files.values())
-    assert result["initial_retrieval"]["evidence"] == model.coder_contexts[0].evidence
-    assert result["initial_retrieval"]["selected_chars"] == model.coder_contexts[0].selected_chars
-    assert result["retrieval_selected_chars"] == model.coder_contexts[1].selected_chars
-    assert result["initial_retrieval"]["selected_chars"] != result["retrieval_selected_chars"]
-    assert sum(metric["node"] == "reviewer" for metric in result["node_metrics"]) == 2
+
+
+class PolicyViolationThenFixModel(MockAgentModel):
+    def __init__(self) -> None:
+        self.propose_calls = 0
+        self.feedback: list[list[str]] = []
+
+    async def propose_changes(
+        self,
+        issue_title: str,
+        issue_body: str,
+        plan: PlanOutput,
+        context: RepositoryContext,
+        reviewer_feedback: list[str],
+    ) -> CodeChangeOutput:
+        self.propose_calls += 1
+        self.feedback.append(list(reviewer_feedback))
+        assert any("return a - b" in content for content in context.files.values())
+        changes = await super().propose_changes(
+            issue_title, issue_body, plan, context, reviewer_feedback
+        )
+        if self.propose_calls == 1:
+            readonly_test = next(path for path in context.files if path.startswith("tests/"))
+            assert readonly_test not in (context.editable_paths or ())
+            changes.edits.append(
+                FileEdit(
+                    path=readonly_test,
+                    content=f"{context.files[readonly_test]}\n# invalid test rewrite\n",
+                    reason="invalid",
+                )
+            )
+        return changes
+
+
+@pytest.mark.asyncio
+async def test_tool_policy_rejection_gets_one_atomic_coder_retry(tmp_path: Path) -> None:
+    model = PolicyViolationThenFixModel()
+    result = await build_graph(dependencies(tmp_path, model), InMemorySaver()).ainvoke(
+        graph_input("policy-retry"),
+        config={"configurable": {"thread_id": "policy-retry"}},
+    )
+
+    assert result.get("__interrupt__"), result
+    assert result["iteration"] == 1
+    assert result["policy_retry_count"] == 1
+    assert model.propose_calls == 2
+    assert any("Tool policy rejected" in item for item in model.feedback[1])
+    workspace = tmp_path / "workspaces" / "policy-retry"
+    assert "return a + b" in (workspace / "calculator.py").read_text(encoding="utf-8")
+    assert "invalid test rewrite" not in (
+        workspace / "tests" / "test_calculator.py"
+    ).read_text(encoding="utf-8")
 
 
 class MemoryRedis:
@@ -235,6 +320,13 @@ async def test_local_sandbox_converts_timeout_to_evidence(
 
 
 class FakeContainer:
+    def put_archive(self, path: str, data: object) -> bool:
+        del path, data
+        return True
+
+    def start(self) -> None:
+        pass
+
     def wait(self, timeout: int) -> dict[str, int]:
         del timeout
         return {"StatusCode": 0}
@@ -251,7 +343,7 @@ class FakeContainers:
     def __init__(self) -> None:
         self.kwargs: dict[str, object] = {}
 
-    def run(self, **kwargs: object) -> FakeContainer:
+    def create(self, **kwargs: object) -> FakeContainer:
         self.kwargs = kwargs
         return FakeContainer()
 

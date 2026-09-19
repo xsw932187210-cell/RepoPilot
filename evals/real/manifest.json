@@ -1,0 +1,1117 @@
+{
+  "schema_version": 1,
+  "environment": {
+    "image": "python:3.8-slim@sha256:1d52838af602b4b5a831beb13a0e4d073280665ea7be7f69ce2382f29c5a613f",
+    "install_argv": [
+      [
+        "python",
+        "-m",
+        "pip",
+        "install",
+        "pip==23.0.1",
+        "setuptools==68.2.2",
+        "wheel==0.41.3"
+      ],
+      [
+        "python",
+        "-m",
+        "pip",
+        "install",
+        "psutil==5.9.8",
+        "colorama==0.4.6",
+        "six==1.16.0",
+        "decorator==4.4.2",
+        "pyte==0.8.2",
+        "pytest==6.2.5",
+        "pytest-mock==3.6.1",
+        "mock==4.0.3"
+      ]
+    ],
+    "pythonpath": "/workspace",
+    "compatibility": "evals/runtime/sitecustomize.py supplies the removed pytest Node.get_marker API by delegating to get_closest_marker; it is applied identically to buggy, fixed, and candidate runs."
+  },
+  "tasks": [
+    {
+      "id": "thefuck-001",
+      "project": "thefuck",
+      "corpus": {
+        "name": "BugsInPy",
+        "url": "https://github.com/soarsmu/BugsInPy",
+        "revision": "11c5f1eea954a42132cfd06bf257766a7963e0fd",
+        "case": "thefuck/1"
+      },
+      "source": {
+        "repository_url": "https://github.com/nvbn/thefuck",
+        "buggy_commit": "2ced7a7f33ae0bec3ffc7a43ce95330bdf6cfcb9",
+        "fixed_commit": "444908ce1c17767ef4aaf9e0b4950497914f7f63",
+        "license_spdx": "MIT",
+        "license_file": "LICENSE.md"
+      },
+      "python_version": "3.8",
+      "issue": {
+        "title": "Support punctuation in pip command suggestions",
+        "body": "The pip_unknown_command rule fails when a misspelled command contains punctuation such as '+'. It should return the suggested correction for quoted pip command names instead of raising or missing the replacement."
+      },
+      "test": {
+        "hidden_overlay": [
+          {
+            "source": "overlays/thefuck-001/tests/rules/test_pip_unknown_command.py",
+            "destination": "tests/rules/test_pip_unknown_command.py",
+            "sha256": "4365ddcc8e2600fcb2e7337eb954c5abab3e51647fb267f0afe351eca6b8f8af",
+            "replaces_sha256": "46cccea4ad02c4f50a688bc76f4cfe678e8c08f459cb697634391c2c016f4455"
+          }
+        ],
+        "acceptance_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/rules/test_pip_unknown_command.py::test_get_new_command"
+        ],
+        "visible_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/rules/test_cd_mkdir.py"
+        ]
+      },
+      "expected_fix_files": [
+        "thefuck/rules/pip_unknown_command.py"
+      ],
+      "verification": {
+        "status": "assembled",
+        "details": "Metadata and fixed-version test overlay were checked against the pinned official corpus. Docker buggy/fixed reproduction is not yet recorded."
+      },
+      "fingerprint": "4c1910119136607df6c9cd53b99da4ac1c5e7e23b113b2a346f3321b027d48d0"
+    },
+    {
+      "id": "thefuck-002",
+      "project": "thefuck",
+      "corpus": {
+        "name": "BugsInPy",
+        "url": "https://github.com/soarsmu/BugsInPy",
+        "revision": "11c5f1eea954a42132cfd06bf257766a7963e0fd",
+        "case": "thefuck/2"
+      },
+      "source": {
+        "repository_url": "https://github.com/nvbn/thefuck",
+        "buggy_commit": "40ab4eb62db57627bff10cf029d29c94704086a2",
+        "fixed_commit": "78ef9eec88f43d5727986be2237f6e0e250cbbbc",
+        "license_spdx": "MIT",
+        "license_file": "LICENSE.md"
+      },
+      "python_version": "3.8",
+      "issue": {
+        "title": "Honor the platform PATH separator",
+        "body": "Executable discovery assumes ':' separates PATH entries. On platforms that use another separator, each directory must still be inspected independently."
+      },
+      "test": {
+        "hidden_overlay": [
+          {
+            "source": "overlays/thefuck-002/tests/test_utils.py",
+            "destination": "tests/test_utils.py",
+            "sha256": "5398f82f3da7f53a1143310e66710bba7539bc8667d7bf33c8b14aa8c370535b",
+            "replaces_sha256": "462939aa4296212961be811a1358fd6eb075c93a353254e47c0313e8be7b9b91"
+          }
+        ],
+        "acceptance_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/test_utils.py::test_get_all_executables_pathsep"
+        ],
+        "visible_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/rules/test_cd_mkdir.py"
+        ]
+      },
+      "expected_fix_files": [
+        "thefuck/utils.py"
+      ],
+      "verification": {
+        "status": "assembled",
+        "details": "Metadata and fixed-version test overlay were checked against the pinned official corpus. Docker buggy/fixed reproduction is not yet recorded."
+      },
+      "fingerprint": "940f889173954e9bec5607cf81aef7664847571768fad85b6240a61124c1a71c"
+    },
+    {
+      "id": "thefuck-005",
+      "project": "thefuck",
+      "corpus": {
+        "name": "BugsInPy",
+        "url": "https://github.com/soarsmu/BugsInPy",
+        "revision": "11c5f1eea954a42132cfd06bf257766a7963e0fd",
+        "case": "thefuck/5"
+      },
+      "source": {
+        "repository_url": "https://github.com/nvbn/thefuck",
+        "buggy_commit": "7c858fadb3458be829d3d43666ccb46c3ed5b8a0",
+        "fixed_commit": "c205683a8df8a57e2db1e9816a5a7ce3255b08fc",
+        "license_spdx": "MIT",
+        "license_file": "LICENSE.md"
+      },
+      "python_version": "3.8",
+      "issue": {
+        "title": "Avoid git_push false positives from branch text",
+        "body": "A successful push can mention a branch or URL containing 'set-upstream'. That output must not make the git_push rule report a missing-upstream failure."
+      },
+      "test": {
+        "hidden_overlay": [
+          {
+            "source": "overlays/thefuck-005/tests/rules/test_git_push.py",
+            "destination": "tests/rules/test_git_push.py",
+            "sha256": "ff4aaaceeeb8d770ccc3fe06bf85ec65bbf8bd2352aa9dc2b95fff6b9c8492f0",
+            "replaces_sha256": "94f5fff4cb6bea2aa631addc47417b067d2d393d9000354619f4d548c22c6116"
+          }
+        ],
+        "acceptance_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/rules/test_git_push.py::test_match_bitbucket"
+        ],
+        "visible_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/rules/test_cd_mkdir.py"
+        ]
+      },
+      "expected_fix_files": [
+        "thefuck/rules/git_push.py"
+      ],
+      "verification": {
+        "status": "assembled",
+        "details": "Metadata and fixed-version test overlay were checked against the pinned official corpus. Docker buggy/fixed reproduction is not yet recorded."
+      },
+      "fingerprint": "b9962dc2d339c765a3807aaa2ddb5eadf85e8e055718ad7ac44f5fb85aa7e812"
+    },
+    {
+      "id": "thefuck-006",
+      "project": "thefuck",
+      "corpus": {
+        "name": "BugsInPy",
+        "url": "https://github.com/soarsmu/BugsInPy",
+        "revision": "11c5f1eea954a42132cfd06bf257766a7963e0fd",
+        "case": "thefuck/6"
+      },
+      "source": {
+        "repository_url": "https://github.com/nvbn/thefuck",
+        "buggy_commit": "797ca1c5647c565f62e21a8e29515c8b0fbe275f",
+        "fixed_commit": "7c858fadb3458be829d3d43666ccb46c3ed5b8a0",
+        "license_spdx": "MIT",
+        "license_file": "LICENSE.md"
+      },
+      "python_version": "3.8",
+      "issue": {
+        "title": "Handle apostrophes in existing Git branch names",
+        "body": "When Git reports that a branch whose name contains an apostrophe already exists, the rule should match and generate valid correction choices without truncating the branch name."
+      },
+      "test": {
+        "hidden_overlay": [
+          {
+            "source": "overlays/thefuck-006/tests/rules/test_git_branch_exists.py",
+            "destination": "tests/rules/test_git_branch_exists.py",
+            "sha256": "0acc278fddf8ee5362b7c9a04cfa21808c4321086f0658db43aebb705e8fa204",
+            "replaces_sha256": "0b4088d9d876f2feaf8d408f812b1de8d398de5b0a45b4e997c4f51c0a040d6d"
+          }
+        ],
+        "acceptance_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/rules/test_git_branch_exists.py::test_get_new_command"
+        ],
+        "visible_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/rules/test_cd_mkdir.py"
+        ]
+      },
+      "expected_fix_files": [
+        "thefuck/rules/git_branch_exists.py"
+      ],
+      "verification": {
+        "status": "assembled",
+        "details": "Metadata and fixed-version test overlay were checked against the pinned official corpus. Docker buggy/fixed reproduction is not yet recorded."
+      },
+      "fingerprint": "636180f47d22128c6c13b422dc707c3b19219485bd8ae7b4ed75e7ad521656bf"
+    },
+    {
+      "id": "thefuck-007",
+      "project": "thefuck",
+      "corpus": {
+        "name": "BugsInPy",
+        "url": "https://github.com/soarsmu/BugsInPy",
+        "revision": "11c5f1eea954a42132cfd06bf257766a7963e0fd",
+        "case": "thefuck/7"
+      },
+      "source": {
+        "repository_url": "https://github.com/nvbn/thefuck",
+        "buggy_commit": "64d6835e15a22cf8803d398cbb593f748c550e8a",
+        "fixed_commit": "75d2c43997ca703150cbdb4c46ed7b2e2e71fd11",
+        "license_spdx": "MIT",
+        "license_file": "LICENSE.md"
+      },
+      "python_version": "3.8",
+      "issue": {
+        "title": "Recognize php -s after other options",
+        "body": "The php_s rule only recognizes '-s' in one command position. It should match the lowercase server flag when valid PHP options appear before it and preserve the rest of the command."
+      },
+      "test": {
+        "hidden_overlay": [
+          {
+            "source": "overlays/thefuck-007/tests/rules/test_php_s.py",
+            "destination": "tests/rules/test_php_s.py",
+            "sha256": "9936616e5b1213084a05ccaa3d32a7c2a2198d385e2767f11e38366e21d0d4d1",
+            "replaces_sha256": "06f429d39337eb07c70de0b8cb5985fea3f33bf0da0e3cf7df67247082d884f6"
+          }
+        ],
+        "acceptance_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/rules/test_php_s.py::test_match"
+        ],
+        "visible_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/rules/test_cd_mkdir.py"
+        ]
+      },
+      "expected_fix_files": [
+        "thefuck/rules/php_s.py"
+      ],
+      "verification": {
+        "status": "assembled",
+        "details": "Metadata and fixed-version test overlay were checked against the pinned official corpus. Docker buggy/fixed reproduction is not yet recorded."
+      },
+      "fingerprint": "ac3da6469410182297632bb88b60227406f0655c3f8e39e3224b0cca4ee8e3cd"
+    },
+    {
+      "id": "thefuck-009",
+      "project": "thefuck",
+      "corpus": {
+        "name": "BugsInPy",
+        "url": "https://github.com/soarsmu/BugsInPy",
+        "revision": "11c5f1eea954a42132cfd06bf257766a7963e0fd",
+        "case": "thefuck/9"
+      },
+      "source": {
+        "repository_url": "https://github.com/nvbn/thefuck",
+        "buggy_commit": "ce6b82c92d78ae283cb3db001766b76f6647bc47",
+        "fixed_commit": "feb36ede5c518fdc3b6eddf945b2d8b1e2294d15",
+        "license_spdx": "MIT",
+        "license_file": "LICENSE.md"
+      },
+      "python_version": "3.8",
+      "issue": {
+        "title": "Do not crash on git push -u without an argument",
+        "body": "Generating a correction for 'git push -u' raises an indexing error because the short upstream option has no following branch argument. Return the upstream command suggested by Git."
+      },
+      "test": {
+        "hidden_overlay": [
+          {
+            "source": "overlays/thefuck-009/tests/rules/test_git_push.py",
+            "destination": "tests/rules/test_git_push.py",
+            "sha256": "cba367bcf88dc0433d190bad5e9149acced2bf5c67fbad7ed442bbd2988f7e6b",
+            "replaces_sha256": "a524f3bfd62d76889522457d1fe6197a312db13d553403d7ea92f5aae09d3b1c"
+          }
+        ],
+        "acceptance_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/rules/test_git_push.py::test_get_new_command"
+        ],
+        "visible_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/rules/test_cd_mkdir.py"
+        ]
+      },
+      "expected_fix_files": [
+        "thefuck/rules/git_push.py"
+      ],
+      "verification": {
+        "status": "assembled",
+        "details": "Metadata and fixed-version test overlay were checked against the pinned official corpus. Docker buggy/fixed reproduction is not yet recorded."
+      },
+      "fingerprint": "16112b29cf45c307bb86095b81a564b34e21529c90f5ba692e4e31b115abe1d2"
+    },
+    {
+      "id": "thefuck-010",
+      "project": "thefuck",
+      "corpus": {
+        "name": "BugsInPy",
+        "url": "https://github.com/soarsmu/BugsInPy",
+        "revision": "11c5f1eea954a42132cfd06bf257766a7963e0fd",
+        "case": "thefuck/10"
+      },
+      "source": {
+        "repository_url": "https://github.com/nvbn/thefuck",
+        "buggy_commit": "8bd6c5da67e55c64257345efa4e3cc454c42475c",
+        "fixed_commit": "0c84eefa55fc1b4bc4940b41d74568884344e35c",
+        "license_spdx": "MIT",
+        "license_file": "LICENSE.md"
+      },
+      "python_version": "3.8",
+      "issue": {
+        "title": "Do not suggest nonexistent manual sections",
+        "body": "When man explicitly reports that no manual entry exists, the rule should suggest the program's help command only. Otherwise manual-section corrections should precede that fallback."
+      },
+      "test": {
+        "hidden_overlay": [
+          {
+            "source": "overlays/thefuck-010/tests/rules/test_man.py",
+            "destination": "tests/rules/test_man.py",
+            "sha256": "8dbf7b466b58a20afe9dc983fa2debe7f2d4a290c325cdd04b0daa35393ece5e",
+            "replaces_sha256": "833384e952ffefc1af4caf6ad5f1004623e8edc58d61825f0a096de95432bd6f"
+          }
+        ],
+        "acceptance_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/rules/test_man.py::test_get_new_command"
+        ],
+        "visible_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/rules/test_cd_mkdir.py"
+        ]
+      },
+      "expected_fix_files": [
+        "thefuck/rules/man.py"
+      ],
+      "verification": {
+        "status": "assembled",
+        "details": "Metadata and fixed-version test overlay were checked against the pinned official corpus. Docker buggy/fixed reproduction is not yet recorded."
+      },
+      "fingerprint": "8d4e0a6f15da0538ba5c92c04ee14e033aa0d0dbfc772f6d43d7634000449e19"
+    },
+    {
+      "id": "thefuck-011",
+      "project": "thefuck",
+      "corpus": {
+        "name": "BugsInPy",
+        "url": "https://github.com/soarsmu/BugsInPy",
+        "revision": "11c5f1eea954a42132cfd06bf257766a7963e0fd",
+        "case": "thefuck/11"
+      },
+      "source": {
+        "repository_url": "https://github.com/nvbn/thefuck",
+        "buggy_commit": "92f3c8fb52b32b79005b4864c31a5c2d8c45f4b1",
+        "fixed_commit": "db7dffdb44ae5c7be8de088765463fbda96197d1",
+        "license_spdx": "MIT",
+        "license_file": "LICENSE.md"
+      },
+      "python_version": "3.8",
+      "issue": {
+        "title": "Avoid duplicated explicit Git upstream arguments",
+        "body": "When git push already includes -u/--set-upstream and its remote, the correction repeats those arguments. The result should contain them once while retaining unrelated flags."
+      },
+      "test": {
+        "hidden_overlay": [
+          {
+            "source": "overlays/thefuck-011/tests/rules/test_git_push.py",
+            "destination": "tests/rules/test_git_push.py",
+            "sha256": "a524f3bfd62d76889522457d1fe6197a312db13d553403d7ea92f5aae09d3b1c",
+            "replaces_sha256": "cb903660a43ed6222d9b774e7ff44be832da5ca87ed808a87e94b810ee18db11"
+          }
+        ],
+        "acceptance_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/rules/test_git_push.py::test_get_new_command"
+        ],
+        "visible_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/rules/test_cd_mkdir.py"
+        ]
+      },
+      "expected_fix_files": [
+        "thefuck/rules/git_push.py"
+      ],
+      "verification": {
+        "status": "assembled",
+        "details": "Metadata and fixed-version test overlay were checked against the pinned official corpus. Docker buggy/fixed reproduction is not yet recorded."
+      },
+      "fingerprint": "52c668811915ec66d4fab3ea26018934924a2ad86b0ecf535abc2d64716d5b70"
+    },
+    {
+      "id": "thefuck-012",
+      "project": "thefuck",
+      "corpus": {
+        "name": "BugsInPy",
+        "url": "https://github.com/soarsmu/BugsInPy",
+        "revision": "11c5f1eea954a42132cfd06bf257766a7963e0fd",
+        "case": "thefuck/12"
+      },
+      "source": {
+        "repository_url": "https://github.com/nvbn/thefuck",
+        "buggy_commit": "4c2fc490f280ca3921785d8f58a37274ced35ce6",
+        "fixed_commit": "ca787a1cba3cc9b26b43919c5e60acb40ebcd919",
+        "license_spdx": "MIT",
+        "license_file": "LICENSE.md"
+      },
+      "python_version": "3.8",
+      "issue": {
+        "title": "Ignore not-found text for installed commands",
+        "body": "The no_command rule can activate when stderr contains 'not found' even though the executable exists. It must only match genuinely unavailable commands."
+      },
+      "test": {
+        "hidden_overlay": [
+          {
+            "source": "overlays/thefuck-012/tests/rules/test_no_command.py",
+            "destination": "tests/rules/test_no_command.py",
+            "sha256": "c88233915484b60a66cced6e68c3aa8ee65f4d07f9fb84c0c95ca4c959e7cc5c",
+            "replaces_sha256": "207cf9dffcfa2795180aa81b1b2e83e1acfc39df40eba403ad85961024a8e23c"
+          }
+        ],
+        "acceptance_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/rules/test_no_command.py::test_not_match",
+          "tests/rules/test_no_command.py::test_match"
+        ],
+        "visible_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/rules/test_cd_mkdir.py"
+        ]
+      },
+      "expected_fix_files": [
+        "thefuck/rules/no_command.py"
+      ],
+      "verification": {
+        "status": "assembled",
+        "details": "Metadata and fixed-version test overlay were checked against the pinned official corpus. Docker buggy/fixed reproduction is not yet recorded."
+      },
+      "fingerprint": "2dfdb597f21b4dea7391febe5c9602f9eac52f2f52b83104825263bd3002af31"
+    },
+    {
+      "id": "thefuck-013",
+      "project": "thefuck",
+      "corpus": {
+        "name": "BugsInPy",
+        "url": "https://github.com/soarsmu/BugsInPy",
+        "revision": "11c5f1eea954a42132cfd06bf257766a7963e0fd",
+        "case": "thefuck/13"
+      },
+      "source": {
+        "repository_url": "https://github.com/nvbn/thefuck",
+        "buggy_commit": "2af65071d84a7d1d14a4126364d9b4c9b5241f3c",
+        "fixed_commit": "237bc579994de633fe104714156ddfa925a50b6e",
+        "license_spdx": "MIT",
+        "license_file": "LICENSE.md"
+      },
+      "python_version": "3.8",
+      "issue": {
+        "title": "Support checkout when a Git branch already exists",
+        "body": "Git emits the same branch-already-exists failure for checkout-based branch creation. The rule should match that form and offer corresponding corrections."
+      },
+      "test": {
+        "hidden_overlay": [
+          {
+            "source": "overlays/thefuck-013/tests/rules/test_git_branch_exists.py",
+            "destination": "tests/rules/test_git_branch_exists.py",
+            "sha256": "1b53b9affaddf0c9b961ea04f6a4b8bb41fd0979e28000d279003d4ddac28aa1",
+            "replaces_sha256": "c1275dd0c926f0538a403fb6d4ee6a1fdaf713255752c48d63480f22da6f7a9d"
+          }
+        ],
+        "acceptance_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/rules/test_git_branch_exists.py::test_match",
+          "tests/rules/test_git_branch_exists.py::test_get_new_command"
+        ],
+        "visible_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/rules/test_cd_mkdir.py"
+        ]
+      },
+      "expected_fix_files": [
+        "thefuck/rules/git_branch_exists.py"
+      ],
+      "verification": {
+        "status": "assembled",
+        "details": "Metadata and fixed-version test overlay were checked against the pinned official corpus. Docker buggy/fixed reproduction is not yet recorded."
+      },
+      "fingerprint": "eb90d7698c7b8ca13ad3701af1357079a616aa8ecce1f4e12a2d9abc07842840"
+    },
+    {
+      "id": "thefuck-015",
+      "project": "thefuck",
+      "corpus": {
+        "name": "BugsInPy",
+        "url": "https://github.com/soarsmu/BugsInPy",
+        "revision": "11c5f1eea954a42132cfd06bf257766a7963e0fd",
+        "case": "thefuck/15"
+      },
+      "source": {
+        "repository_url": "https://github.com/nvbn/thefuck",
+        "buggy_commit": "3a39deb485995e67afb1919972cd1c9aaedf4c32",
+        "fixed_commit": "41707b80c61acadb7c87b0efcbf10f4186dc5937",
+        "license_spdx": "MIT",
+        "license_file": "LICENSE.md"
+      },
+      "python_version": "3.8",
+      "issue": {
+        "title": "Match current Git pathspec errors",
+        "body": "Newer Git versions omit the old explanatory suffix from pathspec errors. The git_add rule should still recognize the failure and produce its correction."
+      },
+      "test": {
+        "hidden_overlay": [
+          {
+            "source": "overlays/thefuck-015/tests/rules/test_git_add.py",
+            "destination": "tests/rules/test_git_add.py",
+            "sha256": "8e16f9ec28a62f8e260aff3889f69d7f863ad2c8294883364c71c04e6fcc0bc2",
+            "replaces_sha256": "77ecf69aa2070415b46029d2623aaa1fa946c4d9d047728146a3b2dcfbee28cb"
+          }
+        ],
+        "acceptance_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/rules/test_git_add.py::test_match"
+        ],
+        "visible_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/rules/test_cd_mkdir.py"
+        ]
+      },
+      "expected_fix_files": [
+        "thefuck/rules/git_add.py"
+      ],
+      "verification": {
+        "status": "assembled",
+        "details": "Metadata and fixed-version test overlay were checked against the pinned official corpus. Docker buggy/fixed reproduction is not yet recorded."
+      },
+      "fingerprint": "d002ddedb94c3af3a7ce3ecb1be0702c8bab1c17fc40f98182b9ce7e7a63e5c8"
+    },
+    {
+      "id": "thefuck-018",
+      "project": "thefuck",
+      "corpus": {
+        "name": "BugsInPy",
+        "url": "https://github.com/soarsmu/BugsInPy",
+        "revision": "11c5f1eea954a42132cfd06bf257766a7963e0fd",
+        "case": "thefuck/18"
+      },
+      "source": {
+        "repository_url": "https://github.com/nvbn/thefuck",
+        "buggy_commit": "b65a9a0a4fd9bef394b45a1d367d29aa1e1c403e",
+        "fixed_commit": "c3b1ba763708b8faaaf55717c436c4cd4c57a7ea",
+        "license_spdx": "MIT",
+        "license_file": "LICENSE.md"
+      },
+      "python_version": "3.8",
+      "issue": {
+        "title": "Prevent duplicate sudo suggestions",
+        "body": "The sudo rule must not match permission-denied output when the original command already starts with sudo, otherwise it suggests an invalid duplicate prefix."
+      },
+      "test": {
+        "hidden_overlay": [
+          {
+            "source": "overlays/thefuck-018/tests/rules/test_sudo.py",
+            "destination": "tests/rules/test_sudo.py",
+            "sha256": "d2666ef059d14c359f136b92646abc8c2ff7f268016e6ecb56648e2dd566b9f6",
+            "replaces_sha256": "23e11c089e8c5add32fc368be24a3de46b4bfc8bf8e84c93ba33d7ba8c3c7cf4"
+          }
+        ],
+        "acceptance_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/rules/test_sudo.py::test_not_match"
+        ],
+        "visible_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/rules/test_cd_mkdir.py"
+        ]
+      },
+      "expected_fix_files": [
+        "thefuck/rules/sudo.py"
+      ],
+      "verification": {
+        "status": "assembled",
+        "details": "Metadata and fixed-version test overlay were checked against the pinned official corpus. Docker buggy/fixed reproduction is not yet recorded."
+      },
+      "fingerprint": "a42749fb5472d693ec1ab22ef94f6ea8cd72838171e4409dd90f7f44755c1d4d"
+    },
+    {
+      "id": "thefuck-019",
+      "project": "thefuck",
+      "corpus": {
+        "name": "BugsInPy",
+        "url": "https://github.com/soarsmu/BugsInPy",
+        "revision": "11c5f1eea954a42132cfd06bf257766a7963e0fd",
+        "case": "thefuck/19"
+      },
+      "source": {
+        "repository_url": "https://github.com/nvbn/thefuck",
+        "buggy_commit": "959b96cf6ec8cedda05dc58efe0e0f3bd6ed2f4e",
+        "fixed_commit": "dc23d67a42dad54308a753639edd1ea0d15cb2e7",
+        "license_spdx": "MIT",
+        "license_file": "LICENSE.md"
+      },
+      "python_version": "3.8",
+      "issue": {
+        "title": "Use a lease-protected forced-push correction",
+        "body": "The git_push_force rule currently proposes an unconditional forced push. It should propose Git's safer lease-protected force mode and preserve remote and branch arguments."
+      },
+      "test": {
+        "hidden_overlay": [
+          {
+            "source": "overlays/thefuck-019/tests/rules/test_git_push_force.py",
+            "destination": "tests/rules/test_git_push_force.py",
+            "sha256": "30d3b6d00934930314ce3dc7855d9eaeb21fd2b8af644da3dbff46c6555415b6",
+            "replaces_sha256": "de93f0ef0f3cc3bfda2c0889d0653b532d80920694bd5529b0b4365fc31eb7c5"
+          }
+        ],
+        "acceptance_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/rules/test_git_push_force.py::test_get_new_command"
+        ],
+        "visible_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/rules/test_cd_mkdir.py"
+        ]
+      },
+      "expected_fix_files": [
+        "thefuck/rules/git_push_force.py"
+      ],
+      "verification": {
+        "status": "assembled",
+        "details": "Metadata and fixed-version test overlay were checked against the pinned official corpus. Docker buggy/fixed reproduction is not yet recorded."
+      },
+      "fingerprint": "49fbdd855688a8f2beeabf434051aa5f73a8173fd4e85096a624c19d496c2f29"
+    },
+    {
+      "id": "thefuck-021",
+      "project": "thefuck",
+      "corpus": {
+        "name": "BugsInPy",
+        "url": "https://github.com/soarsmu/BugsInPy",
+        "revision": "11c5f1eea954a42132cfd06bf257766a7963e0fd",
+        "case": "thefuck/21"
+      },
+      "source": {
+        "repository_url": "https://github.com/nvbn/thefuck",
+        "buggy_commit": "71dc2666ccf62e653291d9a7a08e2c6c3320425b",
+        "fixed_commit": "213791d3c2af379ffa37a140735998736b41912e",
+        "license_spdx": "MIT",
+        "license_file": "LICENSE.md"
+      },
+      "python_version": "3.8",
+      "issue": {
+        "title": "Handle bare git in the stash rule",
+        "body": "The git_fix_stash matcher raises an indexing error for a bare 'git' command with usage output. It should safely decline when no subcommand is present."
+      },
+      "test": {
+        "hidden_overlay": [
+          {
+            "source": "overlays/thefuck-021/tests/rules/test_git_fix_stash.py",
+            "destination": "tests/rules/test_git_fix_stash.py",
+            "sha256": "aab0c6f8ff69d9cfed8c6ee673011d6fd8c5fdc62aa99ed302b75fecf5695815",
+            "replaces_sha256": "5216803493132f084cfbfccde33e704b675fe9216fd4661469e1cc41d9693f7d"
+          }
+        ],
+        "acceptance_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/rules/test_git_fix_stash.py::test_not_match"
+        ],
+        "visible_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/rules/test_cd_mkdir.py"
+        ]
+      },
+      "expected_fix_files": [
+        "thefuck/rules/git_fix_stash.py"
+      ],
+      "verification": {
+        "status": "assembled",
+        "details": "Metadata and fixed-version test overlay were checked against the pinned official corpus. Docker buggy/fixed reproduction is not yet recorded."
+      },
+      "fingerprint": "42c42b1f8e0d5e8b9f7e6adf70496300af424465ad648a4ce87c92e8f5219dad"
+    },
+    {
+      "id": "thefuck-022",
+      "project": "thefuck",
+      "corpus": {
+        "name": "BugsInPy",
+        "url": "https://github.com/soarsmu/BugsInPy",
+        "revision": "11c5f1eea954a42132cfd06bf257766a7963e0fd",
+        "case": "thefuck/22"
+      },
+      "source": {
+        "repository_url": "https://github.com/nvbn/thefuck",
+        "buggy_commit": "faa7ee603057fa98c25507d30180c055d10d13d4",
+        "fixed_commit": "e2e8b6fc865452b4cfc1bed70e5b9b49807258ae",
+        "license_spdx": "MIT",
+        "license_file": "LICENSE.md"
+      },
+      "python_version": "3.8",
+      "issue": {
+        "title": "Allow an empty corrected-command sequence",
+        "body": "Realizing SortedCorrectedCommandsSequence with an empty generator raises an indexing error. Iterating it should simply return no corrections."
+      },
+      "test": {
+        "hidden_overlay": [
+          {
+            "source": "overlays/thefuck-022/tests/test_types.py",
+            "destination": "tests/test_types.py",
+            "sha256": "b34f2b9729d6722ef4491d035401c1ed5e3ca60db0cbcd22fd677a597d818b1c",
+            "replaces_sha256": "429813af9a7d9c1eb257bcafe27a5dbf7c23032934164424ba003bced3727a44"
+          }
+        ],
+        "acceptance_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/test_types.py::TestSortedCorrectedCommandsSequence::test_with_blank"
+        ],
+        "visible_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/rules/test_cd_mkdir.py"
+        ]
+      },
+      "expected_fix_files": [
+        "thefuck/types.py"
+      ],
+      "verification": {
+        "status": "assembled",
+        "details": "Metadata and fixed-version test overlay were checked against the pinned official corpus. Docker buggy/fixed reproduction is not yet recorded."
+      },
+      "fingerprint": "0661af6b8f39c5411b08612b93ab6ce16aa7c3fbba05390439354876982f3080"
+    },
+    {
+      "id": "thefuck-025",
+      "project": "thefuck",
+      "corpus": {
+        "name": "BugsInPy",
+        "url": "https://github.com/soarsmu/BugsInPy",
+        "revision": "11c5f1eea954a42132cfd06bf257766a7963e0fd",
+        "case": "thefuck/25"
+      },
+      "source": {
+        "repository_url": "https://github.com/nvbn/thefuck",
+        "buggy_commit": "42a8b4f639269886e468762e6d100b6f01aad8ab",
+        "fixed_commit": "298c04f89c081dc16c8653aa017ca85dd14bfad6",
+        "license_spdx": "MIT",
+        "license_file": "LICENSE.md"
+      },
+      "python_version": "3.8",
+      "issue": {
+        "title": "Support nested mkdir inside HDFS commands",
+        "body": "The mkdir_p correction only works when mkdir is the first token. It should add the parent flag to mkdir embedded in hdfs dfs commands without altering their prefix."
+      },
+      "test": {
+        "hidden_overlay": [
+          {
+            "source": "overlays/thefuck-025/tests/rules/test_mkdir_p.py",
+            "destination": "tests/rules/test_mkdir_p.py",
+            "sha256": "e82cb7352cd83e0027d981f31222c502090b1048ba8f726249ea5311ecf7d415",
+            "replaces_sha256": "530b5cc1de14ba66ac59b1085895cbb84932d9a04b50630b411f1d797cbbe104"
+          }
+        ],
+        "acceptance_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/rules/test_mkdir_p.py::test_get_new_command"
+        ],
+        "visible_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/rules/test_cd_mkdir.py"
+        ]
+      },
+      "expected_fix_files": [
+        "thefuck/rules/mkdir_p.py"
+      ],
+      "verification": {
+        "status": "assembled",
+        "details": "Metadata and fixed-version test overlay were checked against the pinned official corpus. Docker buggy/fixed reproduction is not yet recorded."
+      },
+      "fingerprint": "3b09492f44869cff3204a866cf24576ee4c03fd137016e94e8efb1f73fbeb92a"
+    },
+    {
+      "id": "thefuck-026",
+      "project": "thefuck",
+      "corpus": {
+        "name": "BugsInPy",
+        "url": "https://github.com/soarsmu/BugsInPy",
+        "revision": "11c5f1eea954a42132cfd06bf257766a7963e0fd",
+        "case": "thefuck/26"
+      },
+      "source": {
+        "repository_url": "https://github.com/nvbn/thefuck",
+        "buggy_commit": "7cb0388ed0845545e878b29783bbf8e901a02745",
+        "fixed_commit": "feb3eee2a08f0cba4552373d728509bc90b561ab",
+        "license_spdx": "MIT",
+        "license_file": "LICENSE.md"
+      },
+      "python_version": "3.8",
+      "issue": {
+        "title": "Generate valid vagrant up choices",
+        "body": "Without a machine name the correction includes an extra space. With a name, it should offer starting that machine or all machines before retrying."
+      },
+      "test": {
+        "hidden_overlay": [
+          {
+            "source": "overlays/thefuck-026/tests/rules/test_vagrant_up.py",
+            "destination": "tests/rules/test_vagrant_up.py",
+            "sha256": "3e53f49937b2e762739c9c92e15c987a45cd0fe0971f9ee99ce74bd8d79ba1f0",
+            "replaces_sha256": "bddeab2343558ab68af257a0810634538ea5d7b134b64adbac4665238e6bf6f8"
+          }
+        ],
+        "acceptance_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/rules/test_vagrant_up.py::test_get_new_command"
+        ],
+        "visible_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/rules/test_cd_mkdir.py"
+        ]
+      },
+      "expected_fix_files": [
+        "thefuck/rules/vagrant_up.py"
+      ],
+      "verification": {
+        "status": "assembled",
+        "details": "Metadata and fixed-version test overlay were checked against the pinned official corpus. Docker buggy/fixed reproduction is not yet recorded."
+      },
+      "fingerprint": "0262bf5fe0236249f2e73e34fb275504c046612112b4c6d7472abf3527051eb8"
+    },
+    {
+      "id": "thefuck-027",
+      "project": "thefuck",
+      "corpus": {
+        "name": "BugsInPy",
+        "url": "https://github.com/soarsmu/BugsInPy",
+        "revision": "11c5f1eea954a42132cfd06bf257766a7963e0fd",
+        "case": "thefuck/27"
+      },
+      "source": {
+        "repository_url": "https://github.com/nvbn/thefuck",
+        "buggy_commit": "bc6b107066d3f1e60b4cfcaa8cf6399e98cf1b1c",
+        "fixed_commit": "1becd92b126a368d6e7d93aa8eea209414ce4aa2",
+        "license_spdx": "MIT",
+        "license_file": "LICENSE.md"
+      },
+      "python_version": "3.8",
+      "issue": {
+        "title": "Preserve Linux opener commands",
+        "body": "The open rule recognizes xdg-open, gnome-open, and kde-open but rewrites every correction as macOS open. Add the URL scheme while preserving the opener."
+      },
+      "test": {
+        "hidden_overlay": [
+          {
+            "source": "overlays/thefuck-027/tests/rules/test_open.py",
+            "destination": "tests/rules/test_open.py",
+            "sha256": "90d0add28e077db40d093cd79a4cddf0471cc48c0dd6e5b39c3674db59cd0ae3",
+            "replaces_sha256": "00dd5f7e461cb37ebbe2be6a780a3b3e8594e106cbf5846197550b9d9b09e4f7"
+          }
+        ],
+        "acceptance_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/rules/test_open.py::test_get_new_command"
+        ],
+        "visible_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/rules/test_cd_mkdir.py"
+        ]
+      },
+      "expected_fix_files": [
+        "thefuck/rules/open.py"
+      ],
+      "verification": {
+        "status": "assembled",
+        "details": "Metadata and fixed-version test overlay were checked against the pinned official corpus. Docker buggy/fixed reproduction is not yet recorded."
+      },
+      "fingerprint": "649b034a7fd393c3e85cc53d1297dc8669a6912f20ee34bf117223e6905066a4"
+    },
+    {
+      "id": "thefuck-031",
+      "project": "thefuck",
+      "corpus": {
+        "name": "BugsInPy",
+        "url": "https://github.com/soarsmu/BugsInPy",
+        "revision": "11c5f1eea954a42132cfd06bf257766a7963e0fd",
+        "case": "thefuck/31"
+      },
+      "source": {
+        "repository_url": "https://github.com/nvbn/thefuck",
+        "buggy_commit": "66e2ec7e3f0d3f848c01d87bb3503b0ff90fc78a",
+        "fixed_commit": "1285303363bc420bd7606bd5f808e3f2b4f0e83f",
+        "license_spdx": "MIT",
+        "license_file": "LICENSE.md"
+      },
+      "python_version": "3.8",
+      "issue": {
+        "title": "Place --staged after git diff",
+        "body": "Appending --staged after a path can be parsed incorrectly. Insert it after the diff subcommand while preserving later arguments."
+      },
+      "test": {
+        "hidden_overlay": [
+          {
+            "source": "overlays/thefuck-031/tests/rules/test_git_diff_staged.py",
+            "destination": "tests/rules/test_git_diff_staged.py",
+            "sha256": "c7293cbfbb413f16f81ef188acf204d7eed23223c005335c64fcd23bd9ce759c",
+            "replaces_sha256": "c0caca9111065fbe925eda060edce5800d4a9400e691468d3ed834da9137934e"
+          }
+        ],
+        "acceptance_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/rules/test_git_diff_staged.py::test_get_new_command"
+        ],
+        "visible_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/rules/test_cd_mkdir.py"
+        ]
+      },
+      "expected_fix_files": [
+        "thefuck/rules/git_diff_staged.py"
+      ],
+      "verification": {
+        "status": "assembled",
+        "details": "Metadata and fixed-version test overlay were checked against the pinned official corpus. Docker buggy/fixed reproduction is not yet recorded."
+      },
+      "fingerprint": "32a07811f555cf72720786fe8bee0065351f185987e9307b4dfef4bd801b85e3"
+    },
+    {
+      "id": "thefuck-032",
+      "project": "thefuck",
+      "corpus": {
+        "name": "BugsInPy",
+        "url": "https://github.com/soarsmu/BugsInPy",
+        "revision": "11c5f1eea954a42132cfd06bf257766a7963e0fd",
+        "case": "thefuck/32"
+      },
+      "source": {
+        "repository_url": "https://github.com/nvbn/thefuck",
+        "buggy_commit": "cb33c912e5f2f4c2da6b70d708ff0437bfcd3b94",
+        "fixed_commit": "25cc98a21a3450a046caf418f08713c82a290805",
+        "license_spdx": "MIT",
+        "license_file": "LICENSE.md"
+      },
+      "python_version": "3.8",
+      "issue": {
+        "title": "Do not match commands that merely contain ls",
+        "body": "The ls_lah rule matches unrelated commands containing the letters ls. It should only match ls as the command and ignore invocations that already have options."
+      },
+      "test": {
+        "hidden_overlay": [
+          {
+            "source": "overlays/thefuck-032/tests/rules/test_ls_lah.py",
+            "destination": "tests/rules/test_ls_lah.py",
+            "sha256": "5a38c8830404423047e290464243b2d335a1a46a0601fe55dc8e0e8458f2d34f",
+            "replaces_sha256": "70aaaa7d2d5d7a5268787915895d4829ac273beb0a8f30b32f0d86f7750d0d89"
+          }
+        ],
+        "acceptance_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/rules/test_ls_lah.py::test_match"
+        ],
+        "visible_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "tests/rules/test_cd_mkdir.py"
+        ]
+      },
+      "expected_fix_files": [
+        "thefuck/rules/ls_lah.py"
+      ],
+      "verification": {
+        "status": "assembled",
+        "details": "Metadata and fixed-version test overlay were checked against the pinned official corpus. Docker buggy/fixed reproduction is not yet recorded."
+      },
+      "fingerprint": "93efce9f60995012d319cd7b5e54e49f382f2efaafc0a5dfe1016f77c4fbac75"
+    }
+  ]
+}

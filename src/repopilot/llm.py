@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol, TypeVar
 
 from langchain_openai import ChatOpenAI
 
 from repopilot.config import Settings
+from repopilot.eval_runtime import ModelCallBudget
 from repopilot.models import CodeChangeOutput, FileEdit, PlanOutput, ReviewOutput, SandboxResult
 from repopilot.repository import RepositoryContext
+
+_StructuredOutput = TypeVar("_StructuredOutput", PlanOutput, CodeChangeOutput, ReviewOutput)
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,23 +218,44 @@ class MockAgentModel:
 
 
 class OpenAICompatibleAgentModel:
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, budget: ModelCallBudget | None = None):
         if not settings.openai_api_key:
             raise ValueError("OPENAI_API_KEY is required when MODEL_PROVIDER=openai")
         kwargs: dict[str, object] = {
             "model": settings.model_name,
             "api_key": settings.openai_api_key,
             "temperature": settings.model_temperature,
-            "max_retries": 2,
+            # Evaluation owns bounded Retry-After handling so hidden SDK retries cannot
+            # evade its call cap. Production retains the existing SDK retry behavior.
+            "max_retries": 0 if budget is not None else 2,
             "timeout": 90,
         }
         if settings.openai_base_url:
             kwargs["base_url"] = settings.openai_base_url
         self.model = ChatOpenAI(**kwargs)
+        self.budget = budget
+
+    async def _structured_invoke(
+        self,
+        schema: type[_StructuredOutput],
+        messages: list[dict[str, Any]],
+    ) -> _StructuredOutput:
+        if self.budget is None:
+            structured = self.model.with_structured_output(schema)
+            return await structured.ainvoke(messages)
+        structured = self.model.with_structured_output(schema, include_raw=True)
+        envelope = await self.budget.call(structured.ainvoke, messages)
+        parsing_error = envelope.get("parsing_error")
+        if parsing_error is not None:
+            raise parsing_error
+        parsed = envelope.get("parsed")
+        if not isinstance(parsed, schema):
+            raise TypeError(f"model did not return a parsed {schema.__name__}")
+        return parsed
 
     async def plan(self, issue_title: str, issue_body: str) -> PlanOutput:
-        structured = self.model.with_structured_output(PlanOutput)
-        return await structured.ainvoke(
+        return await self._structured_invoke(
+            PlanOutput,
             [
                 {
                     "role": "system",
@@ -240,7 +265,7 @@ class OpenAICompatibleAgentModel:
                     ),
                 },
                 {"role": "user", "content": f"Title: {issue_title}\n\n{issue_body}"},
-            ]
+            ],
         )
 
     async def propose_changes(
@@ -251,15 +276,22 @@ class OpenAICompatibleAgentModel:
         context: RepositoryContext,
         reviewer_feedback: list[str],
     ) -> CodeChangeOutput:
-        structured = self.model.with_structured_output(CodeChangeOutput)
-        return await structured.ainvoke(
+        editable_paths = (
+            tuple(context.files) if context.editable_paths is None else context.editable_paths
+        )
+        allowed_paths = json.dumps(list(editable_paths), ensure_ascii=False)
+        return await self._structured_invoke(
+            CodeChangeOutput,
             [
                 {
                     "role": "system",
                     "content": (
                         "You are a coding agent operating inside a restricted repository. "
                         "Return complete UTF-8 content only for files that must change. "
-                        "Use only paths visible in the supplied repository context. "
+                        "Every edit.path must exactly match one of the explicitly allowed "
+                        "paths in the user message; do not invent, prefix, or normalize paths. "
+                        "Other readable files may appear in context but remain read-only and "
+                        "must not appear in edits. If no allowed edit is safe, return no edits. "
                         "Make the smallest change that solves the issue and preserves tests."
                     ),
                 },
@@ -267,11 +299,12 @@ class OpenAICompatibleAgentModel:
                     "role": "user",
                     "content": (
                         f"Issue: {issue_title}\n{issue_body}\n\n"
+                        f"Allowed edit paths (exact JSON array): {allowed_paths}\n"
                         f"Plan: {plan.model_dump_json()}\n"
                         f"Reviewer feedback: {reviewer_feedback}\n\n{context.render()}"
                     ),
                 },
-            ]
+            ],
         )
 
     async def review(
@@ -280,14 +313,17 @@ class OpenAICompatibleAgentModel:
         diff: str,
         test_result: SandboxResult,
     ) -> ReviewOutput:
-        structured = self.model.with_structured_output(ReviewOutput)
-        return await structured.ainvoke(
+        return await self._structured_invoke(
+            ReviewOutput,
             [
                 {
                     "role": "system",
                     "content": (
-                        "You are a read-only reviewer. Approve only when the diff addresses "
-                        "the issue, is scoped, and the test evidence passes."
+                        "You are a read-only advisory reviewer. Approve only when the diff "
+                        "addresses the issue, is scoped, and the test evidence passes. Use low "
+                        "risk when the only concern is missing targeted evidence or a speculative "
+                        "improvement. Use medium/high risk only for a concrete defect visible in "
+                        "the supplied diff, and name that defect precisely in feedback."
                     ),
                 },
                 {
@@ -297,13 +333,53 @@ class OpenAICompatibleAgentModel:
                         f"Test evidence:\n{test_result.model_dump_json()}"
                     ),
                 },
-            ]
+            ],
         )
 
 
-def build_agent_model(settings: Settings) -> AgentModel:
+class BudgetedAgentModel:
+    """Count calls for models that do not expose a lower-level response envelope."""
+
+    def __init__(self, model: AgentModel, budget: ModelCallBudget) -> None:
+        self.model = model
+        self.budget = budget
+
+    async def plan(self, issue_title: str, issue_body: str) -> PlanOutput:
+        return await self.budget.call(self.model.plan, issue_title, issue_body)
+
+    async def propose_changes(
+        self,
+        issue_title: str,
+        issue_body: str,
+        plan: PlanOutput,
+        context: RepositoryContext,
+        reviewer_feedback: list[str],
+    ) -> CodeChangeOutput:
+        return await self.budget.call(
+            self.model.propose_changes,
+            issue_title,
+            issue_body,
+            plan,
+            context,
+            reviewer_feedback,
+        )
+
+    async def review(
+        self,
+        issue_title: str,
+        diff: str,
+        test_result: SandboxResult,
+    ) -> ReviewOutput:
+        return await self.budget.call(self.model.review, issue_title, diff, test_result)
+
+
+def build_agent_model(
+    settings: Settings,
+    budget: ModelCallBudget | None = None,
+) -> AgentModel:
     if settings.model_provider == "mock":
-        return MockAgentModel()
+        model: AgentModel = MockAgentModel()
+        return BudgetedAgentModel(model, budget) if budget is not None else model
     if settings.model_provider == "openai":
-        return OpenAICompatibleAgentModel(settings)
+        return OpenAICompatibleAgentModel(settings, budget=budget)
     raise ValueError(f"Unknown model provider: {settings.model_provider}")

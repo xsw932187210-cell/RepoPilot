@@ -30,6 +30,7 @@ def result_summary(result: dict[str, Any]) -> dict[str, Any]:
     return {
         "status": result.get("status"),
         "iteration": result.get("iteration"),
+        "policy_retry_count": result.get("policy_retry_count", 0),
         "changed_files": result.get("changed_files", []),
         "initial_retrieval": result.get("initial_retrieval", {}),
         "retrieval": {
@@ -172,6 +173,7 @@ class Worker:
             "max_iterations": task.max_iterations,
             "reviewer_feedback": [],
             "iteration": 0,
+            "policy_retry_count": 0,
             "node_metrics": [],
             "status": "queued",
         }
