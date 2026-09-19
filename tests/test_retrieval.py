@@ -100,7 +100,8 @@ def test_repository_context_exposes_evidence_and_respects_render_budget(
     assert context.strategy == "hybrid-bm25-symbol-v2"
     assert context.candidate_count == 2
     assert len(context.files) == 2
-    assert context.editable_paths == tuple(context.files)
+    assert context.editable_paths == ("src/orders.py",)
+    assert context.capability_policy_version == "workspace-capabilities-v1"
     assert len(rendered) <= 10_000
     assert "Retrieval evidence:" in rendered
     assert source.read_text(encoding="utf-8") in rendered

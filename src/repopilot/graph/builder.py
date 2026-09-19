@@ -47,6 +47,7 @@ def context_state(context: RepositoryContext) -> dict[str, Any]:
         "retrieval_candidate_count": context.candidate_count,
         "retrieval_selected_chars": context.selected_chars,
         "retrieval_skipped_for_budget": context.skipped_for_budget,
+        "capability_policy_version": context.capability_policy_version,
     }
 
 
@@ -139,6 +140,8 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
             "candidate_count": context.candidate_count,
             "selected_chars": context.selected_chars,
             "skipped_for_budget": context.skipped_for_budget,
+            "editable_files": list(context.editable_paths or ()),
+            "capability_policy_version": context.capability_policy_version,
             "evidence": context.evidence,
         }
         duration_ms = elapsed_ms(started)
@@ -190,6 +193,7 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
             selected_chars=state.get("retrieval_selected_chars", 0),
             skipped_for_budget=state.get("retrieval_skipped_for_budget", 0),
             max_chars=deps.settings.max_context_chars,
+            capability_policy_version=state.get("capability_policy_version", "legacy"),
         )
         plan = PlanOutput.model_validate(state["plan"])
         if state.get("iteration", 0) > 0:

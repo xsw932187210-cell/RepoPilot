@@ -194,8 +194,14 @@ class PolicyViolationThenFixModel(MockAgentModel):
             issue_title, issue_body, plan, context, reviewer_feedback
         )
         if self.propose_calls == 1:
+            readonly_test = next(path for path in context.files if path.startswith("tests/"))
+            assert readonly_test not in (context.editable_paths or ())
             changes.edits.append(
-                FileEdit(path="outside-context.py", content="value = 1\n", reason="invalid")
+                FileEdit(
+                    path=readonly_test,
+                    content=f"{context.files[readonly_test]}\n# invalid test rewrite\n",
+                    reason="invalid",
+                )
             )
         return changes
 
@@ -215,7 +221,9 @@ async def test_tool_policy_rejection_gets_one_atomic_coder_retry(tmp_path: Path)
     assert any("Tool policy rejected" in item for item in model.feedback[1])
     workspace = tmp_path / "workspaces" / "policy-retry"
     assert "return a + b" in (workspace / "calculator.py").read_text(encoding="utf-8")
-    assert not (workspace / "outside-context.py").exists()
+    assert "invalid test rewrite" not in (
+        workspace / "tests" / "test_calculator.py"
+    ).read_text(encoding="utf-8")
 
 
 class MemoryRedis:

@@ -4,15 +4,24 @@ import asyncio
 import os
 import shutil
 import signal
+import stat
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from repopilot.capabilities import WorkspaceCapabilityPolicy, default_workspace_policy
 from repopilot.config import Settings
 from repopilot.models import FileEdit
 from repopilot.retrieval import HybridCodeRetriever
 from repopilot.security import (
+    CapabilityAction,
+    CapabilityError,
+    CapabilityReason,
+    NormalizedWorkspacePath,
     SecurityError,
+    WorkspacePathError,
+    normalize_workspace_path,
     safe_workspace_path,
     validate_branch,
     validate_repository_url,
@@ -56,6 +65,7 @@ class RepositoryContext:
     selected_chars: int = 0
     skipped_for_budget: int = 0
     max_chars: int = 70_000
+    capability_policy_version: str = "legacy"
 
     def render(self, max_chars: int | None = None) -> str:
         limit = self.max_chars if max_chars is None else min(max_chars, self.max_chars)
@@ -125,8 +135,15 @@ async def run_process(
 
 
 class WorkspaceManager:
-    def __init__(self, settings: Settings):
+    def __init__(
+        self,
+        settings: Settings,
+        capability_policy: WorkspaceCapabilityPolicy | None = None,
+    ):
         self.settings = settings
+        self.capability_policy = capability_policy or default_workspace_policy(
+            max_file_bytes=settings.max_file_bytes
+        )
 
     async def prepare(
         self,
@@ -184,34 +201,54 @@ class WorkspaceManager:
         issue_text: str,
         search_terms: list[str],
     ) -> RepositoryContext:
-        all_files: list[Path] = []
-        for path in workspace.rglob("*"):
-            if not path.is_file() or any(part in _IGNORED_PARTS for part in path.parts):
-                continue
-            relative = path.relative_to(workspace)
-            if (
-                path.suffix.lower() in _TEXT_SUFFIXES
-                and path.stat().st_size <= self.settings.max_file_bytes
-            ):
-                all_files.append(relative)
+        all_files: list[tuple[str, Path]] = []
+        for current, directories, filenames in os.walk(workspace, followlinks=False):
+            current_path = Path(current)
+            directories[:] = sorted(
+                directory
+                for directory in directories
+                if directory not in _IGNORED_PARTS
+                and not (current_path / directory).is_symlink()
+            )
+            for filename in sorted(filenames):
+                path = current_path / filename
+                try:
+                    file_stat = path.lstat()
+                    relative = path.relative_to(workspace).as_posix()
+                    normalized = normalize_workspace_path(relative)
+                    absolute = safe_workspace_path(workspace, normalized.value)
+                except (OSError, SecurityError, ValueError):
+                    continue
+                if (
+                    not stat.S_ISREG(file_stat.st_mode)
+                    or file_stat.st_nlink > 1
+                    or path.suffix.lower() not in _TEXT_SUFFIXES
+                    or file_stat.st_size > self.settings.max_file_bytes
+                    or not self.capability_policy.permits(CapabilityAction.READ, normalized.value)
+                ):
+                    continue
+                all_files.append((normalized.value, absolute))
 
         contents: dict[str, str] = {}
-        for relative in all_files:
-            absolute = safe_workspace_path(workspace, str(relative))
+        for relative, absolute in sorted(all_files):
             try:
                 content = absolute.read_text(encoding="utf-8")
-            except UnicodeDecodeError:
+            except (OSError, UnicodeDecodeError):
                 continue
-            contents[str(relative)] = content
+            contents[relative] = content
 
         result = HybridCodeRetriever(
             max_files=self.settings.max_context_files,
             max_context_chars=self.settings.max_context_chars,
         ).retrieve(contents, issue_text=issue_text, search_terms=search_terms)
         return RepositoryContext(
-            tree=sorted(str(path) for path in all_files),
+            tree=sorted(contents),
             files={hit.path: hit.content for hit in result.hits},
-            editable_paths=tuple(hit.path for hit in result.hits),
+            editable_paths=tuple(
+                hit.path
+                for hit in result.hits
+                if self.capability_policy.permits(CapabilityAction.WRITE, hit.path)
+            ),
             evidence=[hit.evidence() for hit in result.hits],
             query_terms=list(result.query_terms),
             strategy=result.strategy,
@@ -219,7 +256,68 @@ class WorkspaceManager:
             selected_chars=result.selected_chars,
             skipped_for_budget=result.skipped_for_budget,
             max_chars=self.settings.max_context_chars,
+            capability_policy_version=self.capability_policy.version,
         )
+
+    def _capability_path(
+        self,
+        workspace: Path,
+        raw_path: str,
+        action: CapabilityAction,
+    ) -> tuple[NormalizedWorkspacePath, Path]:
+        try:
+            normalized = normalize_workspace_path(raw_path)
+            target = safe_workspace_path(workspace, normalized.value)
+        except (OSError, SecurityError) as error:
+            reason = (
+                error.reason
+                if isinstance(error, WorkspacePathError)
+                else CapabilityReason.INVALID_PATH
+            )
+            raise CapabilityError(
+                reason,
+                action,
+                raw_path,
+                str(error),
+                policy_version=self.capability_policy.version,
+            ) from error
+        return normalized, target
+
+    def _existing_file_stat(
+        self,
+        target: Path,
+        normalized: NormalizedWorkspacePath,
+        action: CapabilityAction,
+    ) -> os.stat_result | None:
+        try:
+            target_stat = target.lstat()
+        except FileNotFoundError:
+            return None
+        if stat.S_ISLNK(target_stat.st_mode):
+            raise CapabilityError(
+                CapabilityReason.UNSAFE_LINK,
+                action,
+                normalized.value,
+                "symbolic link targets are not accepted",
+                policy_version=self.capability_policy.version,
+            )
+        if not stat.S_ISREG(target_stat.st_mode):
+            raise CapabilityError(
+                CapabilityReason.SPECIAL_FILE,
+                action,
+                normalized.value,
+                "target is not a regular file",
+                policy_version=self.capability_policy.version,
+            )
+        if target_stat.st_nlink > 1:
+            raise CapabilityError(
+                CapabilityReason.HARDLINK,
+                action,
+                normalized.value,
+                "hard-linked files are not accepted at the write boundary",
+                policy_version=self.capability_policy.version,
+            )
+        return target_stat
 
     def apply_edits(
         self,
@@ -227,34 +325,169 @@ class WorkspaceManager:
         edits: list[FileEdit],
         *,
         expected_contents: dict[str, str] | None = None,
+        expected_absent: Iterable[str] | None = None,
     ) -> list[str]:
         # Validate the complete proposal before making any edit. The graph has one
         # writer; this additionally catches stale model context at the write boundary.
         # It is not a transaction protocol for arbitrary concurrent filesystem writers.
-        prepared: list[tuple[FileEdit, Path, str | None]] = []
-        seen: set[Path] = set()
+        expected_by_identity: dict[str, tuple[str, str]] = {}
+        for raw_path, content in (expected_contents or {}).items():
+            try:
+                normalized = normalize_workspace_path(raw_path)
+            except SecurityError as error:
+                raise CapabilityError(
+                    CapabilityReason.INVALID_PATH,
+                    CapabilityAction.WRITE,
+                    raw_path,
+                    str(error),
+                    policy_version=self.capability_policy.version,
+                ) from error
+            if normalized.identity in expected_by_identity:
+                raise CapabilityError(
+                    CapabilityReason.DUPLICATE_PATH,
+                    CapabilityAction.WRITE,
+                    normalized.value,
+                    "supplied context contains aliased duplicate paths",
+                    policy_version=self.capability_policy.version,
+                )
+            expected_by_identity[normalized.identity] = (normalized.value, content)
+
+        absent_by_identity: dict[str, str] = {}
+        for raw_path in expected_absent or ():
+            try:
+                normalized = normalize_workspace_path(raw_path)
+            except SecurityError as error:
+                raise CapabilityError(
+                    CapabilityReason.INVALID_PATH,
+                    CapabilityAction.CREATE,
+                    raw_path,
+                    str(error),
+                    policy_version=self.capability_policy.version,
+                ) from error
+            if normalized.identity in absent_by_identity:
+                raise CapabilityError(
+                    CapabilityReason.DUPLICATE_PATH,
+                    CapabilityAction.CREATE,
+                    normalized.value,
+                    "expected-absent paths contain aliases",
+                    policy_version=self.capability_policy.version,
+                )
+            absent_by_identity[normalized.identity] = normalized.value
+
+        prepared: list[tuple[FileEdit, str, Path, str | None, bool]] = []
+        seen: dict[str, str] = {}
         for edit in edits:
-            target = safe_workspace_path(workspace, edit.path)
-            if target in seen:
-                raise SecurityError(f"Duplicate generated edit: {edit.path}")
-            seen.add(target)
-            if len(edit.content.encode("utf-8")) > self.settings.max_file_bytes:
-                raise SecurityError(f"Generated file is too large: {edit.path}")
-            previous = target.read_text(encoding="utf-8") if target.exists() else None
-            if expected_contents is not None:
-                if edit.path not in expected_contents:
-                    raise SecurityError(f"Generated edit is outside supplied context: {edit.path}")
-                if previous != expected_contents[edit.path]:
-                    raise SecurityError(
-                        f"Workspace changed since model context was read: {edit.path}"
+            try:
+                normalized = normalize_workspace_path(edit.path)
+            except SecurityError as error:
+                raise CapabilityError(
+                    CapabilityReason.INVALID_PATH,
+                    CapabilityAction.WRITE,
+                    edit.path,
+                    str(error),
+                    policy_version=self.capability_policy.version,
+                ) from error
+            duplicate = seen.get(normalized.identity)
+            if duplicate is not None:
+                raise CapabilityError(
+                    CapabilityReason.DUPLICATE_PATH,
+                    CapabilityAction.WRITE,
+                    normalized.value,
+                    f"generated path aliases duplicate {duplicate}",
+                    policy_version=self.capability_policy.version,
+                )
+            seen[normalized.identity] = normalized.value
+            normalized, target = self._capability_path(
+                workspace, normalized.value, CapabilityAction.WRITE
+            )
+            size = len(edit.content.encode("utf-8"))
+            if size > self.settings.max_file_bytes:
+                raise CapabilityError(
+                    CapabilityReason.FILE_TOO_LARGE,
+                    CapabilityAction.WRITE,
+                    normalized.value,
+                    "generated content exceeds the workspace byte limit",
+                    policy_version=self.capability_policy.version,
+                )
+            target_stat = self._existing_file_stat(
+                target, normalized, CapabilityAction.WRITE
+            )
+            if target_stat is None:
+                expected_path = absent_by_identity.get(normalized.identity)
+                if expected_path is not None and expected_path != normalized.value:
+                    raise CapabilityError(
+                        CapabilityReason.PATH_ALIAS,
+                        CapabilityAction.CREATE,
+                        normalized.value,
+                        f"path casing does not match expected target {expected_path}",
+                        policy_version=self.capability_policy.version,
                     )
-            prepared.append((edit, target, previous))
+                self.capability_policy.require(
+                    CapabilityAction.CREATE,
+                    normalized,
+                    size=size,
+                    expected_absent=expected_path is not None,
+                )
+                prepared.append((edit, normalized.value, target, None, True))
+                continue
+
+            self.capability_policy.require(CapabilityAction.WRITE, normalized, size=size)
+            if normalized.identity in absent_by_identity:
+                raise CapabilityError(
+                    CapabilityReason.TARGET_EXISTS,
+                    CapabilityAction.CREATE,
+                    normalized.value,
+                    "expected-absent target already exists",
+                    policy_version=self.capability_policy.version,
+                )
+            previous = target.read_text(encoding="utf-8")
+            if expected_contents is not None:
+                expected = expected_by_identity.get(normalized.identity)
+                if expected is None:
+                    raise CapabilityError(
+                        CapabilityReason.OUTSIDE_CONTEXT,
+                        CapabilityAction.WRITE,
+                        normalized.value,
+                        "generated edit is outside the supplied readable context",
+                        policy_version=self.capability_policy.version,
+                    )
+                expected_path, expected_content = expected
+                if expected_path != normalized.value:
+                    raise CapabilityError(
+                        CapabilityReason.PATH_ALIAS,
+                        CapabilityAction.WRITE,
+                        normalized.value,
+                        f"path casing does not match supplied context {expected_path}",
+                        policy_version=self.capability_policy.version,
+                    )
+                if previous != expected_content:
+                    raise CapabilityError(
+                        CapabilityReason.STALE_CONTENT,
+                        CapabilityAction.WRITE,
+                        normalized.value,
+                        "workspace changed since model context was read",
+                        policy_version=self.capability_policy.version,
+                    )
+            prepared.append((edit, normalized.value, target, previous, False))
         changed: list[str] = []
-        for edit, target, previous in prepared:
+        for edit, normalized_path, target, previous, is_create in prepared:
             target.parent.mkdir(parents=True, exist_ok=True)
             if previous != edit.content:
-                target.write_text(edit.content, encoding="utf-8")
-                changed.append(edit.path)
+                if is_create:
+                    try:
+                        with target.open("x", encoding="utf-8") as file:
+                            file.write(edit.content)
+                    except FileExistsError as error:
+                        raise CapabilityError(
+                            CapabilityReason.TARGET_EXISTS,
+                            CapabilityAction.CREATE,
+                            normalized_path,
+                            "target appeared after the expected-absent preflight",
+                            policy_version=self.capability_policy.version,
+                        ) from error
+                else:
+                    target.write_text(edit.content, encoding="utf-8")
+                changed.append(normalized_path)
         return changed
 
     async def diff(self, workspace: Path) -> str:

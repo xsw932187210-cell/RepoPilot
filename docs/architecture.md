@@ -25,7 +25,12 @@ flowchart LR
 ## Trust boundaries
 
 1. Repository URLs are limited to public GitHub HTTPS URLs plus one bundled demo URI.
-2. Model-generated paths are resolved under the task workspace and may not access `.git`.
+2. A service-owned, versioned capability policy separates readable files from writable existing
+   files and trusted creation scopes. The default keeps tests and build/CI configuration read-only,
+   excludes credential-like files from context, and denies creation, deletion, and rename. Paths
+   use one normalized identity for matching, deduplication, context lookup, and access; traversal,
+   `.git`, case aliases, symbolic links, hard links, and special files are rejected. See
+   [workspace capability policy](workspace-capabilities.md).
 3. Test commands are parsed to argument arrays; shell operators and arbitrary executables are rejected.
 4. Tests execute from a disposable snapshot of the current task workspace, without inheriting the
    worker's mounts, network access, Linux capabilities, or privilege escalation. Symlinks and
