@@ -34,7 +34,7 @@ while [ "$attempt" -lt 60 ]; do
   status=$(printf '%s' "$task_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"])')
   if [ "$status" = "completed" ]; then
     metrics_json=$(curl -fsS "$api_url/api/v1/tasks/$task_id/metrics")
-    printf '%s' "$metrics_json" | python3 -c 'import json,sys; data=json.load(sys.stdin); assert data["status"] == "completed"; assert data["node_runs"].get("test_runner") == 1'
+    printf '%s' "$metrics_json" | python3 -c 'import json,sys; data=json.load(sys.stdin); assert data["status"] == "completed"; assert data["node_runs"].get("test_runner") == 1; assert data["model_calls_reserved"] >= 3; assert data["model_calls_reserved"] == data["model_calls_started"] == data["model_calls_succeeded"]; assert data["model_calls_failed"] == data["model_calls_unknown"] == 0'
     printf '%s\n' "$task_json"
     printf '%s\n' "$metrics_json"
     exit 0

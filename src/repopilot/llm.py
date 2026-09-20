@@ -7,11 +7,37 @@ from typing import Any, Protocol, TypeVar
 from langchain_openai import ChatOpenAI
 
 from repopilot.config import Settings
-from repopilot.eval_runtime import ModelCallBudget
+from repopilot.model_calls import (
+    CALL_CONTROL_VERSION,
+    CallIdentity,
+    CallPolicy,
+    ControlledModelCaller,
+    InvalidProviderResponse,
+    ModelCallBudget,
+)
 from repopilot.models import CodeChangeOutput, FileEdit, PlanOutput, ReviewOutput, SandboxResult
 from repopilot.repository import RepositoryContext
 
 _StructuredOutput = TypeVar("_StructuredOutput", PlanOutput, CodeChangeOutput, ReviewOutput)
+_CallControl = ControlledModelCaller | ModelCallBudget
+
+OPENAI_STRUCTURED_ADAPTER_VERSION = "langchain-openai-structured-v1"
+MOCK_ADAPTER_VERSION = "deterministic-mock-v1"
+
+
+def call_policy_from_settings(settings: Settings) -> CallPolicy:
+    return CallPolicy(
+        max_calls=settings.model_max_calls,
+        request_timeout_seconds=settings.model_request_timeout_seconds,
+        max_rate_limit_retries=settings.model_max_rate_limit_retries,
+        max_transient_retries=settings.model_max_transient_retries,
+        base_backoff_seconds=settings.model_retry_base_seconds,
+        max_retry_wait_seconds=settings.model_max_retry_wait_seconds,
+        max_total_backoff_seconds=settings.model_max_total_backoff_seconds,
+        max_total_tokens=settings.model_max_total_tokens or None,
+        max_output_tokens=settings.model_max_output_tokens,
+        version=CALL_CONTROL_VERSION,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -218,39 +244,82 @@ class MockAgentModel:
 
 
 class OpenAICompatibleAgentModel:
-    def __init__(self, settings: Settings, budget: ModelCallBudget | None = None):
+    def __init__(
+        self,
+        settings: Settings,
+        budget: ModelCallBudget | None = None,
+        *,
+        call_control: ControlledModelCaller | None = None,
+    ):
         if not settings.openai_api_key:
             raise ValueError("OPENAI_API_KEY is required when MODEL_PROVIDER=openai")
+        if budget is not None and call_control is not None:
+            raise ValueError("provide either budget or call_control, not both")
+        if budget is None and call_control is None:
+            policy = call_policy_from_settings(settings)
+            budget = ModelCallBudget(
+                policy.max_calls,
+                max_rate_limit_retries=policy.max_rate_limit_retries,
+                max_transient_retries=policy.max_transient_retries,
+                base_backoff_seconds=policy.base_backoff_seconds,
+                max_backoff_seconds=policy.max_retry_wait_seconds,
+                max_total_backoff_seconds=policy.max_total_backoff_seconds,
+                request_timeout_seconds=policy.request_timeout_seconds,
+                max_total_tokens=policy.max_total_tokens,
+                max_output_tokens=policy.max_output_tokens,
+                policy_version=policy.version,
+            )
         kwargs: dict[str, object] = {
             "model": settings.model_name,
             "api_key": settings.openai_api_key,
             "temperature": settings.model_temperature,
-            # Evaluation owns bounded Retry-After handling so hidden SDK retries cannot
-            # evade its call cap. Production retains the existing SDK retry behavior.
-            "max_retries": 0 if budget is not None else 2,
-            "timeout": 90,
+            # The controlled boundary owns every retry so SDK attempts cannot evade the
+            # persistent call budget.
+            "max_retries": 0,
+            "timeout": settings.model_request_timeout_seconds,
+            "max_tokens": settings.model_max_output_tokens,
         }
         if settings.openai_base_url:
             kwargs["base_url"] = settings.openai_base_url
         self.model = ChatOpenAI(**kwargs)
-        self.budget = budget
+        self.call_control: _CallControl = call_control or budget
+        self.identity = CallIdentity(
+            provider="openai",
+            model=settings.model_name,
+            adapter_version=OPENAI_STRUCTURED_ADAPTER_VERSION,
+            request_schema_version="assigned-per-request",
+        )
 
     async def _structured_invoke(
         self,
         schema: type[_StructuredOutput],
         messages: list[dict[str, Any]],
+        role: str,
     ) -> _StructuredOutput:
-        if self.budget is None:
-            structured = self.model.with_structured_output(schema)
-            return await structured.ainvoke(messages)
         structured = self.model.with_structured_output(schema, include_raw=True)
-        envelope = await self.budget.call(structured.ainvoke, messages)
-        parsing_error = envelope.get("parsing_error")
-        if parsing_error is not None:
-            raise parsing_error
-        parsed = envelope.get("parsed")
-        if not isinstance(parsed, schema):
-            raise TypeError(f"model did not return a parsed {schema.__name__}")
+
+        def validate_response(response: object) -> None:
+            if not isinstance(response, dict):
+                raise InvalidProviderResponse()
+            if response.get("parsing_error") is not None:
+                raise InvalidProviderResponse()
+            if not isinstance(response.get("parsed"), schema):
+                raise InvalidProviderResponse()
+
+        identity = CallIdentity(
+            provider=self.identity.provider,
+            model=self.identity.model,
+            adapter_version=self.identity.adapter_version,
+            request_schema_version=f"{schema.__name__}-v1",
+        )
+        envelope = await self.call_control.call(
+            structured.ainvoke,
+            messages,
+            call_identity=identity,
+            call_role=role,
+            response_validator=validate_response,
+        )
+        parsed = envelope["parsed"]
         return parsed
 
     async def plan(self, issue_title: str, issue_body: str) -> PlanOutput:
@@ -266,6 +335,7 @@ class OpenAICompatibleAgentModel:
                 },
                 {"role": "user", "content": f"Title: {issue_title}\n\n{issue_body}"},
             ],
+            "planner",
         )
 
     async def propose_changes(
@@ -305,6 +375,7 @@ class OpenAICompatibleAgentModel:
                     ),
                 },
             ],
+            "coder",
         )
 
     async def review(
@@ -334,18 +405,44 @@ class OpenAICompatibleAgentModel:
                     ),
                 },
             ],
+            "reviewer",
         )
 
 
 class BudgetedAgentModel:
     """Count calls for models that do not expose a lower-level response envelope."""
 
-    def __init__(self, model: AgentModel, budget: ModelCallBudget) -> None:
+    def __init__(
+        self,
+        model: AgentModel,
+        call_control: _CallControl,
+        *,
+        provider: str = "mock",
+        model_name: str = "deterministic-mock-v1",
+        adapter_version: str = MOCK_ADAPTER_VERSION,
+    ) -> None:
         self.model = model
-        self.budget = budget
+        self.call_control = call_control
+        self.provider = provider
+        self.model_name = model_name
+        self.adapter_version = adapter_version
+
+    def _identity(self, schema: type[_StructuredOutput]) -> CallIdentity:
+        return CallIdentity(
+            provider=self.provider,
+            model=self.model_name,
+            adapter_version=self.adapter_version,
+            request_schema_version=f"{schema.__name__}-v1",
+        )
 
     async def plan(self, issue_title: str, issue_body: str) -> PlanOutput:
-        return await self.budget.call(self.model.plan, issue_title, issue_body)
+        return await self.call_control.call(
+            self.model.plan,
+            issue_title,
+            issue_body,
+            call_identity=self._identity(PlanOutput),
+            call_role="planner",
+        )
 
     async def propose_changes(
         self,
@@ -355,13 +452,15 @@ class BudgetedAgentModel:
         context: RepositoryContext,
         reviewer_feedback: list[str],
     ) -> CodeChangeOutput:
-        return await self.budget.call(
+        return await self.call_control.call(
             self.model.propose_changes,
             issue_title,
             issue_body,
             plan,
             context,
             reviewer_feedback,
+            call_identity=self._identity(CodeChangeOutput),
+            call_role="coder",
         )
 
     async def review(
@@ -370,16 +469,32 @@ class BudgetedAgentModel:
         diff: str,
         test_result: SandboxResult,
     ) -> ReviewOutput:
-        return await self.budget.call(self.model.review, issue_title, diff, test_result)
+        return await self.call_control.call(
+            self.model.review,
+            issue_title,
+            diff,
+            test_result,
+            call_identity=self._identity(ReviewOutput),
+            call_role="reviewer",
+        )
 
 
 def build_agent_model(
     settings: Settings,
     budget: ModelCallBudget | None = None,
+    *,
+    call_control: ControlledModelCaller | None = None,
 ) -> AgentModel:
+    if budget is not None and call_control is not None:
+        raise ValueError("provide either budget or call_control, not both")
+    control: _CallControl | None = call_control or budget
     if settings.model_provider == "mock":
         model: AgentModel = MockAgentModel()
-        return BudgetedAgentModel(model, budget) if budget is not None else model
+        return BudgetedAgentModel(model, control) if control is not None else model
     if settings.model_provider == "openai":
-        return OpenAICompatibleAgentModel(settings, budget=budget)
+        return OpenAICompatibleAgentModel(
+            settings,
+            budget=budget,
+            call_control=call_control,
+        )
     raise ValueError(f"Unknown model provider: {settings.model_provider}")

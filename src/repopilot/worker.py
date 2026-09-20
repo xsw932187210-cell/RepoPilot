@@ -17,7 +17,8 @@ from repopilot.events import EventBus, JobQueue
 from repopilot.github import GitHubPublisher
 from repopilot.graph import GraphDependencies, build_graph
 from repopilot.graph.builder import TaskCancelled
-from repopilot.llm import build_agent_model
+from repopilot.llm import build_agent_model, call_policy_from_settings
+from repopilot.model_calls import ControlledModelCaller
 from repopilot.models import TaskStatus, TaskView
 from repopilot.repository import WorkspaceManager
 from repopilot.sandbox import build_sandbox
@@ -64,12 +65,28 @@ class Worker:
         self.events = EventBus(database, redis)
         self.queue = JobQueue(redis, settings.queue_name)
         self.checkpointer = checkpointer
-        self.dependencies = GraphDependencies(
-            settings=settings,
-            model=build_agent_model(settings),
-            workspaces=WorkspaceManager(settings),
-            sandbox=build_sandbox(settings),
-            publisher=GitHubPublisher(settings),
+        self.workspaces = WorkspaceManager(settings)
+        self.sandbox = build_sandbox(settings)
+        self.publisher = GitHubPublisher(settings)
+
+    async def _dependencies(self, task_id: str) -> GraphDependencies:
+        policy = call_policy_from_settings(self.settings)
+        ledger = self.database.model_call_ledger(task_id)
+        await ledger.ensure(policy)
+        reconciled = await ledger.reconcile_incomplete()
+        if reconciled:
+            logger.warning(
+                "Task %s conservatively marked %d in-flight model call(s) unknown",
+                task_id,
+                reconciled,
+            )
+        call_control = ControlledModelCaller(ledger, policy)
+        return GraphDependencies(
+            settings=self.settings,
+            model=build_agent_model(self.settings, call_control=call_control),
+            workspaces=self.workspaces,
+            sandbox=self.sandbox,
+            publisher=self.publisher,
             events=self.events,
             queue=self.queue,
         )
@@ -115,7 +132,8 @@ class Worker:
                 node="worker",
                 message="Worker started graph execution",
             )
-            graph = build_graph(self.dependencies, self.checkpointer)
+            dependencies = await self._dependencies(task_id)
+            graph = build_graph(dependencies, self.checkpointer)
             config = {"configurable": {"thread_id": task.graph_thread_id}}
             resume = job.get("resume")
             if resume is None:

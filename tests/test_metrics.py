@@ -57,7 +57,28 @@ def test_task_metrics_aggregate_retries_and_sandbox_time() -> None:
         created_at=created,
         updated_at=created + timedelta(milliseconds=250),
     )
-    metrics = summarize_task_metrics(task)
+    metrics = summarize_task_metrics(
+        task,
+        {
+            "call_control_version": "provider-call-control-v1",
+            "max_model_calls": 8,
+            "reserved_calls": 6,
+            "started_calls": 5,
+            "successful_model_calls": 3,
+            "failed_calls": 1,
+            "unknown_calls": 1,
+            "pending_reserved_calls": 1,
+            "pending_started_calls": 0,
+            "rate_limit_retries": 1,
+            "transient_retries": 1,
+            "fallback_calls": 1,
+            "backoff_seconds": 2.5,
+            "token_usage_complete": False,
+            "observed_input_tokens": 20,
+            "observed_output_tokens": 10,
+            "observed_total_tokens": 30,
+        },
+    )
     assert metrics.wall_time_ms == 250
     assert metrics.node_time_ms == 170
     assert metrics.node_runs["test_runner"] == 2
@@ -68,3 +89,17 @@ def test_task_metrics_aggregate_retries_and_sandbox_time() -> None:
     assert metrics.retrieval_candidate_files == 42
     assert metrics.retrieval_selected_files == 2
     assert metrics.retrieval_context_chars == 8_000
+    assert metrics.model_call_policy_version == "provider-call-control-v1"
+    assert metrics.model_calls_max == 8
+    assert metrics.model_calls_reserved == 6
+    assert metrics.model_calls_started == 5
+    assert metrics.model_calls_succeeded == 3
+    assert metrics.model_calls_failed == 1
+    assert metrics.model_calls_unknown == 1
+    assert metrics.model_calls_pending_reservation == 1
+    assert metrics.model_rate_limit_retries == 1
+    assert metrics.model_transient_retries == 1
+    assert metrics.model_fallback_calls == 1
+    assert metrics.model_backoff_seconds == 2.5
+    assert metrics.model_token_usage_complete is False
+    assert metrics.model_observed_total_tokens == 30

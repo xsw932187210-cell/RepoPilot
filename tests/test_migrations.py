@@ -109,6 +109,17 @@ async def sqlite_columns(database_url: str, table: str) -> set[str]:
         await engine.dispose()
 
 
+async def sqlite_tables(database_url: str) -> set[str]:
+    engine = create_async_engine(database_url)
+    try:
+        async with engine.connect() as connection:
+            return await connection.run_sync(
+                lambda sync: set(inspect(sync).get_table_names())
+            )
+    finally:
+        await engine.dispose()
+
+
 @pytest.mark.asyncio
 async def test_empty_sqlite_install_and_repeat_are_idempotent(tmp_path) -> None:
     database_url = f"sqlite+aiosqlite:///{tmp_path / 'empty.db'}"
@@ -121,6 +132,7 @@ async def test_empty_sqlite_install_and_repeat_are_idempotent(tmp_path) -> None:
         database_url, "tasks"
     )
     assert "payload_schema_version" in await sqlite_columns(database_url, "task_events")
+    assert {"model_call_budgets", "model_call_attempts"} <= await sqlite_tables(database_url)
 
     task = await database.create_task(
         TaskCreate(
@@ -188,6 +200,30 @@ async def test_legacy_sqlite_upgrade_preserves_records_and_marks_json_version(tm
     assert completed.state_version == 3
     assert completed.result_schema_version == 1
     assert new_event.payload_schema_version == 1
+
+
+@pytest.mark.asyncio
+async def test_ch09_database_upgrades_to_call_ledger_without_losing_tasks(tmp_path) -> None:
+    database_url = f"sqlite+aiosqlite:///{tmp_path / 'ch09.db'}"
+    task_id = str(uuid.uuid4())
+    await install_legacy_database(database_url, task_id)
+    await ensure_database_schema(database_url, revision="20260921_0002")
+    assert await current_database_revisions(database_url) == ("20260921_0002",)
+
+    await ensure_database_schema(database_url)
+    await ensure_database_schema(database_url)
+    assert await current_database_revisions(database_url) == (HEAD_REVISION,)
+    assert {"model_call_budgets", "model_call_attempts"} <= await sqlite_tables(database_url)
+
+    database = Database(database_url)
+    retained = await database.get_task(task_id)
+    events = await database.list_events(task_id)
+    metrics = await database.get_model_call_metrics(task_id)
+    await database.close()
+    assert retained is not None
+    assert retained.result == {"legacy": True}
+    assert len(events) == 1
+    assert metrics is None
 
 
 @pytest.mark.asyncio
