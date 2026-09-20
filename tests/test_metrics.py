@@ -38,6 +38,7 @@ def test_task_metrics_aggregate_retries_and_sandbox_time() -> None:
         test_command="python -m pytest -q",
         max_iterations=2,
         graph_thread_id="task-task-1",
+        state_version=4,
         result={
             "retrieval": {
                 "strategy": "hybrid-bm25-symbol-v1",
@@ -52,6 +53,7 @@ def test_task_metrics_aggregate_retries_and_sandbox_time() -> None:
                 {"node": "test_runner", "duration_ms": 60, "iteration": 2},
             ]
         },
+        result_schema_version=1,
         created_at=created,
         updated_at=created + timedelta(milliseconds=250),
     )

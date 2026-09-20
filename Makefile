@@ -1,4 +1,4 @@
-.PHONY: up down build logs test lint smoke smoke-recovery eval eval-real eval-real-reproduce eval-real-retrieval
+.PHONY: up down build logs test lint migration-test smoke smoke-recovery eval eval-real eval-real-reproduce eval-real-retrieval
 
 up:
 	docker compose up --build -d
@@ -18,6 +18,9 @@ test:
 
 lint:
 	docker run --rm -v "$$(pwd):/workspace" -w /workspace repopilot-sandbox:local ruff check .
+
+migration-test:
+	./scripts/migration_integration.sh
 
 smoke:
 	./scripts/smoke.sh

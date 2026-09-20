@@ -24,6 +24,8 @@ known limitations, and acceptance criteria for the next iterations (Chinese).
 - Explainable BM25 + Python AST symbol retrieval with source/test dependency expansion and a
   bounded context budget.
 - Durable PostgreSQL checkpoints and `Command(resume=...)` human approval.
+- Versioned application-schema migrations, optimistic task-state updates, and explicit result/event
+  JSON versions.
 - Redis dispatch, idempotency lock, cancellation flag, and event fan-out.
 - FastAPI task API plus replayable event history and SSE progress.
 - Per-node latency, retry, sandbox, and wall-time metrics through a task metrics endpoint.
@@ -51,6 +53,11 @@ docker compose up --build -d
 
 The default `MODEL_PROVIDER=mock` requires no API key and repairs the bundled calculator fixture.
 Open <http://localhost:8000/docs> for the API.
+
+Compose runs the one-shot application migration before starting API and Worker. Existing deployments
+must stop old processes before upgrading and must not mix old/new Workers; see
+[database migrations and task state versions](docs/database-migrations.md) for the backup, upgrade,
+compatibility, and recovery procedure.
 
 The smoke scripts exercise the stack that is already running. If `.env` currently selects a real
 provider, recreate the API and worker with an explicit mock override before collecting deterministic
@@ -154,12 +161,15 @@ source .venv/bin/activate
 pip install ".[dev]"
 pytest --cov=repopilot --cov-report=term-missing --cov-fail-under=70 -q
 ruff check .
+make migration-test
 ```
 
 See [docs/architecture.md](docs/architecture.md) for trust boundaries, recovery semantics, and
 observability, and [docs/retrieval.md](docs/retrieval.md) for the retrieval scoring and evidence
-contract. With the Compose stack running, `make smoke-recovery` demonstrates worker restart and
-checkpoint resume at the human-approval boundary.
+contract. The [database migration guide](docs/database-migrations.md) defines
+application/checkpoint ownership, state transitions, upgrade order, and forward recovery. With the
+Compose stack running, `make smoke-recovery` demonstrates worker restart and checkpoint resume at
+the human-approval boundary.
 
 ## Current scope
 

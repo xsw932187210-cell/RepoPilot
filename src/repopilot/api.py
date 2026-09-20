@@ -12,7 +12,7 @@ from fastapi.responses import ORJSONResponse, StreamingResponse
 from redis.asyncio import Redis
 
 from repopilot.config import Settings, get_settings
-from repopilot.db import Database
+from repopilot.db import Database, TaskStateConflict
 from repopilot.events import EventBus, JobQueue
 from repopilot.models import (
     ApprovalRequest,
@@ -218,6 +218,18 @@ async def approve_task(
             status_code=status.HTTP_409_CONFLICT,
             detail="Task is not awaiting approval",
         )
+    try:
+        queued = await database.transition_task(
+            task_id,
+            expected_status=TaskStatus.AWAITING_APPROVAL,
+            expected_version=task.state_version,
+            status=TaskStatus.QUEUED,
+        )
+    except TaskStateConflict as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
     await events.publish(
         task_id,
         kind="human_decision",
@@ -226,7 +238,7 @@ async def approve_task(
         payload={"approved": decision.approved, "feedback": decision.feedback},
     )
     await queue.enqueue(task_id, resume=decision.model_dump())
-    return await database.update_task(task_id, status=TaskStatus.QUEUED)
+    return queued
 
 
 @app.post("/api/v1/tasks/{task_id}/cancel", response_model=TaskView)
@@ -237,6 +249,18 @@ async def cancel_task(task_id: str, request: Request, _: Protected) -> TaskView:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     if task.status in {TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED}:
         return task
+    try:
+        cancelled = await database.transition_task(
+            task_id,
+            expected_status=task.status,
+            expected_version=task.state_version,
+            status=TaskStatus.CANCELLED,
+        )
+    except TaskStateConflict as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
     await queue.request_cancel(task_id)
     await events.publish(
         task_id,
@@ -244,4 +268,4 @@ async def cancel_task(task_id: str, request: Request, _: Protected) -> TaskView:
         node="api",
         message="Cancellation will be enforced at the next graph boundary",
     )
-    return await database.update_task(task_id, status=TaskStatus.CANCELLED)
+    return cancelled

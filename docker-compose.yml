@@ -46,6 +46,14 @@ services:
     volumes:
       - redis-data:/data
 
+  migrate:
+    build: .
+    command: ["repopilot-migrate", "upgrade"]
+    environment: *app-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   sandbox:
     image: repopilot-sandbox:local
     build:
@@ -57,8 +65,10 @@ services:
     build: .
     environment: *app-environment
     ports:
-      - "8000:8000"
+      - "127.0.0.1:${REPOPILOT_API_PORT:-8000}:8000"
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -78,6 +88,8 @@ services:
       - "${DOCKER_SOCKET_GID:-0}"
     environment: *app-environment
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
