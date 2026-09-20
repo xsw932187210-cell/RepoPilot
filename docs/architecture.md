@@ -19,6 +19,7 @@ flowchart LR
   H -->|approved| GH[Governed GitHub tool]
   G --> CP[(PostgreSQL checkpoints)]
   W --> E[(Task and event tables)]
+  M[Versioned app migration] --> E
   E --> API
 ```
 
@@ -58,6 +59,18 @@ accumulated in state, and the configured maximum iteration count prevents an unb
 
 Redis is intentionally not the source of truth. It owns dispatch, short-lived locks,
 cancellation flags, and live event fan-out. PostgreSQL owns task history, events, and graph state.
+RepoPilot's Alembic revisions own only the task/event application tables; LangGraph checkpoint
+tables stay behind `AsyncPostgresSaver.setup()` and are never modified by guessed application
+migrations. The application migration service must complete before API or Worker starts. Existing
+deployments stop old writers first because pre-CH-09 Workers do not participate in state-version
+compare-and-set. See [database migrations and task state versions](database-migrations.md).
+
+Task records carry a monotonically increasing `state_version`. Each accepted status/result update
+matches the caller's expected status and version and advances the version atomically; stale updates
+are rejected. Result and event JSON carry explicit schema versions, with migrated legacy rows
+reported as version `0` and current writes as version `1`. This guards the application row, but it
+does not make Redis delivery, checkpoints, workspace changes, events, or remote side effects one
+transaction.
 
 `scripts/recovery_smoke.sh` exercises this contract at the human-approval checkpoint: it creates a
 task, waits for the persisted interrupt, restarts the worker, submits the decision, and verifies
