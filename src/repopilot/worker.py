@@ -12,7 +12,7 @@ from langgraph.types import Command
 from redis.asyncio import Redis
 
 from repopilot.config import Settings, get_settings
-from repopilot.db import Database
+from repopilot.db import Database, TaskStateConflict
 from repopilot.events import EventBus, JobQueue
 from repopilot.github import GitHubPublisher
 from repopilot.graph import GraphDependencies, build_graph
@@ -85,6 +85,7 @@ class Worker:
     async def handle(self, job: dict[str, Any]) -> None:
         task_id = str(job["task_id"])
         token = str(uuid.uuid4())
+        active_task: TaskView | None = None
         if not await self.queue.acquire(task_id, token):
             logger.info("Task %s is already owned by another worker", task_id)
             return
@@ -94,7 +95,20 @@ class Worker:
                 return
             if task.status in {TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED}:
                 return
-            await self.database.update_task(task_id, status=TaskStatus.RUNNING, error=None)
+            if task.status is not TaskStatus.QUEUED:
+                logger.info(
+                    "Task %s is %s, not queued; ignoring delivery",
+                    task_id,
+                    task.status.value,
+                )
+                return
+            active_task = await self.database.transition_task(
+                task_id,
+                expected_status=TaskStatus.QUEUED,
+                expected_version=task.state_version,
+                status=TaskStatus.RUNNING,
+                error=None,
+            )
             await self.events.publish(
                 task_id,
                 kind="task_started",
@@ -112,8 +126,10 @@ class Worker:
             interrupts = result.get("__interrupt__", [])
             if interrupts:
                 payloads = [getattr(item, "value", str(item)) for item in interrupts]
-                await self.database.update_task(
+                active_task = await self.database.transition_task(
                     task_id,
+                    expected_status=TaskStatus.RUNNING,
+                    expected_version=active_task.state_version,
                     status=TaskStatus.AWAITING_APPROVAL,
                     result={"approval_requests": payloads, **result_summary(result)},
                 )
@@ -131,8 +147,10 @@ class Worker:
                 "cancelled": TaskStatus.CANCELLED,
                 "failed": TaskStatus.FAILED,
             }.get(result.get("status"), TaskStatus.FAILED)
-            await self.database.update_task(
+            active_task = await self.database.transition_task(
                 task_id,
+                expected_status=TaskStatus.RUNNING,
+                expected_version=active_task.state_version,
                 status=final_status,
                 result=result_summary(result),
                 error=result.get("error"),
@@ -143,21 +161,40 @@ class Worker:
                 node="worker",
                 message=f"Task finished with status {final_status.value}",
             )
+        except TaskStateConflict as exc:
+            logger.info("Discarding stale task state update: %s", exc)
         except TaskCancelled as exc:
-            await self.database.update_task(task_id, status=TaskStatus.CANCELLED, error=str(exc))
+            if active_task is not None and active_task.status is TaskStatus.RUNNING:
+                try:
+                    await self.database.transition_task(
+                        task_id,
+                        expected_status=TaskStatus.RUNNING,
+                        expected_version=active_task.state_version,
+                        status=TaskStatus.CANCELLED,
+                        error=str(exc),
+                    )
+                except TaskStateConflict as conflict:
+                    logger.info("Cancellation lost a state race: %s", conflict)
         except Exception as exc:
             logger.exception("Task %s failed", task_id)
-            await self.database.update_task(
-                task_id,
-                status=TaskStatus.FAILED,
-                error=f"{type(exc).__name__}: {exc}",
-            )
-            await self.events.publish(
-                task_id,
-                kind="task_error",
-                node="worker",
-                message=f"{type(exc).__name__}: {exc}",
-            )
+            if active_task is not None and active_task.status is TaskStatus.RUNNING:
+                try:
+                    await self.database.transition_task(
+                        task_id,
+                        expected_status=TaskStatus.RUNNING,
+                        expected_version=active_task.state_version,
+                        status=TaskStatus.FAILED,
+                        error=f"{type(exc).__name__}: {exc}",
+                    )
+                except TaskStateConflict as conflict:
+                    logger.info("Failure reporting lost a state race: %s", conflict)
+                else:
+                    await self.events.publish(
+                        task_id,
+                        kind="task_error",
+                        node="worker",
+                        message=f"{type(exc).__name__}: {exc}",
+                    )
         finally:
             await self.queue.release(task_id, token)
 

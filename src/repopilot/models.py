@@ -16,6 +16,28 @@ class TaskStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+TASK_RESULT_SCHEMA_VERSION = 1
+EVENT_PAYLOAD_SCHEMA_VERSION = 1
+
+ALLOWED_TASK_TRANSITIONS: dict[TaskStatus, frozenset[TaskStatus]] = {
+    TaskStatus.QUEUED: frozenset({TaskStatus.RUNNING, TaskStatus.CANCELLED}),
+    TaskStatus.RUNNING: frozenset(
+        {
+            TaskStatus.AWAITING_APPROVAL,
+            TaskStatus.COMPLETED,
+            TaskStatus.FAILED,
+            TaskStatus.CANCELLED,
+        }
+    ),
+    TaskStatus.AWAITING_APPROVAL: frozenset(
+        {TaskStatus.QUEUED, TaskStatus.CANCELLED}
+    ),
+    TaskStatus.COMPLETED: frozenset(),
+    TaskStatus.FAILED: frozenset(),
+    TaskStatus.CANCELLED: frozenset(),
+}
+
+
 class TaskCreate(BaseModel):
     repository_url: str = Field(
         description="A public GitHub HTTPS URL or an allowlisted bundled demo URI."
@@ -44,7 +66,9 @@ class TaskView(BaseModel):
     test_command: str
     max_iterations: int
     graph_thread_id: str
+    state_version: int = Field(ge=1)
     result: dict[str, Any] | None = None
+    result_schema_version: int = Field(ge=0)
     error: str | None = None
     created_at: datetime
     updated_at: datetime
@@ -62,6 +86,7 @@ class EventView(BaseModel):
     node: str
     message: str
     payload: dict[str, Any]
+    payload_schema_version: int = Field(ge=0)
     created_at: datetime
 
 

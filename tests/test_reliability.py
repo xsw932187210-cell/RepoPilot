@@ -294,7 +294,18 @@ async def test_database_state_survives_reopen(tmp_path: Path) -> None:
             issue_body="Persist the approval boundary.",
         )
     )
-    await first.update_task(task.id, status=TaskStatus.AWAITING_APPROVAL)
+    running = await first.transition_task(
+        task.id,
+        expected_status=TaskStatus.QUEUED,
+        expected_version=task.state_version,
+        status=TaskStatus.RUNNING,
+    )
+    await first.transition_task(
+        task.id,
+        expected_status=TaskStatus.RUNNING,
+        expected_version=running.state_version,
+        status=TaskStatus.AWAITING_APPROVAL,
+    )
     await first.close()
 
     reopened = Database(database_url)
