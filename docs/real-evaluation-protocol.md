@@ -16,6 +16,12 @@ latency excludes unattempted quota placeholders. It does not change prompts, ret
 execution or the acceptance decision. The published 2026-09-09 comparison was captured under
 version 7 immediately before this storage hardening; future runs use version 8.
 
+CH-10 separately versions the model-call checkpoint envelope as evaluation schema `4` with
+`evaluation-call-budget-v2`. It preserves reserved/started/outcome counters across process restart,
+classifies a possibly sent request without a persisted response as unknown, and fingerprints the
+timeout, output, retry, and cumulative-backoff rules. Schema-3 directories and the published
+evaluator-v7 results remain historical records; do not resume or aggregate them as schema 4.
+
 ## Reproduce and resume
 
 From the repository root (Docker required):
@@ -41,7 +47,10 @@ resolved to immutable local image IDs and included in experiment identity. The b
 Python digest and direct Python dependency versions are pinned in the Dockerfile;
 OS/transitive dependency rebuilding can still produce a different image ID.
 Rate-limit and retryable HTTP/transport failures use bounded per-request backoff; every
-attempt consumes the same explicit call budget, and SDK-level hidden retries are disabled.
+attempt consumes the same explicit call budget, request timeout and cumulative wait are bounded,
+and SDK-level hidden retries are disabled. Exact provider/model and adapter/request-schema identity
+are recorded per attempt. No automatic fallback is configured; a deliberate fallback must be
+explicitly marked and evaluated under a separate experiment identity.
 
 ## Leakage boundary
 

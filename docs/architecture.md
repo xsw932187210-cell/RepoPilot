@@ -6,6 +6,9 @@ RepoPilot deliberately separates agentic decisions from deterministic controls.
 flowchart LR
   API[FastAPI] --> Q[Redis queue]
   Q --> W[Worker]
+  W --> MC[Controlled model-call boundary]
+  MC --> L[(Call budget and attempt ledger)]
+  MC --> MP[Model provider]
   W --> G[LangGraph]
   G --> P[Planner]
   P --> R[Researcher: BM25 + AST symbols]
@@ -20,6 +23,7 @@ flowchart LR
   G --> CP[(PostgreSQL checkpoints)]
   W --> E[(Task and event tables)]
   M[Versioned app migration] --> E
+  M --> L
   E --> API
 ```
 
@@ -58,10 +62,11 @@ review-driven remediation, the next candidate is also escalated. Previous edits 
 accumulated in state, and the configured maximum iteration count prevents an unbounded agent loop.
 
 Redis is intentionally not the source of truth. It owns dispatch, short-lived locks,
-cancellation flags, and live event fan-out. PostgreSQL owns task history, events, and graph state.
-RepoPilot's Alembic revisions own only the task/event application tables; LangGraph checkpoint
-tables stay behind `AsyncPostgresSaver.setup()` and are never modified by guessed application
-migrations. The application migration service must complete before API or Worker starts. Existing
+cancellation flags, and live event fan-out. PostgreSQL owns task history, events, the model-call
+ledger, and graph state. RepoPilot's Alembic revisions own task/event/call-ledger application
+tables; LangGraph checkpoint tables stay behind `AsyncPostgresSaver.setup()` and are never modified
+by guessed application migrations. The application migration service must complete before API or
+Worker starts. Existing
 deployments stop old writers first because pre-CH-09 Workers do not participate in state-version
 compare-and-set. See [database migrations and task state versions](database-migrations.md).
 
@@ -72,9 +77,17 @@ reported as version `0` and current writes as version `1`. This guards the appli
 does not make Redis delivery, checkpoints, workspace changes, events, or remote side effects one
 transaction.
 
+Before every provider transport attempt, the Worker commits a task-wide budget reservation and
+then records `STARTED`. Planner, Coder, policy corrections, Reviewer calls, and controlled retries
+share this total. Completed attempts become `SUCCEEDED` or `FAILED`; an attempt that may have sent
+bytes but lacks a persisted outcome becomes `UNKNOWN` on recovery and is never refunded. A
+reservation left before `STARTED` also remains consumed. This conservatism closes the free-retry
+window but cannot make the database and provider one transaction. See
+[model-call budgets and provider failures](model-call-control.md).
+
 `scripts/recovery_smoke.sh` exercises this contract at the human-approval checkpoint: it creates a
 task, waits for the persisted interrupt, restarts the worker, submits the decision, and verifies
-that the same task completes without repeating the test runner.
+that the same task completes without repeating the test runner or resetting its model-call total.
 
 ## Repository retrieval
 
@@ -91,5 +104,7 @@ reranking, or large-repository quality. See `docs/retrieval.md` for the evaluati
 
 Each node records its name, iteration, and duration in graph state. The task result persists these
 records, while `GET /api/v1/tasks/{task_id}/metrics` aggregates wall time, node time, node run
-counts, per-node duration, iteration count, and sandbox time. Node-update events carry the
+counts, per-node duration, iteration count, sandbox time, and separate model-call reserved,
+started, succeeded, failed, unknown, pending, retry, fallback, backoff, and trusted-usage fields.
+Node-update events carry the
 corresponding duration so the API, SSE stream, and post-run metrics describe the same execution.

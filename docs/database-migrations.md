@@ -1,14 +1,15 @@
 # Database migrations and task state versions
 
 RepoPilot owns a small application schema and upgrades it with Alembic. The migration boundary is
-deliberately narrow: RepoPilot revisions may change `tasks`, `task_events`, and
-`alembic_version`; they do not inspect or rewrite LangGraph checkpoint tables.
+deliberately narrow: RepoPilot revisions may change `tasks`, `task_events`, model-call ledger
+tables, and `alembic_version`; they do not inspect or rewrite LangGraph checkpoint tables.
 
 ## Ownership boundary
 
 | Data | Owner and upgrade entry point |
 | --- | --- |
 | Task metadata, status, result, and event history | RepoPilot Alembic revisions under `src/repopilot/migrations/`; run `repopilot-migrate upgrade` |
+| Per-task model-call policy, reservations, attempts, outcomes, retry waits, and trusted usage | RepoPilot Alembic revision `20260921_0003`; initialized lazily for a task before its first controlled model request |
 | LangGraph checkpoints | `langgraph-checkpoint-postgres`; the worker calls the provider-supported `AsyncPostgresSaver.setup()` entry point |
 | Redis queue, cancellation keys, locks, and Pub/Sub | Ephemeral coordination state; not part of a database migration |
 
@@ -22,6 +23,7 @@ separately.
 | --- | --- |
 | `20260921_0001` | Exact baseline for the application tables that existed before CH-09 |
 | `20260921_0002` | Adds optimistic task-state versioning and owned-JSON schema versions |
+| `20260921_0003` | Adds CH-10's per-task model-call budget and attempt ledger |
 
 `Database.setup()` now runs the same upgrade path as the CLI. Compose also has a one-shot `migrate`
 service, and API/Worker startup waits for that service to finish successfully.
@@ -56,6 +58,13 @@ explicit decoder or forward migration rather than silently treating old bytes as
 The migration does not add approval or owner fields. Unknown future values therefore cannot become
 an approval or ownership grant through a permissive default.
 
+Revision `20260921_0003` adds `model_call_budgets` and `model_call_attempts`. It does not backfill
+one budget row per old task: an existing task remains readable and receives its immutable policy
+row only when a CH-10 Worker first executes it. New counters default to zero; `usage_complete`
+defaults true until an attempt lacks trustworthy provider usage or has an unknown/failed outcome.
+Attempt status has no permissive default and is always written explicitly by the controlled call
+boundary. No ownership epoch, candidate, approval, Outbox, or future billing fields are included.
+
 ## Task state contract
 
 Every task state update supplies the status and version that the caller observed. The database
@@ -81,8 +90,8 @@ candidate, and publication change cards.
 
 ## Deployment upgrade order
 
-Old and new API/Worker processes must not be mixed. Old processes do not increment
-`state_version`, so their unconditional writes would bypass the new concurrency contract.
+Old and new API/Worker processes must not be mixed. Pre-CH-09 processes do not increment
+`state_version`; pre-CH-10 Workers also issue model requests without reserving the durable ledger.
 
 For an existing deployment:
 
@@ -90,7 +99,7 @@ For an existing deployment:
 2. Confirm no task is actively executing and take a database backup appropriate to the deployment.
 3. Deploy the new image and run exactly one migrator: `repopilot-migrate upgrade`. With Compose,
    `docker compose run --rm migrate` uses the same entry point.
-4. Verify `repopilot-migrate current` reports `20260921_0002`.
+4. Verify `repopilot-migrate current` reports `20260921_0003`.
 5. Start only the new API and Worker image, then run the normal smoke checks.
 
 A fresh `docker compose up --build -d` performs step 3 through the one-shot `migrate` service. Do
@@ -101,7 +110,7 @@ not run multiple first-time migrators concurrently against the same unversioned 
 Destructive downgrade is intentionally unsupported. Recovery is backup restore or a reviewed
 forward fix.
 
-- PostgreSQL applies the CH-09 DDL inside a migration transaction. If a revision fails, correct the
+- PostgreSQL applies the CH-09/CH-10 DDL inside a migration transaction. If a revision fails, correct the
   cause and rerun `repopilot-migrate upgrade`; the version remains at the last completed revision.
   An exact legacy database may already be stamped at `20260921_0001`, which is a valid retry point.
 - If inspection reports a partial or unknown unversioned schema, do not stamp it manually. Restore
@@ -112,9 +121,9 @@ forward fix.
 - If a deployed revision itself is wrong, stop writers and ship a new forward revision. Never edit
   a revision that may already have run in another environment.
 
-The PostgreSQL integration test proves the documented retry path by starting from real legacy
-tables and rows, rolling back a deliberately failed DDL transaction, rerunning to head, and checking
-that the task and event remain readable.
+The PostgreSQL integration tests prove the documented retry paths. CH-10 installs from an empty
+database, starts at the exact CH-09 head with a task/event, upgrades twice, rolls back a deliberately
+failed DDL transaction, reruns to head, and checks old data plus concurrent budget reservations.
 
 ## Verification commands
 
@@ -136,3 +145,13 @@ Override the defaults only when the replacement values are also dedicated to thi
 ```bash
 CH09_POSTGRES_PORT=55440 CH09_COMPOSE_PROJECT=repopilot_ch09_manual make migration-test
 ```
+
+CH-10's probe refuses any database not named `repopilot_ch10_test` and independently owns its
+Compose project, port, and volume:
+
+```bash
+CH10_POSTGRES_PORT=55440 CH10_COMPOSE_PROJECT=repopilot_ch10_manual \
+  make ch10-migration-test
+```
+
+Both wrappers remove only their named resources and do not run a destructive downgrade.
