@@ -1,6 +1,6 @@
 # RepoPilot 项目规范与迭代验收
 
-> 更新日期：2026-09-21；实现基线：`adbca64`；最近完整真实模型评测：2026-09-09。
+> 更新日期：2026-09-22；实现基线：`adbca64`；最近完整真实模型评测：2026-09-09。
 > 本文是现有项目的规范入口，记录当前行为、证据和后续变更的验收标准。
 > 本次建立的是单文件规范，尚未接入 OpenSpec CLI，也不代表已建立其提案、归档或自动校验流程。
 > 规划版本：Roadmap v2。第 8 节包含 34 张执行任务卡；CH-01～CH-08 保留为主题编号，具体开发选带字母的子任务。
@@ -629,7 +629,7 @@ CH-02A、CH-09 已合并，CH-10 已验证。建议下一张卡选择 **CH-02B**
 
 ### CH-10：在线调用预算与提供商故障处理
 
-- **状态**：VERIFIED（`adbca64`，PR 待创建）。**优先级/规模**：P0 / M。**硬依赖**：CH-09。
+- **状态**：VERIFIED（`adbca64`，PR #7 Open）。**优先级/规模**：P0 / M。**硬依赖**：CH-09。
 - **入口**：`eval_runtime.py` 中的预算逻辑、`llm.py`、`worker.py`、图状态/数据库；避免复制两套分歧实现。
 - **实施步骤**：
   1. 抽取 provider-neutral 的受控调用接口，在线和评测复用请求计数、429/临时故障分类和 Retry-After 处理；保持评测旧行为由版本区分。
@@ -932,13 +932,13 @@ smoke 使用已经运行的服务。若 `.env` 选择真实模型，应按 [READ
 
 - 实现基线：从干净的 `origin/main@bc49d5b` 创建 `codex/ch-10-provider-call-budget`；远端提交图确认该 main 提交是 CH-09 [PR #6](https://github.com/xsw932187210-cell/RepoPilot/pull/6) 的 merge commit，包含代码 `59d996f` 和文档 `b4927a7`；开始时工作树干净，没有携带未提交前置改动。
 - 已核实的硬依赖：CH-09 → `59d996f` / `b4927a7` / PR #6 → `main@bc49d5b`；重新核对 Alembic `20260921_0001 → 0002`、任务 status/version CAS、SQLite/真实 PostgreSQL 历史验证记录后使用，未绕过迁移体系，未重做 CH-09。
-- 本轮分支及代码提交：`codex/ch-10-provider-call-budget` / 代码 `adbca64`；文档提交待本记录提交后回填。
+- 本轮分支及代码提交：`codex/ch-10-provider-call-budget` / 代码 `adbca64`、文档 `995e298`；PR 状态回填另有后续文档提交。
 - 变更范围：新增 provider-neutral `ControlledModelCaller`，在线和真实评测复用预留/发起/结果状态机、429/5xx/连接/超时分类、`Retry-After`、退避和用量解析；所有角色、策略纠正和 transport retry 共用任务总预算；SDK `max_retries=0`；新增 `20260921_0003` 的 `model_call_budgets/model_call_attempts`、API 细分指标、配置和隔离 PostgreSQL 探针。未实现自动 fallback、CH-04B ownership/fencing、通用 exactly-once、精确金额核算或其他任务卡。
 - 验证记录：2026-09-21，macOS arm64 主机、Docker Engine 29.5.3，容器 Python 3.12.14；`ruff check .` 退出 0；CH-10 相关测试 47 passed；完整 `pytest --cov=repopilot --cov-report=term-missing --cov-fail-under=70 -q` 为 135 passed、3 skipped、80.01% coverage，3 个 skip 是未提供专用 URL 时的 PostgreSQL 条件入口；`make ch10-migration-test` 在 PostgreSQL 16.15 为 2 passed；隔离 project 中 `make eval` 为 10/10，`make smoke` 与 `make smoke-recovery` 均退出 0。
 - 故障验证：确定性 transport 覆盖正常 usage、预算恰好耗尽/不足前不发请求、连续 429 的有效/缺失/异常 `Retry-After`、可重试 5xx、连接重置、超时、非法结构、不可重试 4xx、重试/单次等待/累计退避上限和 fallback 标记。预留后未发送崩溃保留 `RESERVED` 并阻止免费调用；`STARTED` 后结果未持久化的崩溃在重启后转 `UNKNOWN`。真实 Worker 审批 checkpoint 重启前后均观测 `reserved=started=succeeded=3`、`unknown=0`。
 - 实验身份：本卡没有调用真实付费模型，不作 provider 集成、计费或质量提升主张。`make eval` 使用 `mock` / `deterministic-mock-v1`、`evals/cases.jsonl`，SHA-256 `6e5c1012e81c11d9a4cda4d2d5f761313398f5383bb0a3a71960e6569b25bdf7`。新真实评测记录为 schema 4 / `evaluation-call-budget-v2`；2026-09-09 evaluator-v7 结果保留为历史，未重跑也未混入新版本。
 - 证据及限制：账本/调用边界见 `src/repopilot/model_calls.py`、`src/repopilot/db.py`、`src/repopilot/llm.py`、`src/repopilot/worker.py`；故障证据见 `tests/test_model_calls.py`、`tests/test_eval_runtime.py`、`tests/test_model_calls_postgres.py`；契约见 `docs/model-call-control.md`。伪造 transport 只验证外部可观察控制行为，不是真实 provider 集成。数据库与 provider 无跨系统事务；缺失 usage/特殊计费时只能依靠调用/输出上限，不能保证精确 Token 或金额；CH-09 CAS 不是 Worker fencing。
 - 兼容与恢复：Alembic head 由 `20260921_0002` 前向升级为 `20260921_0003`；空库安装、CH-09 库升级、重复迁移、旧任务/事件保留和 PostgreSQL DDL 失败后重跑已验证。旧任务首次受控调用时才惰性创建预算行。部署时停止旧 API/Worker、确认无活跃任务并备份、单实例升级、核对 head 后只启动新版；不支持破坏性 downgrade，从备份恢复或前向修复。
-- PR / 合并：PR 待创建；目标基线为 `main@bc49d5b`，未合并、未启用自动合并。
+- PR / 合并：[PR #7](https://github.com/xsw932187210-cell/RepoPilot/pull/7) 已创建，base 为 `main@bc49d5b`（CH-09 PR #6 merge commit）、head 为 `codex/ch-10-provider-call-budget`；2026-09-22 核对时为 Open、未合并、2/2 checks passing、无合并冲突，未启用自动合并。
 - 规范更新：RP-04、RP-05、RP-07、工程证据、当前缺口、8.3/8.4 跨任务契约、CH-09/CH-10 状态、README、架构、运行时正确性、数据库/评测/模型调用专项文档已更新；必要验收全部通过，CH-10 标为 `VERIFIED`，不是 `MERGED`。
 - 下一张建议：CH-02B；CH-02A 和 CH-10 硬依赖已就绪，可继续结构化策略拒绝与有界纠正；本轮不执行。
