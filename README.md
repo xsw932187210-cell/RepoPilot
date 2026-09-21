@@ -26,6 +26,8 @@ known limitations, and acceptance criteria for the next iterations (Chinese).
 - Durable PostgreSQL checkpoints and `Command(resume=...)` human approval.
 - Versioned application-schema migrations, optimistic task-state updates, and explicit result/event
   JSON versions.
+- Durable per-task model-call reservations, bounded provider retries/timeouts, conservative
+  unknown-result recovery, and separate attempt/outcome metrics.
 - Redis dispatch, idempotency lock, cancellation flag, and event fan-out.
 - FastAPI task API plus replayable event history and SSE progress.
 - Per-node latency, retry, sandbox, and wall-time metrics through a task metrics endpoint.
@@ -75,9 +77,25 @@ MODEL_PROVIDER=openai
 MODEL_NAME=gpt-4.1-mini
 OPENAI_API_KEY=your-local-secret
 # OPENAI_BASE_URL=https://your-compatible-endpoint/v1
+MODEL_MAX_CALLS=12
+MODEL_REQUEST_TIMEOUT_SECONDS=90
+MODEL_MAX_RATE_LIMIT_RETRIES=2
+MODEL_MAX_TRANSIENT_RETRIES=2
+MODEL_RETRY_BASE_SECONDS=1
+MODEL_MAX_RETRY_WAIT_SECONDS=30
+MODEL_MAX_TOTAL_BACKOFF_SECONDS=60
+MODEL_MAX_TOTAL_TOKENS=0
+MODEL_MAX_OUTPUT_TOKENS=4096
 ```
 
 Never commit `.env`. The file is ignored by Git.
+
+Every online Planner, Coder, policy-correction, Reviewer, and controlled transport retry consumes
+the same durable task budget. `MODEL_MAX_TOTAL_TOKENS=0` disables the optional trusted-token gate;
+call and output caps still apply. Provider usage is never estimated, so missing usage or special
+billing prevents an exact monetary guarantee. See
+[model-call budgets and provider failures](docs/model-call-control.md) for error states, recovery,
+fallback identity, and deployment rules.
 
 The worker launches short-lived test containers through the mounted Docker socket. Docker Desktop
 uses the default `DOCKER_SOCKET_GID=0`; on Linux, set it in `.env` to the value returned by
@@ -162,6 +180,7 @@ pip install ".[dev]"
 pytest --cov=repopilot --cov-report=term-missing --cov-fail-under=70 -q
 ruff check .
 make migration-test
+make ch10-migration-test
 ```
 
 See [docs/architecture.md](docs/architecture.md) for trust boundaries, recovery semantics, and
@@ -169,7 +188,9 @@ observability, and [docs/retrieval.md](docs/retrieval.md) for the retrieval scor
 contract. The [database migration guide](docs/database-migrations.md) defines
 application/checkpoint ownership, state transitions, upgrade order, and forward recovery. With the
 Compose stack running, `make smoke-recovery` demonstrates worker restart and checkpoint resume at
-the human-approval boundary.
+the human-approval boundary while verifying that the persisted model-call total does not reset.
+The [model-call control guide](docs/model-call-control.md) defines the provider request, ledger,
+retry, and crash-window contract.
 
 ## Current scope
 

@@ -1,4 +1,4 @@
-.PHONY: up down build logs test lint migration-test smoke smoke-recovery eval eval-real eval-real-reproduce eval-real-retrieval
+.PHONY: up down build logs test lint migration-test ch10-migration-test smoke smoke-recovery eval eval-real eval-real-reproduce eval-real-retrieval
 
 up:
 	docker compose up --build -d
@@ -21,6 +21,9 @@ lint:
 
 migration-test:
 	./scripts/migration_integration.sh
+
+ch10-migration-test:
+	./scripts/ch10_migration_integration.sh
 
 smoke:
 	./scripts/smoke.sh

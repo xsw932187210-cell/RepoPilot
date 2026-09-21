@@ -1,6 +1,6 @@
 # RepoPilot 项目规范与迭代验收
 
-> 更新日期：2026-09-21；实现基线：`59d996f`；最近完整真实模型评测：2026-09-09。
+> 更新日期：2026-09-22；实现基线：`adbca64`；最近完整真实模型评测：2026-09-09。
 > 本文是现有项目的规范入口，记录当前行为、证据和后续变更的验收标准。
 > 本次建立的是单文件规范，尚未接入 OpenSpec CLI，也不代表已建立其提案、归档或自动校验流程。
 > 规划版本：Roadmap v2。第 8 节包含 34 张执行任务卡；CH-01～CH-08 保留为主题编号，具体开发选带字母的子任务。
@@ -43,15 +43,16 @@ RepoPilot 面向 Python 代码仓库维护者，将 Issue 描述转化为候选�
 
 | 组件 | 当前责任 | 主要实现 |
 | --- | --- | --- |
-| FastAPI | 创建、查询、审批、取消任务，提供事件历史、SSE 和指标 | [api.py](src/repopilot/api.py) |
+| FastAPI | 创建、查询、审批、取消任务，提供事件历史、SSE 和节点/模型调用指标 | [api.py](src/repopilot/api.py) |
 | Redis | List 队列、短租约锁、取消标记、Pub/Sub 通知 | [events.py](src/repopilot/events.py) |
 | Worker | 消费任务、取得执行权、调用图、持久化任务结果 | [worker.py](src/repopilot/worker.py) |
 | LangGraph | 显式节点、条件路由、状态和人工中断 | [builder.py](src/repopilot/graph/builder.py) |
-| PostgreSQL | Compose 中的任务、事件与图 checkpoint 存储；应用表使用版本化迁移，checkpoint 仍由 LangGraph 自有入口管理 | [db.py](src/repopilot/db.py)、[migrations](src/repopilot/migrations/)、[docker-compose.yml](docker-compose.yml) |
+| PostgreSQL | Compose 中的任务、事件、模型调用账本与图 checkpoint 存储；应用表使用版本化迁移，checkpoint 仍由 LangGraph 自有入口管理 | [db.py](src/repopilot/db.py)、[migrations](src/repopilot/migrations/)、[docker-compose.yml](docker-compose.yml) |
+| Model call control | 调用前预留、角色/重试总预算、provider 错误分类、超时/退避、用量与恢复记账 | [model_calls.py](src/repopilot/model_calls.py)、[llm.py](src/repopilot/llm.py) |
 | Workspace / Retrieval | 准备工作区、检索完整文件、预检并应用修改 | [repository.py](src/repopilot/repository.py)、[retrieval.py](src/repopilot/retrieval.py) |
 | Docker sandbox | 在一次性快照内运行允许的测试命令 | [sandbox.py](src/repopilot/sandbox.py) |
 | GitHub publisher | 在工作流审批后按配置创建分支和 Draft PR | [github.py](src/repopilot/github.py) |
-| Evaluation runtime | 案例复现、对照实验、续跑、预算与证据汇总 | [real_evaluation.py](src/repopilot/real_evaluation.py)、[eval_runtime.py](src/repopilot/eval_runtime.py) |
+| Evaluation runtime | 案例复现、对照实验、续跑，复用受控调用状态机并汇总证据 | [real_evaluation.py](src/repopilot/real_evaluation.py)、[eval_runtime.py](src/repopilot/eval_runtime.py) |
 
 Planner、Coder、Reviewer 是三个调用 LLM 的角色。Researcher 执行确定性检索，Test Analyst 构造测试策略描述；后两者是只读并行节点，当前不能描述为五个独立 LLM Agent。
 
@@ -130,21 +131,23 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 - 确定性门槛通过后，Reviewer 的中/高风险否决可在剩余迭代预算内触发返工；低风险否决或预算耗尽时将意见交给人工审批。
 - Reviewer 是建议来源，其 `approved=true` 不是进入人工审批的必备条件。
 - API 的 `max_iterations` 可设置为 1～5；“审查最多返工一次”仅适用于默认两轮配置，目前没有独立于总迭代数的单次审查返工计数器。
-- 策略纠正可能额外调用模型；Coder 轮数不等于模型调用次数。真实评测另有每对任务最多 6 次 API 尝试的总预算，当前在线 Worker 没有同等全局调用预算。
+- 在线 Worker 的 Planner、Coder、Reviewer、策略纠正、返工与 provider transport retry 共用每任务持久化总预算；默认 12 次，未获预留时不发 transport。Coder 轮数仍不等于模型调用次数。
+- `provider-call-control-v1` 限制单请求超时、各类重试、单次等待、累计退避和输出上限；SDK 隐式重试关闭。只有 provider 返回可信完整 usage 时才启用 Token 门槛，不估算金额。
 
-验证入口：[test_graph.py](tests/test_graph.py)、[test_reliability.py](tests/test_reliability.py)。
+验证入口：[test_graph.py](tests/test_graph.py)、[test_reliability.py](tests/test_reliability.py)、[test_model_calls.py](tests/test_model_calls.py)、[模型调用控制契约](docs/model-call-control.md)。
 
 ### RP-05：恢复、队列和任务所有权
 
 - Compose 使用持久化 PostgreSQL checkpoint；审批恢复继续同一个图线程。
-- RepoPilot 自有 `tasks/task_events` 使用 Alembic 版本链；空库、精确匹配的旧无版本库和已版本化库走同一升级入口。局部或未知无版本结构拒绝自动 stamp。LangGraph checkpoint 表不由 RepoPilot 猜字段迁移，继续使用 `AsyncPostgresSaver.setup()`。
+- RepoPilot 自有 `tasks/task_events/model_call_budgets/model_call_attempts` 使用 Alembic 版本链；空库、精确匹配的旧无版本库和已版本化库走同一升级入口。局部或未知无版本结构拒绝自动 stamp。LangGraph checkpoint 表不由 RepoPilot 猜字段迁移，继续使用 `AsyncPostgresSaver.setup()`。
+- 模型请求与数据库不是跨系统事务：预留先提交；恢复时，请求前崩溃留下的 `RESERVED` 和可能已发送的 `UNKNOWN` 都保守消耗预算，不当作免费重试。账本独立于 checkpoint，Worker 重启不清零。
 - Worker/API 的任务写入使用 expected status/version 的原子条件更新，过期 Worker 不能覆盖已变化的任务行；这只是应用状态 CAS，不是所有权 epoch，也不能撤销已经发生的工作区或外部副作用。
 - Redis 锁使用 `SET NX EX 900`；释放时比较 token，防止旧持有者删除新锁。
 - 当前无锁续期、fencing token、消费 ACK 或 pending reclaim；长任务超过锁 TTL 时可能出现两个 Worker 同时执行，出队后崩溃可能丢失该次投递。
 - 任务表、checkpoint、工作区和发布操作没有统一事务；当前不能承诺任意节点崩溃后自动恢复或恰好执行一次。
 - 取消检查主要发生在执行节点入口，没有贯穿所有外部 I/O，也没有统一任务截止时间。
 
-验证入口：[数据库迁移说明](docs/database-migrations.md)、[test_migrations.py](tests/test_migrations.py)、[PostgreSQL 集成测试](tests/test_migrations_postgres.py)、[recovery_smoke.sh](scripts/recovery_smoke.sh)、[运行时边界说明](docs/runtime-correctness.md)。恢复 smoke 的适用范围是审批中断，不是故障全覆盖。
+验证入口：[数据库迁移说明](docs/database-migrations.md)、[test_migrations.py](tests/test_migrations.py)、[PostgreSQL 账本测试](tests/test_model_calls_postgres.py)、[recovery_smoke.sh](scripts/recovery_smoke.sh)、[运行时边界说明](docs/runtime-correctness.md)。恢复 smoke 适用于审批 checkpoint 及其调用计数；不等于队列找回、Worker fencing 或故障全覆盖。
 
 ### RP-06：工具执行与发布边界
 
@@ -169,8 +172,8 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 
 续跑和存储要求：
 
-- 每个 case-mode 独立原子落盘；相同配置续跑时复用 `completed` 与 `failed`，重试尚未完成或 `pending_quota` 的记录。失败案例不会自动无限重跑。
-- 指纹覆盖数据集、案例选择、模型、配置、实现和镜像等身份；改变实验条件使用新目录，避免混合实验。
+- 每个 case-mode 独立原子落盘；相同配置续跑时复用 `completed` 与 `failed`，重试尚未完成或 `pending_quota` 的记录。schema 4 在每次预留/发起/结果后持久化计数，续跑保留预算并把未定响应转为 `unknown`。失败案例不会自动无限重跑。
+- 指纹覆盖数据集、案例选择、精确 provider/模型、配置、调用策略、实现和镜像等身份；`evaluation-call-budget-v2` 与旧 schema-3 记录不混用，fallback/模型切换使用新实验身份。
 - 限流和临时故障进行有上限的退避；所有 API 尝试计入预算，SDK 隐式重试关闭。配额耗尽保留已完成进度和独立 pending 状态。
 - 当前 evaluator 配置 v8 的模型案例记录去除原始 Diff、命令、进程输出、逐测试标识，保留聚合计数和脱敏失败原因；未执行的配额占位项不计入时延统计。
 - 以上持久化约束不自动覆盖复现缓存、在线图状态和事件 payload；这些数据仍需按用途审查。未知 Token 或金额记录为缺失，不能估造。
@@ -183,7 +186,7 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 
 | 证据 | 记录结果 | 解释边界 |
 | --- | --- | --- |
-| 工程验证 | 2026-09-21：116 passed、1 个需专用 PostgreSQL 的条件测试在本地套件中跳过，78.52% 行覆盖率；lint、PostgreSQL 16.15 升级、Mock eval 10/10、smoke、审批恢复 smoke 通过 | PostgreSQL 条件测试已由独立 Compose 实例另行实跑通过；测试量和覆盖率不等于真实修复率 |
+| 工程验证 | 2026-09-21：135 passed、3 个专用 PostgreSQL 条件测试在全量套件中跳过，80.01% 行覆盖率；lint、PostgreSQL 16.15 CH-10 迁移 2/2、Mock eval 10/10、smoke、审批恢复 smoke 通过 | CH-10 PostgreSQL 条件测试已由独立 Compose 实例另行实跑；provider 故障使用确定性 transport，不是真实 provider 集成或计费证据 |
 | Mock 工作流回归 | 10/10 | 验证流程及确定性夹具，不代表 LLM 编码能力 |
 | 真实缺陷复现 | 20/20 | 同一上游项目的固定缺陷与聚焦验收集 |
 | 无模型检索诊断 | 目标文件覆盖 20/20，Recall@3 / @5 均 95%，MRR 0.874 | 仅此数据集的文件排序，不是修复率，也不是检索消融收益 |
@@ -210,6 +213,7 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 | 取消与任务超时 | 对外状态和实际执行停止可能不同步 | CH-06 |
 | 历史事件切换实时订阅 | SSE 可能漏掉切换窗口事件 | CH-06 |
 | 在线日志 / 状态脱敏范围 | 评测 sanitizer 不覆盖所有在线错误、payload 和 checkpoint | CH-06 |
+| 外部模型调用原子性与计费 | 已有持久化预留、未定响应和有界重试；数据库/provider 无跨系统事务，缺 usage/特殊计费时不能承诺精确金额，也尚无 Worker fencing | CH-04B（所有权）；CH-10 记账已完成 |
 | 单一项目和单次实验 | 无法支持跨仓库泛化或稳定收益结论 | CH-01、CH-07 |
 
 ## 7. 后续迭代的约束
@@ -277,7 +281,7 @@ S/M/L 表示相对范围：S 通常是独立诊断或小接口；M 是一组紧�
 - **M4：小范围多人使用**：有明确使用者时再做 CH-12、CH-16、CH-17、CH-08C、CH-08D；保留默认关闭 GitHub 写入的方式。
 - **M5：可选探索**：CH-05B、CH-08B、CH-14、CH-15、CH-20。只有当前瓶颈或使用需求支持时启动；不为技术栈数量把它们设为简历前置条件。
 
-CH-02A 已合并，CH-09 已验证后，建议下一张卡选择 **CH-10**，复用当前迁移和状态版本基础建立持久化调用账本；如果希望先理解当前效果问题，可独立选择 **CH-01A**。执行顺序始终以各卡硬依赖为准。
+CH-02A、CH-09 已合并，CH-10 已验证。建议下一张卡选择 **CH-02B**，其 CH-02A/CH-10 硬依赖已就绪，可把当前文本策略拒绝改为结构化反馈与全任务有界纠正；如果希望先理解历史效果问题，可独立选择 **CH-01A**。执行顺序始终以各卡硬依赖为准。
 
 ### 8.4 跨任务接口约定（已落实项与待实现设计）
 
@@ -294,7 +298,7 @@ CH-02A 已合并，CH-09 已验证后，建议下一张卡选择 **CH-10**，复
 | 审批凭据 | `decision_id / task_id / candidate_id / evidence_digest / approved / actor / timestamp`；先用单用户身份，后由 CH-12 提供认证主体 | CH-03A |
 | 发布意图 | `publish_intent_id / decision_id / target_repo / approved_base_sha / branch / phase / remote_ids` | CH-03B |
 | 可恢复任务消息 | 版本、`job_id / task_id / kind / decision_id`；不在 Redis 消息体中传凭据或大段代码 | CH-04A |
-| 调用记账 | 预算上限、调用前预留、已发起次数、用量完整性、未确定响应；重启不能清零 | CH-10 |
+| 调用记账 | 已落地 `model_call_budgets/model_call_attempts`；任务级上限、调用前预留、`reserved/started/succeeded/failed/unknown`、累计退避、用量完整性、provider/model/adapter/schema/fallback 身份；重启不清零，不等于 Worker fencing | CH-10 |
 | 事件 | 单任务稳定顺序、持久化 ID、类型、关联尝试/候选、脱敏 payload；通知不是事实源 | CH-06B |
 
 候选存储接口由 CH-03A 定义：manifest/digest 由服务端对完整候选字节生成，候选记录绑定不可变 artifact 引用，测试和审批按该引用读取。CH-05A 实现 staging 与代次切换并复用同一接口；`current_generation` 只是当前选择指针，不改变旧审批所绑定的候选。CH-03B 必须在 CH-05A 后实现，发布只能读取获批引用，不能跟随最新指针。
@@ -302,7 +306,7 @@ CH-02A 已合并，CH-09 已验证后，建议下一张卡选择 **CH-10**，复
 四个全局约束：
 
 1. **代码身份一致**：被测试、被审批和被提交的必须是同一个候选；不能只比较一段展示用 Diff。
-2. **外部调用不能假装事务化**：Redis/PostgreSQL 与 GitHub API 没有跨系统事务。外部请求发出后超时视为结果待对账，不能直接当作未发生，也不能承诺通用 exactly-once。
+2. **外部调用不能假装事务化**：Redis/PostgreSQL 与 GitHub 或模型 provider API 没有跨系统事务。模型调用先持久化预留，已发起后超时/中断记为 `UNKNOWN` 并消耗预算；其他外部请求也不能直接当作未发生，不能承诺通用 exactly-once。
 3. **fencing 必须在副作用接收方有效**：仅调用前读一次 Redis token 不能阻止暂停后恢复的旧进程。尝试隔离工作区、持久化 CAS 和发布意图对账共同约束可见结果；不受控的外部 writer 仍不在保证范围内。
 4. **对外摘要与私有执行状态分开**：评测隐藏证据、原始源码、凭据不能直接流入公开日志或前端；也不能为脱敏随意替换恢复所需的代码，导致 checkpoint 恢复出错误候选。
 
@@ -612,7 +616,7 @@ CH-02A 已合并，CH-09 已验证后，建议下一张卡选择 **CH-10**，复
 
 ### CH-09：数据库迁移与版本化状态更新
 
-- **状态**：VERIFIED（`59d996f`，PR 待创建）。**优先级/规模**：P0 / M。**硬依赖**：无。
+- **状态**：MERGED（`59d996f` + `b4927a7`，PR #6）。**优先级/规模**：P0 / M。**硬依赖**：无。
 - **入口**：`db.py`、`models.py`、`worker.py`、依赖配置与 Compose；实施前的 `create_all()` 不能升级已有表。
 - **实施步骤**：
   1. 引入版本化迁移方式，建立当前 schema 的基线；提供已有数据库识别和升级流程，后续任务按需要各自增加迁移，不提前创建所有计划表。
@@ -625,7 +629,7 @@ CH-02A 已合并，CH-09 已验证后，建议下一张卡选择 **CH-10**，复
 
 ### CH-10：在线调用预算与提供商故障处理
 
-- **状态**：TODO。**优先级/规模**：P0 / M。**硬依赖**：CH-09。
+- **状态**：VERIFIED（`adbca64`，PR #7 Open）。**优先级/规模**：P0 / M。**硬依赖**：CH-09。
 - **入口**：`eval_runtime.py` 中的预算逻辑、`llm.py`、`worker.py`、图状态/数据库；避免复制两套分歧实现。
 - **实施步骤**：
   1. 抽取 provider-neutral 的受控调用接口，在线和评测复用请求计数、429/临时故障分类和 Retry-After 处理；保持评测旧行为由版本区分。
@@ -786,6 +790,7 @@ ruff check .
 pytest --cov=repopilot --cov-report=term-missing --cov-fail-under=70 -q
 
 # Docker、镜像与服务准备好后：确定性工作流及运行验收
+make ch10-migration-test
 make eval
 make smoke
 make smoke-recovery
@@ -812,12 +817,13 @@ smoke 使用已经运行的服务。若 `.env` 选择真实模型，应按 [READ
 - [架构](docs/architecture.md)：组件、图与信任边界。
 - [运行时正确性](docs/runtime-correctness.md)：机制失效时的行为与限制。
 - [数据库迁移与状态版本](docs/database-migrations.md)：应用表/checkpoint 边界、版本链、状态转移、部署与失败恢复。
+- [模型调用预算与 provider 故障](docs/model-call-control.md)：配置、账本状态、错误分类、重试与崩溃窗口。
 - [工作区能力策略](docs/workspace-capabilities.md)：版本化 read/write/create 权限、拒绝原因与边界。
 - [检索契约](docs/retrieval.md)：检索排序、预算与评分口径。
 - [评测说明](docs/evaluation.md)、[真实任务集](docs/real-task-corpus.md)、[真实评测协议](docs/real-evaluation-protocol.md)：复现与实验约束。
 - [2026-09-09 真实评测结果](docs/real-evaluation-results-2026-09-09.md)：当前可引用的实测依据。
 
-当前可对外表述为“LangGraph 单写者、多角色代码修复工作流，具备只读并行分析、有界检索、版本化工作区能力策略、应用数据库迁移和状态 CAS、Docker 测试、HITL 和审批 checkpoint 恢复，并完成真实缺陷对照评测；默认策略下测试与构建/CI 配置可读但不可写”。不得由此延伸出“已实现多写者并发冲突解决”“Worker fencing”“分布式 exactly-once”“文件系统事务”或“多 Agent 提升修复率”等尚无充分实现或证据的结论。
+当前可对外表述为“LangGraph 单写者、多角色代码修复工作流，具备只读并行分析、有界检索、版本化工作区能力策略、应用数据库迁移和状态 CAS、持久化模型调用预留与未定响应记账、Docker 测试、HITL 和审批 checkpoint 恢复，并完成真实缺陷对照评测；默认策略下测试与构建/CI 配置可读但不可写”。不得由此延伸出“已实现多写者并发冲突解决”“Worker fencing”“分布式 exactly-once”“精确金额上限”“文件系统事务”或“多 Agent 提升修复率”等尚无充分实现或证据的结论。
 
 ## 11. 新对话开场与收尾模板
 
@@ -911,13 +917,28 @@ smoke 使用已经运行的服务。若 `.env` 选择真实模型，应按 [READ
 
 - 实现基线：从干净的 `origin/main@792cb84` 创建 `codex/ch-09-database-migrations`；远端提交图确认 PR #5 已合并到 PR #3 的分支，PR #3 已进入 main，CH-02A 与 `Openspec.md` 均在基线中，本轮没有携带未提交修改或功能分支依赖。
 - 已核实的硬依赖：无。源码核实旧 `Database.setup()` 仅调用 `create_all()`、任务状态无条件覆盖、result/event JSON 无版本；checkpoint 由独立的 `AsyncPostgresSaver.setup()` 管理。CH-02A 未作为 CH-09 的实现前置。
-- 本轮分支及代码提交：`codex/ch-09-database-migrations` / 代码 `59d996f`；文档与 PR 回填提交待创建后补充。
+- 本轮分支及代码提交：`codex/ch-09-database-migrations` / 代码 `59d996f`、文档 `b4927a7`。
 - 变更范围：新增 Alembic 版本链、CLI 与 Compose `migrate` 服务；`20260921_0001` 识别旧应用 schema 基线，`20260921_0002` 增加 `state_version/result_schema_version/payload_schema_version`；精确旧库自动 stamp 后升级，未知/局部结构拒绝猜测；任务写入改为允许边与 expected status/version CAS；API 竞态返回 409，Worker 丢弃过期结果。未增加 CH-10 调用账本、Outbox、ownership epoch、候选/审批表或其他后续字段。
 - 验证记录：2026-09-21，macOS arm64、Python 3.13.5、Alembic 1.20.0、Docker Engine 29.5.3；`ruff check .` 退出 0；相关测试 16 passed；完整 `pytest --cov=repopilot --cov-report=term-missing --cov-fail-under=70 -q` 为 116 passed、1 skipped、78.52% coverage，其中 skip 是仅在未提供专用 URL 时跳过的 PostgreSQL 条件入口；独立 `make migration-test` 在 PostgreSQL 16.15 为 1 passed；隔离 Compose project 中 `make eval` 为 10/10，`make smoke` 与 `make smoke-recovery` 均退出 0。
 - 故障验证：SQLite 夹具在旧库 stamp 为 `20260921_0001` 后注入升级中断，重跑到 `20260921_0002` 且旧任务可读；真实 PostgreSQL 事务在 `ALTER TABLE` 后以除零错误中断，探针列回滚、版本仍为 baseline，重跑升级后旧任务与事件保留。正常场景覆盖空库、真实旧结构/数据升级与重复执行；过期 version 和非法状态边均被拒绝。
 - 实验身份：本卡不调用真实模型、不作质量提升主张；`make eval` 使用 `mock` / `deterministic-mock-v1` 与 `evals/cases.jsonl`，数据集 SHA-256 `6e5c1012e81c11d9a4cda4d2d5f761313398f5383bb0a3a71960e6569b25bdf7`。
 - 证据及限制：SQLite/冲突测试见 `tests/test_migrations.py`，真实数据库测试见 `tests/test_migrations_postgres.py` 与 `docker-compose.ch09-test.yml`。PostgreSQL 使用专用数据库 `repopilot_ch09_test`、project `repopilot_ch09_879`、宿主端口 55439 和该 project 独占卷，结束后容器/网络/卷均已清理；运行时 smoke 使用 project `repopilot_ch09_smoke_20260921`、端口 58009，亦已带卷清理。首次 PostgreSQL 验收因容器用户 PATH 找不到 `pytest` 而在测试前退出，资源仍自动清理；入口改为 `python -m pytest` 后全新 project 通过。CAS 不是 Worker fencing，审批/取消状态与 Redis/事件之间仍无跨系统事务。
 - 兼容与恢复：旧任务 `state_version=1`，旧 result/event JSON 标记为 schema 0 并原样读取；新写入为 schema 1。新旧 Worker 禁止混跑：停止旧 API/Worker、确认无活跃任务并备份、单实例前向升级、核对 head 后再启动新版本。PostgreSQL 失败修因后从最后 revision 重跑；未知/局部结构或 SQLite 非事务性残留从备份恢复；不支持破坏性 downgrade，已发布错误用新 revision 前向修复。LangGraph 表只走其 provider 支持入口。
-- PR / 合并：PR 待创建；目标基线为 `main@792cb84`，未合并、未启用自动合并。
-- 规范更新：RP-01、RP-05、当前缺口、8.4 任务版本契约、CH-09、README、架构、运行时正确性和数据库迁移专项文档已更新；必要验收全部通过，CH-09 标为 `VERIFIED`，不是 `MERGED`。
+- PR / 合并：[PR #6](https://github.com/xsw932187210-cell/RepoPilot/pull/6) 以 `main@792cb84` 为基线，已合并为 `main@bc49d5b`；本记录由 CH-10 交接时用远端提交图重新核实。
+- 规范更新：RP-01、RP-05、当前缺口、8.4 任务版本契约、CH-09、README、架构、运行时正确性和数据库迁移专项文档已更新；CH-09 现按已合并 PR 标为 `MERGED`，原验收边界不变。
 - 下一张建议：CH-10；CH-09 已提供其持久化迁移与状态版本硬依赖，本轮不执行。
+
+### 2026-09-21 · CH-10 · 在线调用预算与提供商故障处理
+
+- 实现基线：从干净的 `origin/main@bc49d5b` 创建 `codex/ch-10-provider-call-budget`；远端提交图确认该 main 提交是 CH-09 [PR #6](https://github.com/xsw932187210-cell/RepoPilot/pull/6) 的 merge commit，包含代码 `59d996f` 和文档 `b4927a7`；开始时工作树干净，没有携带未提交前置改动。
+- 已核实的硬依赖：CH-09 → `59d996f` / `b4927a7` / PR #6 → `main@bc49d5b`；重新核对 Alembic `20260921_0001 → 0002`、任务 status/version CAS、SQLite/真实 PostgreSQL 历史验证记录后使用，未绕过迁移体系，未重做 CH-09。
+- 本轮分支及代码提交：`codex/ch-10-provider-call-budget` / 代码 `adbca64`、文档 `995e298`；PR 状态回填另有后续文档提交。
+- 变更范围：新增 provider-neutral `ControlledModelCaller`，在线和真实评测复用预留/发起/结果状态机、429/5xx/连接/超时分类、`Retry-After`、退避和用量解析；所有角色、策略纠正和 transport retry 共用任务总预算；SDK `max_retries=0`；新增 `20260921_0003` 的 `model_call_budgets/model_call_attempts`、API 细分指标、配置和隔离 PostgreSQL 探针。未实现自动 fallback、CH-04B ownership/fencing、通用 exactly-once、精确金额核算或其他任务卡。
+- 验证记录：2026-09-21，macOS arm64 主机、Docker Engine 29.5.3，容器 Python 3.12.14；`ruff check .` 退出 0；CH-10 相关测试 47 passed；完整 `pytest --cov=repopilot --cov-report=term-missing --cov-fail-under=70 -q` 为 135 passed、3 skipped、80.01% coverage，3 个 skip 是未提供专用 URL 时的 PostgreSQL 条件入口；`make ch10-migration-test` 在 PostgreSQL 16.15 为 2 passed；隔离 project 中 `make eval` 为 10/10，`make smoke` 与 `make smoke-recovery` 均退出 0。
+- 故障验证：确定性 transport 覆盖正常 usage、预算恰好耗尽/不足前不发请求、连续 429 的有效/缺失/异常 `Retry-After`、可重试 5xx、连接重置、超时、非法结构、不可重试 4xx、重试/单次等待/累计退避上限和 fallback 标记。预留后未发送崩溃保留 `RESERVED` 并阻止免费调用；`STARTED` 后结果未持久化的崩溃在重启后转 `UNKNOWN`。真实 Worker 审批 checkpoint 重启前后均观测 `reserved=started=succeeded=3`、`unknown=0`。
+- 实验身份：本卡没有调用真实付费模型，不作 provider 集成、计费或质量提升主张。`make eval` 使用 `mock` / `deterministic-mock-v1`、`evals/cases.jsonl`，SHA-256 `6e5c1012e81c11d9a4cda4d2d5f761313398f5383bb0a3a71960e6569b25bdf7`。新真实评测记录为 schema 4 / `evaluation-call-budget-v2`；2026-09-09 evaluator-v7 结果保留为历史，未重跑也未混入新版本。
+- 证据及限制：账本/调用边界见 `src/repopilot/model_calls.py`、`src/repopilot/db.py`、`src/repopilot/llm.py`、`src/repopilot/worker.py`；故障证据见 `tests/test_model_calls.py`、`tests/test_eval_runtime.py`、`tests/test_model_calls_postgres.py`；契约见 `docs/model-call-control.md`。伪造 transport 只验证外部可观察控制行为，不是真实 provider 集成。数据库与 provider 无跨系统事务；缺失 usage/特殊计费时只能依靠调用/输出上限，不能保证精确 Token 或金额；CH-09 CAS 不是 Worker fencing。
+- 兼容与恢复：Alembic head 由 `20260921_0002` 前向升级为 `20260921_0003`；空库安装、CH-09 库升级、重复迁移、旧任务/事件保留和 PostgreSQL DDL 失败后重跑已验证。旧任务首次受控调用时才惰性创建预算行。部署时停止旧 API/Worker、确认无活跃任务并备份、单实例升级、核对 head 后只启动新版；不支持破坏性 downgrade，从备份恢复或前向修复。
+- PR / 合并：[PR #7](https://github.com/xsw932187210-cell/RepoPilot/pull/7) 已创建，base 为 `main@bc49d5b`（CH-09 PR #6 merge commit）、head 为 `codex/ch-10-provider-call-budget`；2026-09-22 核对时为 Open、未合并、2/2 checks passing、无合并冲突，未启用自动合并。
+- 规范更新：RP-04、RP-05、RP-07、工程证据、当前缺口、8.3/8.4 跨任务契约、CH-09/CH-10 状态、README、架构、运行时正确性、数据库/评测/模型调用专项文档已更新；必要验收全部通过，CH-10 标为 `VERIFIED`，不是 `MERGED`。
+- 下一张建议：CH-02B；CH-02A 和 CH-10 硬依赖已就绪，可继续结构化策略拒绝与有界纠正；本轮不执行。

@@ -4,6 +4,7 @@ import asyncio
 import hmac
 import json
 from collections import Counter, defaultdict
+from collections.abc import Mapping
 from contextlib import asynccontextmanager
 from typing import Annotated
 
@@ -79,7 +80,10 @@ async def require_api_key(
 Protected = Annotated[None, Depends(require_api_key)]
 
 
-def summarize_task_metrics(task: TaskView) -> TaskMetrics:
+def summarize_task_metrics(
+    task: TaskView,
+    model_calls: Mapping[str, int | float | bool | str | None] | None = None,
+) -> TaskMetrics:
     metrics = [
         NodeMetric.model_validate(metric)
         for metric in (task.result or {}).get("node_metrics", [])
@@ -95,6 +99,7 @@ def summarize_task_metrics(task: TaskView) -> TaskMetrics:
     )
     retrieval = (task.result or {}).get("retrieval", {})
     selected_files = retrieval.get("selected_files", [])
+    call_metrics = model_calls or {}
     return TaskMetrics(
         task_id=task.id,
         status=task.status,
@@ -108,6 +113,27 @@ def summarize_task_metrics(task: TaskView) -> TaskMetrics:
         retrieval_candidate_files=int(retrieval.get("candidate_count", 0)),
         retrieval_selected_files=len(selected_files),
         retrieval_context_chars=int(retrieval.get("selected_chars", 0)),
+        model_call_policy_version=(
+            str(call_metrics["call_control_version"])
+            if call_metrics.get("call_control_version")
+            else None
+        ),
+        model_calls_max=int(call_metrics.get("max_model_calls") or 0),
+        model_calls_reserved=int(call_metrics.get("reserved_calls") or 0),
+        model_calls_started=int(call_metrics.get("started_calls") or 0),
+        model_calls_succeeded=int(call_metrics.get("successful_model_calls") or 0),
+        model_calls_failed=int(call_metrics.get("failed_calls") or 0),
+        model_calls_unknown=int(call_metrics.get("unknown_calls") or 0),
+        model_calls_pending_reservation=int(call_metrics.get("pending_reserved_calls") or 0),
+        model_calls_pending_response=int(call_metrics.get("pending_started_calls") or 0),
+        model_rate_limit_retries=int(call_metrics.get("rate_limit_retries") or 0),
+        model_transient_retries=int(call_metrics.get("transient_retries") or 0),
+        model_fallback_calls=int(call_metrics.get("fallback_calls") or 0),
+        model_backoff_seconds=float(call_metrics.get("backoff_seconds") or 0),
+        model_token_usage_complete=bool(call_metrics.get("token_usage_complete", False)),
+        model_observed_input_tokens=int(call_metrics.get("observed_input_tokens") or 0),
+        model_observed_output_tokens=int(call_metrics.get("observed_output_tokens") or 0),
+        model_observed_total_tokens=int(call_metrics.get("observed_total_tokens") or 0),
     )
 
 
@@ -157,7 +183,8 @@ async def get_task_metrics(task_id: str, request: Request, _: Protected) -> Task
     task = await database.get_task(task_id)
     if task is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
-    return summarize_task_metrics(task)
+    model_calls = await database.get_model_call_metrics(task_id)
+    return summarize_task_metrics(task, model_calls)
 
 
 @app.get("/api/v1/tasks/{task_id}/events", response_model=list[EventView])

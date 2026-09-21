@@ -8,6 +8,23 @@ from repopilot.models import CodeChangeOutput, PlanOutput
 from repopilot.repository import RepositoryContext
 
 
+def test_openai_sdk_retries_are_disabled_and_request_limits_are_explicit() -> None:
+    model = OpenAICompatibleAgentModel(
+        Settings(
+            _env_file=None,
+            model_provider="openai",
+            model_name="test-model",
+            openai_api_key="test-key",
+            model_request_timeout_seconds=13,
+            model_max_output_tokens=321,
+        )
+    )
+
+    assert model.model.max_retries == 0
+    assert model.model.request_timeout == 13
+    assert model.model.max_tokens == 321
+
+
 @pytest.mark.asyncio
 async def test_readable_context_and_edit_capabilities_are_distinct() -> None:
     model = OpenAICompatibleAgentModel(

@@ -74,6 +74,55 @@ async def test_crash_checkpoint_resumes_only_unfinished_pairs(tmp_path: Path) ->
 
 
 @pytest.mark.asyncio
+async def test_evaluation_restart_preserves_started_call_as_unknown(tmp_path: Path) -> None:
+    records = tmp_path / "records"
+    runtime = EvaluationRuntime(config(modes=("workflow",), max_model_calls=2), records)
+
+    class SimulatedProcessCrash(BaseException):
+        pass
+
+    async def crashing(case: dict, mode: str, budget: ModelCallBudget) -> dict:
+        del case, mode
+
+        async def transport() -> None:
+            raise SimulatedProcessCrash
+
+        await budget.call(transport)
+        return {"success": False}
+
+    with pytest.raises(SimulatedProcessCrash):
+        await runtime.run([{"id": "a"}], crashing)
+    running = next((records / "cases").glob("*.json"))
+    saved = json.loads(running.read_text(encoding="utf-8"))
+    assert saved["usage"]["reserved_calls"] == 1
+    assert saved["usage"]["pending_started_calls"] == 1
+
+    async def resumed(case: dict, mode: str, budget: ModelCallBudget) -> dict:
+        del case, mode
+
+        async def transport() -> dict[str, Any]:
+            return {
+                "usage_metadata": {
+                    "input_tokens": 1,
+                    "output_tokens": 1,
+                    "total_tokens": 2,
+                }
+            }
+
+        await budget.call(transport)
+        return {"success": True}
+
+    report = await EvaluationRuntime(
+        config(modes=("workflow",), max_model_calls=2), records
+    ).run([{"id": "a"}], resumed)
+    usage = report["records"][0]["usage"]
+    assert usage["reserved_calls"] == 2
+    assert usage["unknown_calls"] == 1
+    assert usage["successful_model_calls"] == 1
+    assert usage["token_usage_complete"] is False
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "changed",
     [
@@ -116,6 +165,22 @@ async def test_resume_rejects_rate_limit_policy_change(tmp_path: Path) -> None:
         await EvaluationRuntime(config(), records, max_rate_limit_retries=3).run(
             [{"id": "a"}], execute
         )
+
+
+@pytest.mark.asyncio
+async def test_manifest_names_the_versioned_shared_call_control_policy(tmp_path: Path) -> None:
+    runtime = EvaluationRuntime(config(modes=("workflow",)), tmp_path / "records")
+
+    async def execute(case: dict, mode: str, budget: ModelCallBudget) -> dict:
+        del case, mode, budget
+        return {"success": True}
+
+    report = await runtime.run([{"id": "a"}], execute)
+    assert report["metadata"]["schema_version"] == 4
+    assert (
+        report["metadata"]["runtime_policy"]["call_control_version"]
+        == "evaluation-call-budget-v2"
+    )
 
 
 class HttpRateLimit(RuntimeError):
@@ -373,7 +438,8 @@ async def test_long_retry_after_stops_without_sleeping(tmp_path: Path) -> None:
         sleeper=sleeper,
     ).run([{"id": "a"}], execute)
     assert sleeps == []
-    assert report["summary"]["pending"] == 1
+    assert report["summary"]["failed"] == 1
+    assert report["records"][0]["error"]["type"] == "RetryWaitLimitExceeded"
 
 
 @pytest.mark.asyncio

@@ -29,6 +29,15 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_base_url: str = ""
     model_temperature: float = 0.0
+    model_max_calls: int = Field(default=12, ge=1, le=100)
+    model_request_timeout_seconds: float = Field(default=90.0, gt=0, le=900)
+    model_max_rate_limit_retries: int = Field(default=2, ge=0, le=10)
+    model_max_transient_retries: int = Field(default=2, ge=0, le=10)
+    model_retry_base_seconds: float = Field(default=1.0, ge=0, le=60)
+    model_max_retry_wait_seconds: float = Field(default=30.0, ge=0, le=600)
+    model_max_total_backoff_seconds: float = Field(default=60.0, ge=0, le=3_600)
+    model_max_total_tokens: int = Field(default=0, ge=0)
+    model_max_output_tokens: int = Field(default=4_096, ge=1, le=200_000)
 
     workspace_root: Path = Path("./workspaces")
     demo_repository_root: Path = Path("./examples/buggy_calculator")

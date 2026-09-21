@@ -63,8 +63,11 @@ including `success`. Build workflow models with `build_agent_model(settings, bud
 model invocations must go through `await budget.call(model.ainvoke, messages)`. The runtime does not
 clone repositories, run tests, call a model, or write to GitHub by itself.
 
-Each case/mode pair is atomically checkpointed. A process crash leaves only that pair as `running`;
-the next invocation reuses terminal siblings and reruns the unfinished pair. Ordinary case failures
+Each case/mode pair is atomically checkpointed. Model-call reservation, start, retry scheduling,
+and outcome snapshots are written during the pair, not just at its end. A process crash leaves only
+that pair as `running`; the next invocation preserves its consumed reservations, converts a pending
+started request to `unknown`, reuses terminal siblings, and reruns only within the remaining cap. A
+pre-send reservation also remains consumed. Ordinary case failures
 are recorded as `failed` and do not abort other cases. Unresolved provider rate limits are recorded
 as `pending_quota`, never as case failures, and stop new paid work for that invocation. A later run
 can resume those pending pairs.
@@ -76,15 +79,20 @@ in evaluator memory while deciding the result. Unattempted quota placeholders ha
 are excluded from latency percentiles. Keep `reports/` private even with these controls; only the
 sanitized aggregate report is intended for publication.
 
-Resume is deliberately strict. The record directory is rejected if any experiment-identity input
+Resume is deliberately strict. Current records use schema `4` and
+`evaluation-call-budget-v2`. The record directory is rejected if any experiment-identity input
 changes: the full dataset hash, provider/model, temperature, modes, maximum model-call budget,
-context limits, test evaluator, evaluator configuration, or provider retry/backoff policy. Start
-a new record directory for a changed experiment.
+context limits, test evaluator, evaluator configuration, timeout/output limits, or provider
+retry/backoff policy. Schema-3 manifests keep their historical meaning and cannot be resumed as
+schema 4. Start a new record directory for a changed experiment.
 
 Rate-limit and retryable transport/HTTP 5xx retries happen around the individual model request, not
 around the whole case. Numeric or HTTP-date `Retry-After` values are honored only within the
-configured retry count, delay ceiling, and model-call cap. Daily/insufficient quota stops
-immediately; an exhausted transient-outage retry is isolated as a case failure. SDK retries are
+configured retry count, per-wait ceiling, cumulative-backoff ceiling, request timeout, and
+model-call cap. Connection interruption and timeout attempts are recorded as result-unknown before
+a counted retry. Daily/insufficient quota stops immediately; malformed responses and non-retryable
+errors fail without another request; an exhausted transient-outage retry is isolated as a case
+failure. SDK retries are
 disabled for budgeted OpenAI-compatible models so hidden requests cannot bypass the cap.
 
 The two modes receive the same named model, context budget, test evaluator, and maximum call cap.
@@ -92,10 +100,20 @@ This is a common ceiling, not a claim that their actual usage is identical: a on
 use one call while the workflow can use several up to the same cap. Reports preserve actual calls
 per case and aggregate them per mode.
 
+Every attempt records the exact provider/model plus adapter and request-schema versions. The
+runtime does not automatically use a fallback. A deliberate model/provider switch must be marked
+as fallback, name its origin, and use a separate experiment identity; it cannot be aggregated into
+the original model's group.
+
 Token totals are copied only when every request exposes exact provider usage. Otherwise
 `input_tokens`, `output_tokens`, and `total_tokens` are `null`; observed counts from successful
 responses remain separately labelled `observed_*`. No token estimate or invented USD cost is
 reported.
+
+The ten-case `make eval` command remains a deterministic mock workflow regression and does not
+exercise a paid provider. Its historical metric meaning is unchanged. The shared online/real-model
+call-control implementation and its version boundary are documented in
+[model-call budgets and provider failures](model-call-control.md).
 
 Set required provider credentials only in the runtime environment used by the real harness. Never
 place credentials or values from ignored environment files in reports. Run the harness with GitHub

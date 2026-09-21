@@ -19,14 +19,22 @@ import time
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from email.utils import parsedate_to_datetime
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any
 
+from repopilot.model_calls import (
+    EVALUATION_BUDGET_VERSION,
+    CallBudgetExceeded,
+    ModelCallBudget,
+    RateLimitError,
+    TransientProviderError,
+    classify_rate_limit,
+    classify_transient_provider_error,
+    extract_token_usage,
+)
 from repopilot.security import redact_secrets
 
-SCHEMA_VERSION = 3
-_T = TypeVar("_T")
+SCHEMA_VERSION = 4
 _DROPPED_EVIDENCE_KEYS = {
     "acceptance_command",
     "command",
@@ -51,38 +59,6 @@ _IDENTIFIER_LIST_COUNTS = {
 
 class ResumeMismatchError(ValueError):
     """Raised when a record directory belongs to a different experiment."""
-
-
-class CallBudgetExceeded(RuntimeError):
-    """Raised before an invocation which would exceed the configured call cap."""
-
-
-class RateLimitError(RuntimeError):
-    """Normalized provider rate-limit signal understood by the evaluation runtime."""
-
-    def __init__(
-        self,
-        message: str = "model provider rate limit",
-        *,
-        retry_after_seconds: float | None = None,
-        daily_quota: bool = False,
-    ) -> None:
-        super().__init__(message)
-        self.retry_after_seconds = retry_after_seconds
-        self.daily_quota = daily_quota
-
-
-class TransientProviderError(RuntimeError):
-    """Normalized retryable provider outage (for example HTTP 503)."""
-
-    def __init__(
-        self,
-        message: str = "model provider temporarily unavailable",
-        *,
-        retry_after_seconds: float | None = None,
-    ) -> None:
-        super().__init__(message)
-        self.retry_after_seconds = retry_after_seconds
 
 
 def dataset_sha256(data: str | bytes) -> str:
@@ -185,258 +161,6 @@ class EvaluationConfig:
         return hashlib.sha256(_canonical_json(self.as_dict()).encode("utf-8")).hexdigest()
 
 
-def _mapping_value(value: object, name: str) -> object | None:
-    if isinstance(value, Mapping):
-        return value.get(name)
-    return getattr(value, name, None)
-
-
-def extract_token_usage(response: object) -> tuple[int, int, int] | None:
-    """Extract exact token counts from common LangChain/OpenAI response shapes.
-
-    No estimate is attempted.  If any counter is absent, the result is ``None``.
-    """
-
-    raw = _mapping_value(response, "raw")
-    if raw is not None:
-        response = raw
-    usage = _mapping_value(response, "usage_metadata")
-    if usage is not None:
-        input_tokens = _mapping_value(usage, "input_tokens")
-        output_tokens = _mapping_value(usage, "output_tokens")
-        total_tokens = _mapping_value(usage, "total_tokens")
-    else:
-        metadata = _mapping_value(response, "response_metadata")
-        usage = _mapping_value(metadata, "token_usage") if metadata is not None else None
-        input_tokens = _mapping_value(usage, "prompt_tokens")
-        output_tokens = _mapping_value(usage, "completion_tokens")
-        total_tokens = _mapping_value(usage, "total_tokens")
-    counters = (input_tokens, output_tokens, total_tokens)
-    if any(not isinstance(item, int) or isinstance(item, bool) or item < 0 for item in counters):
-        return None
-    return int(input_tokens), int(output_tokens), int(total_tokens)
-
-
-def _header(response: object, name: str) -> str | None:
-    headers = _mapping_value(response, "headers")
-    if isinstance(headers, Mapping):
-        for key, value in headers.items():
-            if str(key).casefold() == name.casefold():
-                return str(value)
-    return None
-
-
-def _retry_after_seconds(value: object | None) -> float | None:
-    if value is None:
-        return None
-    if isinstance(value, int | float) and not isinstance(value, bool):
-        return max(0.0, float(value))
-    if not isinstance(value, str) or not value:
-        return None
-    try:
-        return max(0.0, float(value.strip()))
-    except ValueError:
-        try:
-            retry_at = parsedate_to_datetime(value)
-            if retry_at.tzinfo is None:
-                retry_at = retry_at.replace(tzinfo=UTC)
-            return max(0.0, (retry_at - datetime.now(UTC)).total_seconds())
-        except (TypeError, ValueError, OverflowError):
-            return None
-
-
-def classify_rate_limit(error: BaseException) -> RateLimitError | None:
-    """Normalize 429-style SDK exceptions without depending on one SDK version."""
-
-    if isinstance(error, RateLimitError):
-        return error
-    response = getattr(error, "response", None)
-    status = getattr(error, "status_code", None)
-    if status is None and response is not None:
-        status = _mapping_value(response, "status_code")
-    message = str(error)
-    body = getattr(error, "body", None)
-    body_error = _mapping_value(body, "error")
-    codes = (
-        getattr(error, "code", None),
-        _mapping_value(body, "code"),
-        _mapping_value(body_error, "code"),
-        _mapping_value(body_error, "type"),
-    )
-    lowered = " ".join([message, *(str(code) for code in codes if code)]).casefold()
-    rate_limited = str(status) == "429" or "rate limit" in lowered or "ratelimit" in lowered
-    quota_terms = (
-        "insufficient_quota",
-        "daily quota",
-        "quota exceeded",
-        "exceeded your current quota",
-        "billing quota",
-    )
-    daily_quota = any(term in lowered for term in quota_terms)
-    if not rate_limited and not daily_quota:
-        return None
-    retry_after = _retry_after_seconds(_header(response, "retry-after"))
-    if retry_after is None:
-        retry_after = _retry_after_seconds(getattr(error, "retry_after", None))
-    return RateLimitError(
-        "model provider daily quota exhausted" if daily_quota else "model provider rate limit",
-        retry_after_seconds=retry_after,
-        daily_quota=daily_quota,
-    )
-
-
-def classify_transient_provider_error(error: BaseException) -> TransientProviderError | None:
-    """Normalize bounded-retry transport and 5xx failures without an SDK dependency."""
-
-    if isinstance(error, TransientProviderError):
-        return error
-    response = getattr(error, "response", None)
-    status = getattr(error, "status_code", None)
-    if status is None and response is not None:
-        status = _mapping_value(response, "status_code")
-    lowered = str(error).casefold()
-    retryable_status = str(status) in {"408", "500", "502", "503", "504"}
-    retryable_message = any(
-        term in lowered
-        for term in (
-            "temporarily unavailable",
-            "temporary unavailable",
-            "high demand",
-            "service unavailable",
-            "status': 'unavailable",
-            'status": "unavailable',
-            "connection reset",
-            "connection aborted",
-        )
-    )
-    if not retryable_status and not retryable_message:
-        return None
-    retry_after = _retry_after_seconds(_header(response, "retry-after"))
-    if retry_after is None:
-        retry_after = _retry_after_seconds(getattr(error, "retry_after", None))
-    return TransientProviderError(retry_after_seconds=retry_after)
-
-
-class ModelCallBudget:
-    """Enforce an exact invocation cap and collect provider-reported usage."""
-
-    def __init__(
-        self,
-        max_calls: int,
-        *,
-        max_rate_limit_retries: int = 2,
-        max_transient_retries: int = 2,
-        base_backoff_seconds: float = 1.0,
-        max_backoff_seconds: float = 30.0,
-        sleeper: Sleeper | None = None,
-    ) -> None:
-        if max_calls < 1:
-            raise ValueError("max_calls must be positive")
-        if max_rate_limit_retries < 0:
-            raise ValueError("max_rate_limit_retries cannot be negative")
-        if max_transient_retries < 0:
-            raise ValueError("max_transient_retries cannot be negative")
-        if base_backoff_seconds < 0 or max_backoff_seconds < 0:
-            raise ValueError("backoff durations cannot be negative")
-        self.max_calls = max_calls
-        self.max_rate_limit_retries = max_rate_limit_retries
-        self.max_transient_retries = max_transient_retries
-        self.base_backoff_seconds = base_backoff_seconds
-        self.max_backoff_seconds = max_backoff_seconds
-        self.sleeper = sleeper or asyncio.sleep
-        self.calls_started = 0
-        self.calls_succeeded = 0
-        self.rate_limit_retries = 0
-        self.transient_retries = 0
-        self._input_tokens = 0
-        self._output_tokens = 0
-        self._total_tokens = 0
-        self._token_usage_complete = True
-        self._lock = asyncio.Lock()
-
-    async def call(
-        self,
-        invocation: Callable[..., Awaitable[_T]],
-        *args: object,
-        usage_extractor: Callable[[object], tuple[int, int, int] | None] = extract_token_usage,
-        **kwargs: object,
-    ) -> _T:
-        retry_index = 0
-        while True:
-            async with self._lock:
-                if self.calls_started >= self.max_calls:
-                    raise CallBudgetExceeded(
-                        f"model call budget exhausted ({self.calls_started}/{self.max_calls})"
-                    )
-                self.calls_started += 1
-            try:
-                response = await invocation(*args, **kwargs)
-                break
-            except Exception as error:
-                # Failed requests make aggregate token totals incomplete. Exact usage from
-                # preceding successful calls remains available as the observed counters.
-                self._token_usage_complete = False
-                rate_limit = classify_rate_limit(error)
-                transient = (
-                    None if rate_limit is not None else classify_transient_provider_error(error)
-                )
-                normalized = rate_limit or transient
-                if normalized is None:
-                    raise
-                retry_after = normalized.retry_after_seconds
-                delay = (
-                    retry_after
-                    if retry_after is not None
-                    else self.base_backoff_seconds * (2**retry_index)
-                )
-                retry_limit = (
-                    self.max_rate_limit_retries
-                    if rate_limit is not None
-                    else self.max_transient_retries
-                )
-                daily_quota = bool(rate_limit and rate_limit.daily_quota)
-                may_retry = (
-                    not daily_quota
-                    and retry_index < retry_limit
-                    and delay <= self.max_backoff_seconds
-                    and self.calls_started < self.max_calls
-                )
-                if not may_retry:
-                    raise normalized from error
-                if rate_limit is not None:
-                    self.rate_limit_retries += 1
-                else:
-                    self.transient_retries += 1
-                retry_index += 1
-                await self.sleeper(delay)
-        self.calls_succeeded += 1
-        usage = usage_extractor(response)
-        if usage is None:
-            self._token_usage_complete = False
-        else:
-            self._input_tokens += usage[0]
-            self._output_tokens += usage[1]
-            self._total_tokens += usage[2]
-        return response
-
-    def snapshot(self) -> dict[str, int | bool | None]:
-        complete = self.calls_started > 0 and self._token_usage_complete
-        return {
-            "model_calls": self.calls_started,
-            "successful_model_calls": self.calls_succeeded,
-            "rate_limit_retries": self.rate_limit_retries,
-            "transient_retries": self.transient_retries,
-            "max_model_calls": self.max_calls,
-            "observed_input_tokens": self._input_tokens,
-            "observed_output_tokens": self._output_tokens,
-            "observed_total_tokens": self._total_tokens,
-            "input_tokens": self._input_tokens if complete else None,
-            "output_tokens": self._output_tokens if complete else None,
-            "total_tokens": self._total_tokens if complete else None,
-            "token_usage_complete": complete,
-        }
-
-
 CaseExecutor = Callable[[Mapping[str, Any], str, ModelCallBudget], Awaitable[Mapping[str, Any]]]
 Sleeper = Callable[[float], Awaitable[None]]
 
@@ -461,20 +185,34 @@ class EvaluationRuntime:
         max_transient_retries: int = 2,
         base_backoff_seconds: float = 1.0,
         max_backoff_seconds: float = 30.0,
+        max_total_backoff_seconds: float = 60.0,
+        request_timeout_seconds: float = 90.0,
+        max_output_tokens: int = 4_096,
         sleeper: Sleeper = asyncio.sleep,
     ) -> None:
         if max_rate_limit_retries < 0:
             raise ValueError("max_rate_limit_retries cannot be negative")
         if max_transient_retries < 0:
             raise ValueError("max_transient_retries cannot be negative")
-        if base_backoff_seconds < 0 or max_backoff_seconds < 0:
+        if (
+            base_backoff_seconds < 0
+            or max_backoff_seconds < 0
+            or max_total_backoff_seconds < 0
+        ):
             raise ValueError("backoff durations cannot be negative")
+        if request_timeout_seconds <= 0:
+            raise ValueError("request_timeout_seconds must be positive")
+        if max_output_tokens < 1:
+            raise ValueError("max_output_tokens must be positive")
         self.config = config
         self.record_dir = record_dir
         self.max_rate_limit_retries = max_rate_limit_retries
         self.max_transient_retries = max_transient_retries
         self.base_backoff_seconds = base_backoff_seconds
         self.max_backoff_seconds = max_backoff_seconds
+        self.max_total_backoff_seconds = max_total_backoff_seconds
+        self.request_timeout_seconds = request_timeout_seconds
+        self.max_output_tokens = max_output_tokens
         self.sleeper = sleeper
 
     @property
@@ -482,12 +220,16 @@ class EvaluationRuntime:
         return self.record_dir / "run.json"
 
     @property
-    def runtime_policy(self) -> dict[str, int | float]:
+    def runtime_policy(self) -> dict[str, int | float | str]:
         return {
+            "call_control_version": EVALUATION_BUDGET_VERSION,
             "max_rate_limit_retries": self.max_rate_limit_retries,
             "max_transient_retries": self.max_transient_retries,
             "base_backoff_seconds": self.base_backoff_seconds,
             "max_backoff_seconds": self.max_backoff_seconds,
+            "max_total_backoff_seconds": self.max_total_backoff_seconds,
+            "request_timeout_seconds": self.request_timeout_seconds,
+            "max_output_tokens": self.max_output_tokens,
         }
 
     @property
@@ -562,18 +304,12 @@ class EvaluationRuntime:
         case_id: str,
         mode: str,
         execute: CaseExecutor,
+        existing: Mapping[str, Any] | None = None,
     ) -> tuple[dict[str, Any], bool]:
-        budget = ModelCallBudget(
-            self.config.max_model_calls,
-            max_rate_limit_retries=self.max_rate_limit_retries,
-            max_transient_retries=self.max_transient_retries,
-            base_backoff_seconds=self.base_backoff_seconds,
-            max_backoff_seconds=self.max_backoff_seconds,
-            sleeper=self.sleeper,
-        )
         started_at = _utc_now()
         started_clock = time.perf_counter()
-        attempts = 0
+        initial_usage = (existing or {}).get("usage")
+        attempts = int((existing or {}).get("attempts") or 0) + 1
         running = {
             "schema_version": SCHEMA_VERSION,
             "fingerprint": self.fingerprint,
@@ -583,13 +319,32 @@ class EvaluationRuntime:
             "started_at": started_at,
             "finished_at": None,
             "duration_ms": None,
-            "attempts": 0,
+            "attempts": attempts,
             "result": None,
             "error": None,
-            "usage": budget.snapshot(),
+            "usage": dict(initial_usage) if isinstance(initial_usage, Mapping) else {},
         }
+
+        async def persist_usage(snapshot: Mapping[str, Any]) -> None:
+            running["usage"] = dict(snapshot)
+            self._write_record(running)
+
+        budget = ModelCallBudget(
+            self.config.max_model_calls,
+            max_rate_limit_retries=self.max_rate_limit_retries,
+            max_transient_retries=self.max_transient_retries,
+            base_backoff_seconds=self.base_backoff_seconds,
+            max_backoff_seconds=self.max_backoff_seconds,
+            max_total_backoff_seconds=self.max_total_backoff_seconds,
+            request_timeout_seconds=self.request_timeout_seconds,
+            max_output_tokens=self.max_output_tokens,
+            sleeper=self.sleeper,
+            initial_snapshot=initial_usage if isinstance(initial_usage, Mapping) else None,
+            state_hook=persist_usage,
+        )
+        await budget.reconcile_incomplete()
+        running["usage"] = budget.snapshot()
         self._write_record(running)
-        attempts += 1
         try:
             result = await execute(case, mode, budget)
             if not isinstance(result, Mapping):
@@ -647,7 +402,16 @@ class EvaluationRuntime:
             "attempts": 0,
             "result": None,
             "error": {"type": "RateLimitError", "message": "run stopped by provider quota"},
-            "usage": ModelCallBudget(self.config.max_model_calls).snapshot(),
+            "usage": ModelCallBudget(
+                self.config.max_model_calls,
+                max_rate_limit_retries=self.max_rate_limit_retries,
+                max_transient_retries=self.max_transient_retries,
+                base_backoff_seconds=self.base_backoff_seconds,
+                max_backoff_seconds=self.max_backoff_seconds,
+                max_total_backoff_seconds=self.max_total_backoff_seconds,
+                request_timeout_seconds=self.request_timeout_seconds,
+                max_output_tokens=self.max_output_tokens,
+            ).snapshot(),
         }
         self._write_record(record)
         return record
@@ -679,7 +443,9 @@ class EvaluationRuntime:
                     record = self._pending_record(case_id, mode)
                     records.append(record)
                     continue
-                record, quota_stopped = await self._execute_one(case, case_id, mode, execute)
+                record, quota_stopped = await self._execute_one(
+                    case, case_id, mode, execute, existing
+                )
                 records.append(record)
 
         return self.report(records)
@@ -722,3 +488,19 @@ class EvaluationRuntime:
                 "per_mode": per_mode,
             },
         }
+
+
+__all__ = [
+    "SCHEMA_VERSION",
+    "CallBudgetExceeded",
+    "EvaluationConfig",
+    "EvaluationRuntime",
+    "ModelCallBudget",
+    "RateLimitError",
+    "ResumeMismatchError",
+    "TransientProviderError",
+    "classify_rate_limit",
+    "classify_transient_provider_error",
+    "dataset_sha256",
+    "extract_token_usage",
+]
