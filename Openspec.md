@@ -113,12 +113,13 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 
 ### RP-03：单写者与修改预检
 
-- 图内只有 Coder 调用 `apply_edits()`；只读并行节点汇合后才进入写阶段。
+- 图内只有 `apply_policy` 调用 `apply_edits()`；只读并行节点汇合后，Coder 先提交 checkpointed 结构化修改意图，再进入写阶段。
 - 受信任的 `workspace-capabilities-v1` 分别表达 read、write 和 create；Issue、仓库文本、图状态与模型输出只能请求路径，不能扩大 policy。delete/rename 在 v1 中以 `action_not_supported` 拒绝。
 - 默认允许读取普通文本，但凭据类文件不进入上下文；测试和构建/CI 配置可读不可写，现有源码/文档才是默认可写类别。修改测试只能由服务端受信任 policy 显式开启。
 - 写入前预检整个修改批次：同一规范化路径用于策略匹配、大小写折叠身份、去重、上下文查找和文件访问；穿越、别名、符号链接、硬链接、特殊文件、超限内容、越出上下文和过期 `expected_contents` 均拒绝。
 - 默认不允许新建文件。受信任 policy 如显式允许 create，还必须同时满足目录、扩展名、字节上限和调用方提供的 `expected_absent`，并使用排他创建避免静默覆盖。
-- 某项预检失败时不开始批次写入；允许在一次 Coder 节点调用内刷新上下文并纠正一次，第二次违反策略则抛错。
+- `CodeChangeOutput-v2` 的每项在线写意图须携带精确路径、`action=write` 和当前内容 SHA-256；程序先验证意图，再由写边界执行全批预检。旧 `FileEdit` 的摘要字段保持可选以兼容直接调用/已有 artifact，但图入口强制要求。
+- 某项预检失败时不开始批次写入；拒绝转换为 `policy-feedback-v1` 的稳定 reason、受控路径和允许动作，不向 Coder 传异常原文。`apply_policy` 在下一次 Coder 请求前 checkpoint 全任务最多一次的 `policy_retry_count`；持续违规以 `policy_retry_exhausted` 停止，过期内容摘要不能在刷新后复用。
 - 实际写入为逐文件操作；通过预检不等于原子事务。外部进程在检查后改文件、写到一半发生 I/O 错误，仍可能产生竞态或部分写入。
 - 真实评测仍注入更严格的 policy：只允许修改导出时已记录的 `thefuck/**/*.py`，不允许新路径，且独立验收 overlay 只在另一个全新工作区中加入。
 
@@ -139,6 +140,7 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 ### RP-05：恢复、队列和任务所有权
 
 - Compose 使用持久化 PostgreSQL checkpoint；审批恢复继续同一个图线程。
+- CH-02B 的 Coder 提案和 `apply_policy` 拒绝/计数分别 checkpoint；恢复后不清零全任务策略纠正次数，但 checkpoint 与文件写入不是事务，也不等于 CH-04B 的 Worker fencing。
 - RepoPilot 自有 `tasks/task_events/model_call_budgets/model_call_attempts` 使用 Alembic 版本链；空库、精确匹配的旧无版本库和已版本化库走同一升级入口。局部或未知无版本结构拒绝自动 stamp。LangGraph checkpoint 表不由 RepoPilot 猜字段迁移，继续使用 `AsyncPostgresSaver.setup()`。
 - 模型请求与数据库不是跨系统事务：预留先提交；恢复时，请求前崩溃留下的 `RESERVED` 和可能已发送的 `UNKNOWN` 都保守消耗预算，不当作免费重试。账本独立于 checkpoint，Worker 重启不清零。
 - Worker/API 的任务写入使用 expected status/version 的原子条件更新，过期 Worker 不能覆盖已变化的任务行；这只是应用状态 CAS，不是所有权 epoch，也不能撤销已经发生的工作区或外部副作用。
@@ -204,7 +206,7 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 
 | 缺口 | 当前表现 | 对应后续变更 |
 | --- | --- | --- |
-| 策略拒绝后的模型反馈 | 全批次拒绝，并有稳定内部 reason；节点内仅给一次文本纠正，还没有 CH-02B 的受控结构化反馈与全任务计数 | CH-02B |
+| 策略拒绝后的模型反馈 | CH-02B 分支已实现结构化反馈、全任务一次纠正与预写摘要校验；真实隔离服务验收未完成，尚未合并 | CH-02B 验证/合并 |
 | 项目级权限适配 | 默认测试/构建/凭据受保护，create 关闭；特例目前由服务端 Python policy 注入，还没有版本化项目 manifest | CH-07A |
 | 预检后外部改写 / 写入中断 | 无文件锁或多文件回滚保证 | CH-05 |
 | 审批等待期间基线变化 | 发布时读取当前分支，未绑定测试时的基线与候选 | CH-03 |
@@ -281,7 +283,7 @@ S/M/L 表示相对范围：S 通常是独立诊断或小接口；M 是一组紧�
 - **M4：小范围多人使用**：有明确使用者时再做 CH-12、CH-16、CH-17、CH-08C、CH-08D；保留默认关闭 GitHub 写入的方式。
 - **M5：可选探索**：CH-05B、CH-08B、CH-14、CH-15、CH-20。只有当前瓶颈或使用需求支持时启动；不为技术栈数量把它们设为简历前置条件。
 
-CH-02A、CH-09 已合并，CH-10 已验证。建议下一张卡选择 **CH-02B**，其 CH-02A/CH-10 硬依赖已就绪，可把当前文本策略拒绝改为结构化反馈与全任务有界纠正；如果希望先理解历史效果问题，可独立选择 **CH-01A**。执行顺序始终以各卡硬依赖为准。
+CH-02A、CH-09、CH-10 已合并；CH-02B 在独立分支实现，仍待隔离服务验收与 PR。其完成后可选择 **CH-03A**（CH-02A/CH-09 硬依赖已合并）；若先分析历史失败，可独立选择 **CH-01A**。执行顺序始终以各卡硬依赖为准。
 
 ### 8.4 跨任务接口约定（已落实项与待实现设计）
 
@@ -368,7 +370,7 @@ CH-02A、CH-09 已合并，CH-10 已验证。建议下一张卡选择 **CH-02B**
 
 #### CH-02B：结构化策略反馈与有界纠正
 
-- **状态**：TODO。**优先级/规模**：P0 / M。**硬依赖**：CH-02A、CH-10。
+- **状态**：IMPLEMENTED_UNVERIFIED（`codex/ch-02b-structured-policy-feedback`；隔离服务验收待补）。**优先级/规模**：P0 / M。**硬依赖**：CH-02A、CH-10。
 - **入口**：`graph/builder.py`、`graph/state.py`、`llm.py`、`models.py`、`test_reliability.py`。
 - **实施步骤**：
   1. 将权限拒绝转换为稳定 reason code、受控目标路径和可允许动作；异常原文和宿主路径不直接进入模型反馈。
@@ -629,7 +631,7 @@ CH-02A、CH-09 已合并，CH-10 已验证。建议下一张卡选择 **CH-02B**
 
 ### CH-10：在线调用预算与提供商故障处理
 
-- **状态**：VERIFIED（`adbca64`，PR #7 Open）。**优先级/规模**：P0 / M。**硬依赖**：CH-09。
+- **状态**：MERGED（`adbca64`，PR #7，`main@12b9e3d`）。**优先级/规模**：P0 / M。**硬依赖**：CH-09。
 - **入口**：`eval_runtime.py` 中的预算逻辑、`llm.py`、`worker.py`、图状态/数据库；避免复制两套分歧实现。
 - **实施步骤**：
   1. 抽取 provider-neutral 的受控调用接口，在线和评测复用请求计数、429/临时故障分类和 Retry-After 处理；保持评测旧行为由版本区分。
@@ -942,3 +944,18 @@ smoke 使用已经运行的服务。若 `.env` 选择真实模型，应按 [READ
 - PR / 合并：[PR #7](https://github.com/xsw932187210-cell/RepoPilot/pull/7) 已创建，base 为 `main@bc49d5b`（CH-09 PR #6 merge commit）、head 为 `codex/ch-10-provider-call-budget`；2026-09-22 核对时为 Open、未合并、2/2 checks passing、无合并冲突，未启用自动合并。
 - 规范更新：RP-04、RP-05、RP-07、工程证据、当前缺口、8.3/8.4 跨任务契约、CH-09/CH-10 状态、README、架构、运行时正确性、数据库/评测/模型调用专项文档已更新；必要验收全部通过，CH-10 标为 `VERIFIED`，不是 `MERGED`。
 - 下一张建议：CH-02B；CH-02A 和 CH-10 硬依赖已就绪，可继续结构化策略拒绝与有界纠正；本轮不执行。
+
+### 2026-09-23 · CH-02B · 结构化策略反馈与有界纠正
+
+- 实现基线：从干净的 `origin/main@12b9e3d` 创建 `codex/ch-02b-structured-policy-feedback`；该提交为 CH-10 PR #7 的 merge commit，开始时未携带未提交前置修改。
+- 已核实的硬依赖：CH-02A → 代码 `a2cb1d5`、PR #5 堆叠进入 PR #3 / `main@792cb84`（并保留 CH-02A 已验收记录）；CH-10 → 代码 `adbca64`、PR #7 / `main@12b9e3d`，已有 2026-09-21 SQLite、真实 PostgreSQL、eval 和隔离 smoke 证据。依赖状态以本轮 `git fetch --prune origin` 后提交图复核，未从缺少调用账本的旧 main 开始。
+- 本轮分支及代码提交：`codex/ch-02b-structured-policy-feedback` / `9032103`；文档提交见本记录后续提交。本轮没有推送或创建 PR。
+- 变更范围：Coder 一次提交 `CodeChangeOutput-v2` 的精确路径、write 动作和当前内容 SHA-256 意图；`apply_policy` 节点在任何写入前验证，并沿用 CH-02A 的全批 trusted-policy 预检。拒绝转换为 `policy-feedback-v1` 稳定 reason、仅上下文内的受控路径、允许动作和固定建议，不转发异常原文。全任务仅允许一次策略纠正，计数在下一次 Coder 请求前 checkpoint；刷新后旧摘要无效。模型调用继续使用 CH-10 任务账本，缺预算时稳定停止且不发 transport。未加入第二套预算、create 意图、其他任务卡或真实付费 API。
+- 验证记录：2026-09-23，macOS / Python 3.13.5；`/private/tmp/repopilot-ch09-venv/bin/ruff check .` 退出 0；相关 `pytest -q tests/test_reliability.py tests/test_graph.py tests/test_llm.py tests/test_model_calls.py` 为 41 passed；完整 `pytest --cov=repopilot --cov-report=term-missing --cov-fail-under=70 -q` 为 144 passed、3 skipped、80.41% coverage。Mock 评测的本机等效命令 `python -m repopilot.evaluation --provider mock --dataset evals/cases.jsonl --fail-on-regression` 退出 0，10/10。Docker daemon 不可达，Docker.app 启动返回 `kLSNoExecutableErr`；容器版 `make eval`、隔离 `make smoke`、`make smoke-recovery` 未执行，不能把本机评测冒充容器验收。
+- 故障验证：`tests/test_reliability.py` 注入首次改只读测试 → 全批拒绝、随后合法源文件修复；连续违规及跨 Reviewer 迭代再违规 → `policy_retry_exhausted` 且没有额外写入；调用总预算在纠正前耗尽 → `model_call_budget_exhausted` 且模型底层未再次调用；外部写入后刷新上下文 → 旧摘要以 `stale_content` 拒绝；缺摘要和畸形 schema → 稳定失败且无写入；恶意宿主路径/伪 token → 反馈与结果摘要不含原文。`InMemorySaver` 在拒绝 checkpoint 后重建图并恢复，`policy_retry_count=1` 未清零；这不等于真实 PostgreSQL/Worker 进程重启证据。
+- 实验身份：本卡没有运行真实模型实验；Mock 数据集 `evals/cases.jsonl` 的 SHA-256 为 `6e5c1012e81c11d9a4cda4d2d5f761313398f5383bb0a3a71960e6569b25bdf7`，模型 `deterministic-mock-v1`。历史 2026-09-09 evaluator-v7 和已有 schema-4 结果不改标、不与新 workflow 行为混为一组。
+- 证据及限制：实现位于 `src/repopilot/policy_feedback.py`、`graph/builder.py`、`llm.py` 与模型/Worker 状态；契约见 `docs/workspace-capabilities.md`。尚缺隔离服务中的 Postgres checkpoint/Worker 恢复、Docker sandbox smoke 和容器版 eval；需要 Docker 可用后补跑。预检与工作区写入、checkpoint 与工作区、数据库与 provider 都不是跨系统事务；没有 CH-04B ownership/fencing，亦不声称 exactly-once 或精确金额上限。
+- 兼容与恢复：没有新增数据库表/列，Alembic head 保持 `20260921_0003`；旧 `FileEdit` 摘要字段可缺省以保留直接工具调用和已有 artifact 可读性，在线图新提案必须提供。部署时停止旧 Worker、等待活跃执行节点结束并备份 checkpoint，升级代码后只启动新版；原审批 checkpoint 的向后恢复需在隔离服务中验证。新 `apply_policy` 中途 checkpoint 不能直接交给旧图版本继续；若回滚，先停止新任务并恢复相容的 checkpoint/代码组合。写入后而 checkpoint 前崩溃可能再次触发预检，不能当作原子提交。
+- PR / 合并：本轮仅用户授权开发；按第 11.1 节的远端写入边界，尚未获得本轮推送/创建 PR 的明确授权。当前无 CH-02B PR、未合并，基线为 `main@12b9e3d`。CH-10 PR #7 已于本轮复核合并，原 CH-10 记录的 Open 是 2026-09-22 历史快照。
+- 规范更新：RP-03、RP-05、当前缺口、CH-02B/CH-10 状态、架构、运行时正确性、权限、评测和调用控制文档已更新。CH-02B 因隔离服务验收缺失标为 `IMPLEMENTED_UNVERIFIED`，不是 `VERIFIED` 或 `MERGED`。
+- 下一张建议：先补齐 CH-02B 的隔离服务验收并按授权处理 PR；之后可选 CH-03A（CH-02A/CH-09 硬依赖已合并），本轮不启动。

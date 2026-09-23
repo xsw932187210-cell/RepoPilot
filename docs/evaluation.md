@@ -100,6 +100,13 @@ This is a common ceiling, not a claim that their actual usage is identical: a on
 use one call while the workflow can use several up to the same cap. Reports preserve actual calls
 per case and aggregate them per mode.
 
+CH-02B changes the workflow Coder proposal schema to `CodeChangeOutput-v2` and adds checkpointed
+policy correction; the one-shot path still makes its single proposal and uses the direct trusted
+workspace preflight. Historical evaluator-v7 and earlier schema-4 outputs are not evidence for
+this new workflow behavior. A real-model comparison would need a fresh output directory and
+experiment/implementation identity; this card runs only deterministic Mock regression, not a
+new paid quality study.
+
 Every attempt records the exact provider/model plus adapter and request-schema versions. The
 runtime does not automatically use a fallback. A deliberate model/provider switch must be marked
 as fallback, name its origin, and use a separate experiment identity; it cannot be aggregated into

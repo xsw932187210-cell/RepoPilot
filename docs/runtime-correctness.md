@@ -13,18 +13,19 @@ transaction system.
 checkpointed LangGraph thread. The graph is:
 
 ```text
-prepare -> planner -> [researcher, test_analyst] -> coder -> test_runner
-                                              reviewer
-                                                  |
-                                  approval <- bounded remediation / failed
-                                      |
-                               finalize or cancelled
+prepare -> planner -> [researcher, test_analyst] -> coder -> apply_policy -> test_runner
+                                                   ^            |                 |
+                                                   |-- task-wide correction             reviewer
+                                                                            |
+                                                        approval <- remediation / failed
+                                                            |
+                                                     finalize or cancelled
 ```
 
 The two branches after `planner` both observe the planner output. They are
 read-only with respect to the workspace: `researcher` calls
 `WorkspaceManager.inspect()` and `test_analyst` only constructs a test strategy.
-`coder` is the sole graph node that calls `apply_edits()`. This makes the graph
+`apply_policy` is the sole graph node that calls `apply_edits()`. This makes the graph
 single-writer by design, but it does not protect the workspace from processes
 outside this graph.
 
@@ -37,7 +38,7 @@ outside this graph.
 | Task status | Allowed transitions are explicit. `transition_task()` conditionally matches task ID, expected status, and `state_version`, then updates status/result and increments the version in one SQL statement. | Status writes and graph/Redis/event/workspace side effects are separate operations. A crash between them can leave a task marked `RUNNING` or leave an event/result incomplete. | Illegal edges are rejected; stale writes return a conflict. API races become `409`, and a stale Worker result cannot overwrite a newer terminal task row. | The state version is not an ownership epoch or a recovery watchdog. It does not fence workspace or remote side effects and is not a transaction across the other components. |
 | Event publication | `EventBus.publish()` writes the event to the database and then publishes JSON on Redis Pub/Sub. | A database write can succeed while Redis publish fails; a subscriber can disconnect and miss Pub/Sub messages. | Persist-before-publish gives a durable event record before the live notification attempt. | Pub/Sub is not a durable delivery stream and `subscribe()` has no replay cursor in this file. Consumers must use the database separately if they need recovery. |
 | Model provider calls | `ControlledModelCaller` atomically reserves one task-wide attempt, commits `STARTED`, then invokes transport with SDK retries disabled. All roles, policy corrections, and controlled retries share the persisted cap. | The reservation/started/outcome transactions and provider request are not one transaction. A process can die before send or after a request may have completed. | A pre-send reservation remains consumed. Recovery converts persisted `STARTED` attempts to `UNKNOWN`; neither state is refunded or silently retried. Stable error classes bound request timeout, retry count, one wait, and cumulative backoff. | This prevents free retries but cannot prevent provider-side duplicate effects or prove exact billing. Task CAS is not Worker fencing; a split-brain Worker remains possible until CH-04B. |
-| Context freshness | `inspect()` snapshots selected file contents; `apply_edits()` compares each existing target with `expected_contents` and requires an explicit `expected_absent` precondition for authorized creation. | The compare and subsequent writes are separate. Another writer can change a file after the check. Multiple files can be changed before a later I/O failure. | The complete proposal is validated first; edits outside supplied context, duplicate/aliased paths, oversized files, stale contents, and failed expected-absent checks are rejected before the batch writes. One denial can be returned to Coder for a bounded retry from freshly inspected context. | This is stale-context preflight, not a filesystem transaction or lock against arbitrary writers. There is no atomic multi-file commit or rollback after writes begin. |
+| Context freshness | `inspect()` snapshots selected file contents; Coder intents carry its SHA-256, and `apply_edits()` compares targets with `expected_contents`. | The compare and subsequent writes are separate. Another writer can change a file after the check. Multiple files can be changed before a later I/O failure. | The full proposal is validated before mutation. A denial checkpoints one task-wide correction with safe structured feedback; Coder re-inspects before retry, and an old digest cannot be reused. | This is preflight, not a filesystem transaction or lock. A crash after a write but before graph checkpoint may replay the node; there is no atomic multi-file commit or rollback after writes begin. |
 | Parallel branches | LangGraph joins `researcher` and `test_analyst` before `coder`. Neither branch edits files. | Their observations are snapshots and can become stale before coding. A repository can also change outside the graph. | `coder` uses the joined research context; on iterations after the first it re-runs `inspect()` before proposing changes. | The first coder pass can use context that is already stale; the re-inspection still does not fence external writers between read and write. |
 | Read/write/create capability | The trusted `workspace-capabilities-v1` policy filters inspection, derives `editable_paths`, and is checked again inside `apply_edits()`. Tests and build/CI files are readable but read-only by default; credential-like files are not readable; create is default-deny. | A model can still request another path, a read-only test, an alias, or a new file. A trusted adapter can deliberately grant a narrower project-specific override. | Stable `CapabilityError` reasons reject the whole batch. Path normalization, case-folded identity, symlink/hard-link/special-file checks, extension/directory/size limits, and expected-absent checks occur before mutation. | This is an application-level policy, not an OS policy plane. Overrides are currently injected by trusted Python configuration rather than a signed project manifest. |
 | Cancellation | `ensure_active()` checks the Redis cancellation key at node entry. `request_cancel()` sets it for one hour. | Cancellation during an LLM request, repository clone, synchronous inspection, Docker wait, or publisher call is not interruptive. The current node continues until it returns. | Subsequent node boundaries raise `TaskCancelled`; worker maps that to `CANCELLED`. Human rejection at the approval interrupt routes to `cancelled`. | There is no cancellation token propagated into all I/O, no kill of an in-flight Docker container on Redis cancel, and no cleanup/clear operation for the cancel key shown here. |
@@ -51,7 +52,7 @@ outside this graph.
 
 The graph’s parallelism is safe only for the branches as written: `researcher`
 reads repository content and `test_analyst` computes metadata. All file mutation
-is routed through `coder`, and the worker lock serializes normal task handling.
+is routed through `apply_policy`, and the worker lock serializes normal task handling.
 This should be described as “single graph writer with read-only parallel
 analysis,” not as concurrent editing support.
 

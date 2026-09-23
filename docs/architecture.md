@@ -61,6 +61,14 @@ applying feedback. A low-risk or evidence-only reviewer concern goes directly to
 review-driven remediation, the next candidate is also escalated. Previous edits remain
 accumulated in state, and the configured maximum iteration count prevents an unbounded agent loop.
 
+Coder checkpoints a `CodeChangeOutput-v2` proposal before the separate `apply_policy` writer
+node checks the exact-path/action/content-digest intent and calls `apply_edits()`. A denied whole
+batch yields `policy-feedback-v1` with a stable reason and only context-approved paths. Its one
+task-wide correction is checkpointed before another Coder request; refreshing context cannot reuse
+an earlier content digest. This count is independent of Coder iterations and CH-10 transport
+attempts, while every new model request still consumes the same durable call ledger. See
+[structured Coder correction](workspace-capabilities.md#structured-coder-correction).
+
 Redis is intentionally not the source of truth. It owns dispatch, short-lived locks,
 cancellation flags, and live event fan-out. PostgreSQL owns task history, events, the model-call
 ledger, and graph state. RepoPilot's Alembic revisions own task/event/call-ledger application
