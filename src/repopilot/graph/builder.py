@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -8,13 +9,16 @@ from typing import Any
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
+from pydantic import ValidationError
 
 from repopilot.config import Settings
 from repopilot.events import EventBus, JobQueue
 from repopilot.github import GitHubPublisher
 from repopilot.graph.state import RepoPilotState
 from repopilot.llm import AgentModel
-from repopilot.models import FileEdit, PlanOutput, ReviewOutput, SandboxResult
+from repopilot.model_calls import ModelCallControlError
+from repopilot.models import CodeChangeOutput, FileEdit, PlanOutput, ReviewOutput, SandboxResult
+from repopilot.policy_feedback import normalized_policy_feedback, validate_modification_intent
 from repopilot.repository import RepositoryContext, WorkspaceManager
 from repopilot.sandbox import DockerSandbox, LocalSandbox
 from repopilot.security import SecurityError
@@ -49,6 +53,26 @@ def context_state(context: RepositoryContext) -> dict[str, Any]:
         "retrieval_skipped_for_budget": context.skipped_for_budget,
         "capability_policy_version": context.capability_policy_version,
     }
+
+
+def repository_context_from_state(state: RepoPilotState, max_chars: int) -> RepositoryContext:
+    return RepositoryContext(
+        tree=state.get("research_tree", []),
+        files=state.get("research_files", {}),
+        editable_paths=(
+            tuple(state["research_editable_paths"])
+            if state.get("research_editable_paths") is not None
+            else None
+        ),
+        evidence=state.get("research_evidence", []),
+        query_terms=state.get("retrieval_query_terms", []),
+        strategy=state.get("retrieval_strategy", "legacy"),
+        candidate_count=state.get("retrieval_candidate_count", 0),
+        selected_chars=state.get("retrieval_selected_chars", 0),
+        skipped_for_budget=state.get("retrieval_skipped_for_budget", 0),
+        max_chars=max_chars,
+        capability_policy_version=state.get("capability_policy_version", "legacy"),
+    )
 
 
 @dataclass(slots=True)
@@ -178,64 +202,106 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
     async def coder(state: RepoPilotState) -> dict[str, Any]:
         started = time.perf_counter()
         await deps.ensure_active(state)
-        context = RepositoryContext(
-            tree=state.get("research_tree", []),
-            files=state.get("research_files", {}),
-            editable_paths=(
-                tuple(state["research_editable_paths"])
-                if state.get("research_editable_paths") is not None
-                else None
-            ),
-            evidence=state.get("research_evidence", []),
-            query_terms=state.get("retrieval_query_terms", []),
-            strategy=state.get("retrieval_strategy", "legacy"),
-            candidate_count=state.get("retrieval_candidate_count", 0),
-            selected_chars=state.get("retrieval_selected_chars", 0),
-            skipped_for_budget=state.get("retrieval_skipped_for_budget", 0),
-            max_chars=deps.settings.max_context_chars,
-            capability_policy_version=state.get("capability_policy_version", "legacy"),
-        )
+        context = repository_context_from_state(state, deps.settings.max_context_chars)
         plan = PlanOutput.model_validate(state["plan"])
-        if state.get("iteration", 0) > 0:
+        if state.get("iteration", 0) > 0 or state.get("policy_feedback") is not None:
             context = deps.workspaces.inspect(
                 Path(state["workspace"]),
                 f"{state['issue_title']}\n{state['issue_body']}",
                 plan.search_terms,
             )
         model_feedback = list(state.get("reviewer_feedback", []))
-        policy_retries = 0
-        while True:
-            changes = await deps.model.propose_changes(
-                state["issue_title"],
-                state["issue_body"],
-                plan,
-                context,
-                model_feedback,
+        if state.get("policy_feedback") is not None:
+            model_feedback.append(json.dumps(state["policy_feedback"], ensure_ascii=False))
+        try:
+            changes = CodeChangeOutput.model_validate(
+                await deps.model.propose_changes(
+                    state["issue_title"],
+                    state["issue_body"],
+                    plan,
+                    context,
+                    model_feedback[-10:],
+                )
             )
-            try:
-                iteration_changes = deps.workspaces.apply_edits(
-                    Path(state["workspace"]),
-                    changes.edits,
-                    expected_contents=context.files,
-                )
-                break
-            except SecurityError as error:
-                if policy_retries >= MAX_POLICY_RETRIES:
-                    raise
-                policy_retries += 1
-                model_feedback = [
-                    *model_feedback,
-                    (
-                        f"Tool policy rejected the complete proposal: {error}. "
-                        "No edits were applied. Retry using only exact allowed paths and "
-                        "the latest supplied file contents."
-                    ),
-                ][-10:]
-                context = deps.workspaces.inspect(
-                    Path(state["workspace"]),
-                    f"{state['issue_title']}\n{state['issue_body']}",
-                    plan.search_terms,
-                )
+        except ModelCallControlError as error:
+            duration_ms = elapsed_ms(started)
+            await deps.emit(
+                state,
+                "coder",
+                "Coder stopped at the controlled model-call boundary",
+                {"error_code": error.code},
+                duration_ms,
+            )
+            return {
+                "pending_changes": None,
+                "policy_error_code": error.code,
+                "node_metrics": [node_metric("coder", duration_ms, state.get("iteration", 0))],
+            }
+        except ValidationError:
+            duration_ms = elapsed_ms(started)
+            await deps.emit(
+                state,
+                "coder",
+                "Coder returned an invalid modification schema",
+                {"error_code": "invalid_modification_intent"},
+                duration_ms,
+            )
+            return {
+                "pending_changes": None,
+                "policy_error_code": "invalid_modification_intent",
+                "node_metrics": [node_metric("coder", duration_ms, state.get("iteration", 0))],
+            }
+        duration_ms = elapsed_ms(started)
+        await deps.emit(
+            state,
+            "coder",
+            "Coder submitted a structured modification intent",
+            {"edit_count": len(changes.edits)},
+            duration_ms,
+        )
+        return {
+            **context_state(context),
+            "pending_changes": changes.model_dump(),
+            "policy_error_code": None,
+            "node_metrics": [node_metric("coder", duration_ms, state.get("iteration", 0))],
+        }
+
+    def after_coder(state: RepoPilotState) -> str:
+        return "failed" if state.get("policy_error_code") else "apply_policy"
+
+    async def apply_policy(state: RepoPilotState) -> dict[str, Any]:
+        started = time.perf_counter()
+        await deps.ensure_active(state)
+        context = repository_context_from_state(state, deps.settings.max_context_chars)
+        changes = CodeChangeOutput.model_validate(state["pending_changes"])
+        try:
+            validate_modification_intent(changes, context)
+            iteration_changes = deps.workspaces.apply_edits(
+                Path(state["workspace"]),
+                changes.edits,
+                expected_contents=context.files,
+            )
+        except SecurityError as error:
+            feedback = normalized_policy_feedback(error, context)
+            used = state.get("policy_retry_count", 0)
+            can_retry = used < MAX_POLICY_RETRIES
+            duration_ms = elapsed_ms(started)
+            await deps.emit(
+                state,
+                "apply_policy",
+                "Complete modification intent rejected by workspace policy",
+                {"feedback": feedback.model_dump(), "retry_available": can_retry},
+                duration_ms,
+            )
+            return {
+                "pending_changes": None,
+                "policy_feedback": feedback.model_dump(),
+                "policy_retry_count": used + int(can_retry),
+                "policy_error_code": None if can_retry else "policy_retry_exhausted",
+                "node_metrics": [
+                    node_metric("apply_policy", duration_ms, state.get("iteration", 0))
+                ],
+            }
         edits_by_path = {
             edit.path: edit for edit in map(FileEdit.model_validate, state.get("edits", []))
         }
@@ -246,13 +312,13 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
         duration_ms = elapsed_ms(started)
         await deps.emit(
             state,
-            "coder",
+            "apply_policy",
             f"Coder completed iteration {iteration} with {len(iteration_changes)} new file edits",
             {
                 "changed_files": changed_files,
                 "iteration_changes": iteration_changes,
                 "summary": changes.summary,
-                "policy_retries": policy_retries,
+                "policy_retry_count": state.get("policy_retry_count", 0),
             },
             duration_ms,
         )
@@ -262,9 +328,16 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
             "changed_files": changed_files,
             "diff": diff,
             "iteration": iteration,
-            "policy_retry_count": state.get("policy_retry_count", 0) + policy_retries,
-            "node_metrics": [node_metric("coder", duration_ms, iteration)],
+            "pending_changes": None,
+            "policy_feedback": None,
+            "policy_error_code": None,
+            "node_metrics": [node_metric("apply_policy", duration_ms, iteration)],
         }
+
+    def after_apply_policy(state: RepoPilotState) -> str:
+        if state.get("policy_error_code"):
+            return "failed"
+        return "coder" if state.get("policy_feedback") is not None else "test_runner"
 
     async def test_runner(state: RepoPilotState) -> dict[str, Any]:
         started = time.perf_counter()
@@ -420,18 +493,25 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
         await deps.emit(
             state,
             "failed",
-            "Task stopped after the bounded retry budget",
-            {
-                "iteration": state.get("iteration", 0),
-                "feedback": state.get("reviewer_feedback", []),
-            },
+            "Task stopped at a bounded failure condition",
+            (
+                {
+                    "iteration": state.get("iteration", 0),
+                    "policy_feedback": state.get("policy_feedback"),
+                    "error_code": state["policy_error_code"],
+                }
+                if state.get("policy_error_code")
+                else {
+                    "iteration": state.get("iteration", 0),
+                    "feedback": state.get("reviewer_feedback", []),
+                }
+            ),
             duration_ms,
         )
         return {
             "status": "failed",
-            "error": (
-                "Candidate failed deterministic or reviewer validation within the retry budget"
-            ),
+            "error": state.get("policy_error_code")
+            or "Candidate failed deterministic or reviewer validation within the retry budget",
             "node_metrics": [node_metric("failed", duration_ms, state.get("iteration", 0))],
         }
 
@@ -456,6 +536,7 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
     graph.add_node("researcher", researcher)
     graph.add_node("test_analyst", test_analyst)
     graph.add_node("coder", coder)
+    graph.add_node("apply_policy", apply_policy)
     graph.add_node("test_runner", test_runner)
     graph.add_node("reviewer", reviewer)
     graph.add_node("approval", approval)
@@ -468,7 +549,14 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
     graph.add_edge("planner", "researcher")
     graph.add_edge("planner", "test_analyst")
     graph.add_edge(["researcher", "test_analyst"], "coder")
-    graph.add_edge("coder", "test_runner")
+    graph.add_conditional_edges(
+        "coder", after_coder, {"apply_policy": "apply_policy", "failed": "failed"}
+    )
+    graph.add_conditional_edges(
+        "apply_policy",
+        after_apply_policy,
+        {"coder": "coder", "test_runner": "test_runner", "failed": "failed"},
+    )
     graph.add_edge("test_runner", "reviewer")
     graph.add_conditional_edges(
         "reviewer",

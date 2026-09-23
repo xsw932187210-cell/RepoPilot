@@ -35,6 +35,9 @@ class RepoPilotState(TypedDict, total=False):
     review: dict[str, Any]
     iteration: int
     policy_retry_count: int
+    policy_feedback: dict[str, Any] | None
+    policy_error_code: str | None
+    pending_changes: dict[str, Any] | None
     node_metrics: Annotated[list[dict[str, Any]], operator.add]
 
     human_approved: bool

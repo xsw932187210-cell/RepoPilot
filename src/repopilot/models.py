@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from repopilot.security import CapabilityReason
 
 
 class TaskStatus(StrEnum):
@@ -101,11 +103,24 @@ class FileEdit(BaseModel):
     path: str = Field(min_length=1, max_length=300)
     content: str = Field(max_length=200_000)
     reason: str = Field(default="", max_length=1_000)
+    action: Literal["write", "create"] = "write"
+    # Optional for old artifacts and direct tool callers; the graph requires this
+    # precondition for every model-proposed write before touching the workspace.
+    expected_content_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
 
 class CodeChangeOutput(BaseModel):
     summary: str
     edits: list[FileEdit] = Field(default_factory=list, max_length=8)
+
+
+class PolicyFeedback(BaseModel):
+    schema_version: Literal["policy-feedback-v1"] = "policy-feedback-v1"
+    reason_code: CapabilityReason
+    target_path: str | None = None
+    allowed_actions: list[Literal["write"]] = Field(default_factory=lambda: ["write"])
+    allowed_paths: list[str] = Field(default_factory=list, max_length=32)
+    guidance: str
 
 
 class ReviewOutput(BaseModel):

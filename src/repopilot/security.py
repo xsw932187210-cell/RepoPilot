@@ -34,6 +34,7 @@ class CapabilityReason(StrEnum):
     FILE_TOO_LARGE = "file_too_large"
     OUTSIDE_CONTEXT = "outside_context"
     STALE_CONTENT = "stale_content"
+    EXPECTED_CONTENT_REQUIRED = "expected_content_required"
     EXPECTED_ABSENT_REQUIRED = "expected_absent_required"
     TARGET_EXISTS = "target_exists"
 
