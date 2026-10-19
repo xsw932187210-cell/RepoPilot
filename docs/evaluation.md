@@ -35,6 +35,18 @@ large-codebase retrieval quality.
 
 ## Real-model evaluation
 
+### Offline failure evidence
+
+`python -m repopilot.failure_analysis <model-report.json> --output <ledger.json>` extracts
+count-only observations from an existing report without calling a model or executing candidates.
+It rejects duplicate case-mode records and mixed experiment fingerprints, separates pending work
+from terminal failures, and leaves root cause unknown instead of inferring it from Reviewer labels.
+The export omits free text, diffs, logs and test identities. See the
+[2026-09-09 failure analysis](failure-analysis-2026-09-09.md) and its committed evidence for the
+40 historical observations and the limits of that evidence.
+
+### Running real models
+
 Real-model patches must run through the isolated real-task Docker harness. The legacy
 `repopilot.evaluation` command intentionally refuses a real provider because it uses `LocalSandbox`;
 it remains the backwards-compatible mock workflow regression command.

@@ -1,0 +1,189 @@
+{
+  "metadata": {
+    "fingerprint": "b84060961ce452efaf5b742f54b1cf6db0230a816e6582348b1fefc5d8a64a15",
+    "source_sha256": "1466fa3f27fe5391b54a94d006f5613f0506f803289bc7992379bbbf05b8630c",
+    "config": {
+      "dataset_sha256": "6b54dc349ba8f493e9cfb2702bf6c227c6b5c3da781e3246620779fdc9984471",
+      "evaluator_config": {
+        "version": 7,
+        "implementation_sha256": "86b09c4267f213dcf518e72f68d2a4b70595f187eaca5b32ae7288cffe97570a"
+      }
+    }
+  },
+  "records": [
+    {
+      "case_id": "thefuck-002",
+      "mode": "oneshot",
+      "status": "completed",
+      "fingerprint": "b84060961ce452efaf5b742f54b1cf6db0230a816e6582348b1fefc5d8a64a15",
+      "duration_ms": 13767,
+      "source_record_index": 2,
+      "usage": {
+        "model_calls": 1
+      },
+      "result": {
+        "success": true,
+        "workflow_gate_passed": null,
+        "iterations": 1,
+        "policy_retry_count": 0,
+        "acceptance": {
+          "exit_code": 0
+        },
+        "comparison": {
+          "fail_to_pass_count": 1,
+          "fail_to_pass_resolved": 1,
+          "pass_to_pass_count": 1,
+          "regression_count": 0,
+          "missing_count": 0,
+          "extra_count": 0,
+          "baseline_identity_drift_count": 0
+        },
+        "review": {}
+      }
+    },
+    {
+      "case_id": "thefuck-002",
+      "mode": "workflow",
+      "status": "completed",
+      "fingerprint": "b84060961ce452efaf5b742f54b1cf6db0230a816e6582348b1fefc5d8a64a15",
+      "duration_ms": 37778,
+      "source_record_index": 3,
+      "usage": {
+        "model_calls": 5
+      },
+      "result": {
+        "success": false,
+        "workflow_gate_passed": false,
+        "iterations": 2,
+        "policy_retry_count": 0,
+        "acceptance": {
+          "exit_code": 4,
+          "report_missing": true
+        },
+        "comparison": {
+          "fail_to_pass_count": 1,
+          "fail_to_pass_resolved": 0,
+          "pass_to_pass_count": 1,
+          "regression_count": 1,
+          "missing_count": 2,
+          "extra_count": 0,
+          "baseline_identity_drift_count": 0
+        },
+        "review": {
+          "approved": false,
+          "risk_level": "high"
+        }
+      }
+    },
+    {
+      "case_id": "thefuck-006",
+      "mode": "workflow",
+      "status": "completed",
+      "fingerprint": "b84060961ce452efaf5b742f54b1cf6db0230a816e6582348b1fefc5d8a64a15",
+      "duration_ms": 17459,
+      "source_record_index": 7,
+      "usage": {
+        "model_calls": 3
+      },
+      "result": {
+        "success": false,
+        "workflow_gate_passed": true,
+        "iterations": 1,
+        "policy_retry_count": 0,
+        "acceptance": {
+          "exit_code": 1
+        },
+        "comparison": {
+          "fail_to_pass_count": 1,
+          "fail_to_pass_resolved": 0,
+          "pass_to_pass_count": 2,
+          "regression_count": 0,
+          "missing_count": 0,
+          "extra_count": 0,
+          "baseline_identity_drift_count": 0
+        },
+        "review": {
+          "approved": false,
+          "risk_level": "low"
+        }
+      }
+    },
+    {
+      "case_id": "thefuck-019",
+      "mode": "workflow",
+      "status": "failed",
+      "fingerprint": "b84060961ce452efaf5b742f54b1cf6db0230a816e6582348b1fefc5d8a64a15",
+      "duration_ms": 16864,
+      "source_record_index": 25,
+      "usage": {
+        "model_calls": 3
+      },
+      "error": {
+        "type": "SecurityError"
+      }
+    },
+    {
+      "case_id": "thefuck-032",
+      "mode": "oneshot",
+      "status": "completed",
+      "fingerprint": "b84060961ce452efaf5b742f54b1cf6db0230a816e6582348b1fefc5d8a64a15",
+      "duration_ms": 3707,
+      "source_record_index": 38,
+      "usage": {
+        "model_calls": 1
+      },
+      "result": {
+        "success": false,
+        "workflow_gate_passed": null,
+        "iterations": 1,
+        "policy_retry_count": 0,
+        "acceptance": {
+          "exit_code": 1
+        },
+        "comparison": {
+          "fail_to_pass_count": 1,
+          "fail_to_pass_resolved": 0,
+          "pass_to_pass_count": 0,
+          "regression_count": 0,
+          "missing_count": 0,
+          "extra_count": 0,
+          "baseline_identity_drift_count": 0
+        },
+        "review": {}
+      }
+    },
+    {
+      "case_id": "thefuck-032",
+      "mode": "workflow",
+      "status": "completed",
+      "fingerprint": "b84060961ce452efaf5b742f54b1cf6db0230a816e6582348b1fefc5d8a64a15",
+      "duration_ms": 14600,
+      "source_record_index": 39,
+      "usage": {
+        "model_calls": 4
+      },
+      "result": {
+        "success": true,
+        "workflow_gate_passed": true,
+        "iterations": 1,
+        "policy_retry_count": 0,
+        "acceptance": {
+          "exit_code": 0
+        },
+        "comparison": {
+          "fail_to_pass_count": 1,
+          "fail_to_pass_resolved": 1,
+          "pass_to_pass_count": 0,
+          "regression_count": 0,
+          "missing_count": 0,
+          "extra_count": 0,
+          "baseline_identity_drift_count": 0
+        },
+        "review": {
+          "approved": false,
+          "risk_level": "low"
+        }
+      }
+    }
+  ]
+}
