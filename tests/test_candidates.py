@@ -146,3 +146,13 @@ async def test_full_diff_uses_actual_base_blobs_despite_export_attributes(reposi
         policy_version="fixture",
     )
     assert store.read_diff(candidate) == b""
+
+
+@pytest.mark.parametrize("part", ["manifest.json", "tree.tar"])
+async def test_unparseable_artifact_is_a_controlled_integrity_error(repository, part):
+    _, _, store = repository
+    candidate = await freeze(repository)
+    (store.root / candidate.artifact_digest / part).write_bytes(b"invalid artifact encoding")
+    with pytest.raises(SecurityError, match="corrupt"):
+        with store.materialize(candidate):
+            pass

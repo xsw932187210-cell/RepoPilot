@@ -357,7 +357,10 @@ class ArtifactStore:
         for name in ("manifest.json", "tree.tar", "full.diff"):
             if (bundle / name).is_symlink() or not (bundle / name).is_file():
                 raise SecurityError("Artifact is missing or corrupt")
-        manifest = json.loads((bundle / "manifest.json").read_bytes())
+        try:
+            manifest = json.loads((bundle / "manifest.json").read_bytes())
+        except (ValueError, UnicodeError) as error:
+            raise SecurityError("Artifact manifest is corrupt") from error
         if digest_json(manifest) != digest or manifest != candidate.manifest:
             raise SecurityError("Artifact manifest digest mismatch")
         if manifest.get("base_sha") != candidate.base_sha:
@@ -375,8 +378,11 @@ class ArtifactStore:
         bundle = self._bundle(candidate)
         with tempfile.TemporaryDirectory(prefix="repopilot-candidate-") as directory:
             root = Path(directory)
-            with tarfile.open(bundle / "tree.tar") as archive:
-                _extract(archive, root, candidate.manifest["entries"])
+            try:
+                with tarfile.open(bundle / "tree.tar") as archive:
+                    _extract(archive, root, candidate.manifest["entries"])
+            except tarfile.TarError as error:
+                raise SecurityError("Artifact archive is corrupt") from error
             yield root
 
     def validate_edits(self, candidate: Candidate, edits: list[dict]) -> None:

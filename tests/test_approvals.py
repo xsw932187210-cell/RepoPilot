@@ -174,6 +174,19 @@ async def test_artifact_endpoints_are_controlled_and_complete(database, tmp_path
         assert diff.status_code == 200 and "return a + b" in diff.text
         other = await client.get(url.replace(view.task_id, "other-task"), headers=headers)
         assert other.status_code == 404
+        (
+            settings.workspace_root
+            / ".artifacts"
+            / view.candidate.artifact_digest
+            / "manifest.json"
+        ).write_bytes(b"invalid JSON")
+        response = await client.post(
+            f"/api/v1/tasks/{view.task_id}/approval",
+            headers=headers,
+            json=decision_request(view).model_dump(mode="json"),
+        )
+        assert response.status_code == 503
+        assert (await ApprovalStore(database).current(view.task_id)).decision is None
 
 
 async def test_pending_decision_is_blocked_by_cancellation(database, tmp_path):
