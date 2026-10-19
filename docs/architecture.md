@@ -15,7 +15,9 @@ flowchart LR
   P --> T[Test analyst]
   R --> C[Coder]
   T --> C
-  C --> S[Docker test runner]
+  C --> AP[Apply policy: single writer]
+  AP -->|valid batch| S[Docker test runner]
+  AP -->|one task-wide correction| C
   S --> V[Reviewer]
   V -->|medium/high risk: one bounded remediation| C
   V -->|approved, low-risk, or second candidate| H[HITL interrupt]
@@ -41,7 +43,7 @@ flowchart LR
    worker's mounts, network access, Linux capabilities, or privilege escalation. Symlinks and
    special files are rejected when the snapshot is built.
 5. GitHub writes require a non-empty diff, passing tests, an allowlisted owner, runtime enablement,
-   a token, reviewer approval, and a LangGraph human interrupt. Deterministic checks override an
+   a token, reviewer evidence, and a LangGraph human approval interrupt. Deterministic checks override an
    incorrect model approval and feed their evidence into the bounded retry loop.
 6. Tokens and credential-bearing URLs are never placed in graph state or task events.
 

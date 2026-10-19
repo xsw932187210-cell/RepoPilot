@@ -48,6 +48,12 @@ outside this graph.
 
 ## Specific conclusions
 
+The [2026-10-19 CH-02B service probe](ch02b-verification-2026-10-19.md) adds real PostgreSQL
+checkpoint/call-ledger and process-exit evidence for policy correction. That probe explicitly
+continues the same graph thread after exit; it does not implement automatic queue recovery.
+Normal approval-checkpoint recovery was separately exercised by restarting the actual Worker
+service, including continuation of an approval checkpoint made by the pinned pre-CH-02B graph.
+
 ### Single writer, read-only parallelism
 
 The graph’s parallelism is safe only for the branches as written: `researcher`

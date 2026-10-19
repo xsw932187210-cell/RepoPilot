@@ -22,3 +22,11 @@ RUN useradd --create-home --uid 10001 repopilot \
 USER repopilot
 EXPOSE 8000
 CMD ["uvicorn", "repopilot.api:app", "--host", "0.0.0.0", "--port", "8000"]
+
+FROM runtime AS integration-test
+USER root
+COPY tests ./tests
+RUN pip install ".[dev]"
+USER repopilot
+
+FROM runtime AS production

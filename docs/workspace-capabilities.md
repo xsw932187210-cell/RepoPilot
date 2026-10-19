@@ -87,3 +87,11 @@ add Worker ownership fencing before concurrent writers can be treated as safe.
 Focused coverage lives in `tests/test_capabilities.py`, `tests/test_runtime_boundaries.py`,
 `tests/test_reliability.py`, and `tests/test_real_evaluation.py`. The deterministic evaluator also
 checks that readable tests remain available for diagnosis while only expected source files change.
+
+`make ch02b-integration` runs the isolated PostgreSQL/Redis/API/Worker and Docker probe. It
+hard-exits an execution process after the persisted policy denial, explicitly resumes the same
+thread in a new process, and checks correction limits, durable calls, actual files and terminal
+states. It also checks a pinned pre-CH-02B approval checkpoint and a real Worker-service restart.
+See the [2026-10-19 verification record](ch02b-verification-2026-10-19.md) for the six passing
+scenarios, environment and cleanup. Mid-task continuation is test-driven; automatic queue reclaim
+and Worker ownership fencing remain separate work.

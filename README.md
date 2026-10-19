@@ -153,6 +153,11 @@ latency evidence, plus retrieval Recall@3, Recall@5, and mean reciprocal rank. C
 report as a workflow artifact and fails if any deterministic case regresses. This mock result
 measures workflow and retrieval reliability, not LLM coding ability.
 
+Run `make ch02b-integration` for the isolated PostgreSQL/Redis/Docker policy-correction probe,
+legacy approval-checkpoint compatibility, API smoke and actual Worker restart. It uses a dedicated
+Compose project, fixed Mock configuration and automatic project-scoped cleanup. See the
+[CH-02B verification record](docs/ch02b-verification-2026-10-19.md) for results and recovery limits.
+
 After configuring an OpenAI-compatible model in the ignored `.env`, run `make eval-real` for a
 separately labelled model-quality report. See [docs/evaluation.md](docs/evaluation.md) for the
 evidence contract and rules for defensible resume metrics.

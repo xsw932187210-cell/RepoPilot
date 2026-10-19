@@ -1,6 +1,6 @@
 # RepoPilot 项目规范与迭代验收
 
-> 更新日期：2026-10-19；本轮起始基线：`379613b`（含 CH-02B 待验收实现）；最近完整真实模型评测：2026-09-09。
+> 更新日期：2026-10-19；本轮起始基线：`f27e847`；本轮 CH-02B 服务验收通过，尚有后续任务；最近完整真实模型评测：2026-09-09。
 > 本文是现有项目的规范入口，记录当前行为、证据和后续变更的验收标准。
 > 本次建立的是单文件规范，尚未接入 OpenSpec CLI，也不代表已建立其提案、归档或自动校验流程。
 > 规划版本：Roadmap v3。CH-01～CH-08、CH-21 为主题编号，具体开发选带字母的子任务；新增的上下文与历史案例探索按需启动。
@@ -59,14 +59,10 @@ Planner、Coder、Reviewer 是三个调用 LLM 的角色。Researcher 执行确�
 ### 3.2 图执行顺序
 
 ```text
-prepare → planner → [researcher || test_analyst] → coder → test_runner → reviewer
-                                                  ↑                      │
-                                                  └──── 预算内返工 ──────┤
-                                                                         ├→ failed
-                                                                         └→ approval 中断
-                                                                              ├→ 拒绝：cancelled
-                                                                              └→ 同意：finalize
-                                                                                         └→ completed
+prepare → planner → [researcher || test_analyst] → coder → apply_policy → test_runner → reviewer
+coder ← apply_policy（全任务最多一次策略纠正，耗尽则 failed）
+coder ← reviewer（预算内返工；测试门槛耗尽仍未通过则 failed）
+reviewer → approval 中断 → 拒绝：cancelled / 同意：finalize → completed
 ```
 
 对外任务状态为 `queued / running / awaiting_approval / completed / failed / cancelled`。任务记录带 `state_version`；每次状态更新比较调用方看到的 status/version，成功后版本加一。人工决定重新入队后，用同一个 `graph_thread_id` 和 `Command(resume=...)` 恢复执行。
@@ -141,6 +137,7 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 
 - Compose 使用持久化 PostgreSQL checkpoint；审批恢复继续同一个图线程。
 - CH-02B 的 Coder 提案和 `apply_policy` 拒绝/计数分别 checkpoint；恢复后不清零全任务策略纠正次数，但 checkpoint 与文件写入不是事务，也不等于 CH-04B 的 Worker fencing。
+- 2026-10-19 在真实 PostgreSQL/Redis/Docker 环境中验证拒绝提交后硬退出执行进程，再显式接续同一图线程；纠正限额与调用账本保留。另行验证实际 Worker 服务在审批等待期间重启，以及固定旧版图源码生成的审批 checkpoint 由当前 Worker 恢复；中途接续不是生产队列自动重领。
 - RepoPilot 自有 `tasks/task_events/model_call_budgets/model_call_attempts` 使用 Alembic 版本链；空库、精确匹配的旧无版本库和已版本化库走同一升级入口。局部或未知无版本结构拒绝自动 stamp。LangGraph checkpoint 表不由 RepoPilot 猜字段迁移，继续使用 `AsyncPostgresSaver.setup()`。
 - 模型请求与数据库不是跨系统事务：预留先提交；恢复时，请求前崩溃留下的 `RESERVED` 和可能已发送的 `UNKNOWN` 都保守消耗预算，不当作免费重试。账本独立于 checkpoint，Worker 重启不清零。
 - Worker/API 的任务写入使用 expected status/version 的原子条件更新，过期 Worker 不能覆盖已变化的任务行；这只是应用状态 CAS，不是所有权 epoch，也不能撤销已经发生的工作区或外部副作用。
@@ -191,6 +188,7 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 | --- | --- | --- |
 | 工程验证 | 2026-09-21：135 passed、3 个专用 PostgreSQL 条件测试在全量套件中跳过，80.01% 行覆盖率；lint、PostgreSQL 16.15 CH-10 迁移 2/2、Mock eval 10/10、smoke、审批恢复 smoke 通过 | CH-10 PostgreSQL 条件测试已由独立 Compose 实例另行实跑；provider 故障使用确定性 transport，不是真实 provider 集成或计费证据 |
 | CH-01A 离线诊断 | 2026-10-19：核对 40 个 case-mode，公开 12 个未通过项的观察分类与未知根因；lint、154 passed / 3 skipped、80.78% 行覆盖率 | 对 2026-09-09 v7 历史记录做离线分析；不是新真实模型实验，也不补足 CH-02B 集成验收 |
+| CH-02B 服务验收 | 2026-10-19：PostgreSQL 16.15 / Redis / Docker 下 6 项专项通过，容器内 Mock 10/10，API smoke 和实际 Worker 审批重启恢复通过，专属资源清理确认 | 中途 checkpoint 经测试入口显式恢复；未实现自动队列找回。离线套件 154 passed / 9 skipped，80.78%；6 项服务测试另行实跑，另外 3 项 PostgreSQL 条件入口未重跑 |
 | Mock 工作流回归 | 10/10 | 验证流程及确定性夹具，不代表 LLM 编码能力 |
 | 真实缺陷复现 | 20/20 | 同一上游项目的固定缺陷与聚焦验收集 |
 | 无模型检索诊断 | 目标文件覆盖 20/20，Recall@3 / @5 均 95%，MRR 0.874 | 仅此数据集的文件排序，不是修复率，也不是检索消融收益 |
@@ -208,7 +206,6 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 
 | 缺口 | 当前表现 | 对应后续变更 |
 | --- | --- | --- |
-| 策略拒绝后的模型反馈 | CH-02B 分支已实现结构化反馈、全任务一次纠正与预写摘要校验；真实隔离服务验收未完成，尚未合并 | CH-02B 验证/合并 |
 | 项目级权限适配 | 默认测试/构建/凭据受保护，create 关闭；特例目前由服务端 Python policy 注入，还没有版本化项目 manifest | CH-07A |
 | 预检后外部改写 / 写入中断 | 无文件锁或多文件回滚保证 | CH-05 |
 | 审批等待期间基线变化 | 发布时读取当前分支，未绑定测试时的基线与候选 | CH-03 |
@@ -289,7 +286,7 @@ S/M/L 表示相对范围：S 通常是独立诊断或小接口；M 是一组紧�
 
 2026-10-19 确认的质量迭代顺序：先做 CH-01A 失败归因，再通过 CH-07A/B/C 建立跨项目开发集和冻结保留集；按证据选择 CH-13 Reviewer 校准或 CH-01B 任务路由，每次只验证一个主要策略变化。CH-14 的片段检索、CH-21 的压缩/历史案例复用由大文件、长任务或重复仓库任务的瓶颈触发；CH-12 多用户权限由明确使用需求触发，不作为本轮前置功能。
 
-CH-01A 已于 2026-10-19 完成离线诊断验收。CH-02A、CH-09、CH-10 已合并；CH-02B 已实现，仍待隔离服务验收与 PR。建议先收尾 CH-02B；质量数据方向可独立开展 **CH-07A**，交付一致性方向可选择 **CH-03A**。执行顺序始终以各卡硬依赖为准。
+CH-01A、CH-02B 已于 2026-10-19 完成本地验收，仍待对应 PR/合并处理。CH-02A、CH-09、CH-10 已合并。下一项 P0 建议为 **CH-03A**（候选、测试和审批身份绑定）；质量数据方向可独立开展 **CH-07A**。执行顺序始终以各卡硬依赖为准。
 
 ### 8.4 跨任务接口约定（已落实项与待实现设计）
 
@@ -378,7 +375,7 @@ CH-01A 已于 2026-10-19 完成离线诊断验收。CH-02A、CH-09、CH-10 已�
 
 #### CH-02B：结构化策略反馈与有界纠正
 
-- **状态**：IMPLEMENTED_UNVERIFIED（`codex/ch-02b-structured-policy-feedback`；隔离服务验收待补）。**优先级/规模**：P0 / M。**硬依赖**：CH-02A、CH-10。
+- **状态**：VERIFIED（原实现 `9032103`；2026-10-19 在 `codex/ch-02b-integration-validation` 完成隔离服务验收，未合并）。**优先级/规模**：P0 / M。**硬依赖**：CH-02A、CH-10。
 - **入口**：`graph/builder.py`、`graph/state.py`、`llm.py`、`models.py`、`test_reliability.py`。
 - **实施步骤**：
   1. 将权限拒绝转换为稳定 reason code、受控目标路径和可允许动作；异常原文和宿主路径不直接进入模型反馈。
@@ -387,6 +384,7 @@ CH-01A 已于 2026-10-19 完成离线诊断验收。CH-02A、CH-09、CH-10 已�
   4. 上下文过期时重新读取后重提；纯策略违规只给允许范围内的修复建议，持续违规则停止。
 - **验收场景**：首次改测试被拒、第二次合法源文件修改成功；连续违规停止；预算耗尽时不额外调用；刷新后旧 expected-content 不可复用；错误摘要无敏感内容。
 - **交付**：规范化反馈模型、可观测计数、三类 Mock 场景及状态恢复测试。
+- **本轮验证**：[CH-02B 服务验收](docs/ch02b-verification-2026-10-19.md) 与 [公开计数证据](docs/evidence/2026-10-19-ch02b-verification.json)。`make ch02b-integration` 提供独立服务/旧版源码夹具和资源清理；专项 6/6、Mock 10/10、API smoke、Worker 审批重启通过。中途 checkpoint 的显式进程恢复与队列自动恢复分别陈述。
 - **范围边界**：零 SecurityError 不是必须实现的指标；不能通过静默丢弃非法 edits 后应用剩余修改来“修复”违规批次。
 
 ### CH-03：绑定审批证据与最终发布
@@ -831,6 +829,7 @@ pytest --cov=repopilot --cov-report=term-missing --cov-fail-under=70 -q
 
 # Docker、镜像与服务准备好后：确定性工作流及运行验收
 make ch10-migration-test
+make ch02b-integration
 make eval
 make smoke
 make smoke-recovery
@@ -859,6 +858,7 @@ smoke 使用已经运行的服务。若 `.env` 选择真实模型，应按 [READ
 - [数据库迁移与状态版本](docs/database-migrations.md)：应用表/checkpoint 边界、版本链、状态转移、部署与失败恢复。
 - [模型调用预算与 provider 故障](docs/model-call-control.md)：配置、账本状态、错误分类、重试与崩溃窗口。
 - [工作区能力策略](docs/workspace-capabilities.md)：版本化 read/write/create 权限、拒绝原因与边界。
+- [CH-02B 隔离服务验收](docs/ch02b-verification-2026-10-19.md)：策略纠正、持久化限额、硬退出后显式接续、旧审批 checkpoint 与实际 Worker 重启的验证范围。
 - [检索契约](docs/retrieval.md)：检索排序、预算与评分口径。
 - [评测说明](docs/evaluation.md)、[真实任务集](docs/real-task-corpus.md)、[真实评测协议](docs/real-evaluation-protocol.md)：复现与实验约束。
 - [2026-09-09 真实评测结果](docs/real-evaluation-results-2026-09-09.md)：当前可引用的实测依据。

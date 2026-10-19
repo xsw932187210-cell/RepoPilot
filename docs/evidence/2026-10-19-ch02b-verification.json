@@ -1,0 +1,171 @@
+{
+  "schema_version": 1,
+  "verification_date": "2026-10-19",
+  "task": "CH-02B",
+  "starting_commit": "f27e847",
+  "model_provider": "mock",
+  "github_write_enabled": false,
+  "environment": {
+    "docker_engine": "29.5.3",
+    "postgres": "16.15",
+    "redis_image": "redis:7.4-alpine",
+    "checkpoint_postgres": "3.2.0",
+    "langgraph": "1.2.16",
+    "pytest": "8.4.2",
+    "python": "3.12.15"
+  },
+  "image_ids": {
+    "application": "sha256:fe8e2266d934cfebecd7ef763370dd7d43166dc0a0615eecd20ed8f09327417a",
+    "test": "sha256:cc3773fc2b91c6ecc8489bf167b4a7ede1aea8d3f761565f896a6471cdd2cdd6",
+    "sandbox": "sha256:1c442efb18cd8ac04484855e74efec1c72dcd2b241d003ddd3d7ccf1ef55587e"
+  },
+  "integration": {
+    "tests": 6,
+    "passed": 6,
+    "failed": 0,
+    "skipped": 0,
+    "cases": [
+      {
+        "test": "test_postgres_policy_correction_survives_process_exit[once]",
+        "passed": true,
+        "duration_seconds": 2.821,
+        "assertions": {
+          "policy_retry_count_after_restart": 1,
+          "model_calls_after_restart": 4,
+          "first_process_exit_code": 86
+        }
+      },
+      {
+        "test": "test_postgres_policy_correction_survives_process_exit[repeat]",
+        "passed": true,
+        "duration_seconds": 2.161,
+        "assertions": {
+          "policy_retry_count_after_restart": 1,
+          "model_calls_after_restart": 3,
+          "first_process_exit_code": 86
+        }
+      },
+      {
+        "test": "test_postgres_policy_correction_survives_process_exit[budget]",
+        "passed": true,
+        "duration_seconds": 2.107,
+        "assertions": {
+          "policy_retry_count_after_restart": 1,
+          "model_calls_after_restart": 2,
+          "first_process_exit_code": 86
+        }
+      },
+      {
+        "test": "test_postgres_policy_correction_survives_process_exit[stale]",
+        "passed": true,
+        "duration_seconds": 2.078,
+        "assertions": {
+          "policy_retry_count_after_restart": 1,
+          "model_calls_after_restart": 3,
+          "first_process_exit_code": 86
+        }
+      },
+      {
+        "test": "test_postgres_policy_correction_survives_process_exit[redaction]",
+        "passed": true,
+        "duration_seconds": 2.805,
+        "assertions": {
+          "policy_retry_count_after_restart": 1,
+          "model_calls_after_restart": 4,
+          "first_process_exit_code": 86
+        }
+      },
+      {
+        "test": "test_pre_ch02b_approval_checkpoint_resumes_in_current_worker",
+        "passed": true,
+        "duration_seconds": 1.964,
+        "assertions": {
+          "legacy_source_commit": "12b9e3d",
+          "model_calls_before_and_after_resume": 3,
+          "same_task_and_graph_thread": true
+        }
+      }
+    ]
+  },
+  "mock_regression": {
+    "count": 10,
+    "successful": 10,
+    "dataset_sha256": "6e5c1012e81c11d9a4cda4d2d5f761313398f5383bb0a3a71960e6569b25bdf7"
+  },
+  "service_metrics": {
+    "api_smoke": {
+      "status": "completed",
+      "model_calls_reserved": 3,
+      "model_calls_succeeded": 3,
+      "model_calls_unknown": 0,
+      "node_runs": {
+        "prepare": 1,
+        "planner": 1,
+        "researcher": 1,
+        "test_analyst": 1,
+        "coder": 1,
+        "apply_policy": 1,
+        "test_runner": 1,
+        "reviewer": 1,
+        "approval": 1,
+        "finalize": 1
+      }
+    },
+    "worker_restart": {
+      "status": "completed",
+      "model_calls_reserved": 3,
+      "model_calls_succeeded": 3,
+      "model_calls_unknown": 0,
+      "node_runs": {
+        "prepare": 1,
+        "planner": 1,
+        "researcher": 1,
+        "test_analyst": 1,
+        "coder": 1,
+        "apply_policy": 1,
+        "test_runner": 1,
+        "reviewer": 1,
+        "approval": 1,
+        "finalize": 1
+      }
+    }
+  },
+  "cleanup": {
+    "project": "repopilot_ch02b_20261019_68210",
+    "resources_removed": true
+  },
+  "local_source_directory": "reports/repopilot_ch02b_20261019_68210",
+  "source_sha256": {
+    "cleanup.json": "a08a90c3f7b7afe549177564a1eee9eac0838da2ba73e0fded0e59adbd136489",
+    "image-ids.jsonl": "5ad27fdfe0dcd1edc2de96c9dc1eff4254f3071b5949a6333d1dddaa837278dd",
+    "integration.xml": "7ac10fb327d3a143c2271f270aced48f594871efece51b91e5351bef801c9b01",
+    "mock-evaluation.json": "16f81d946202f193b5a816823dcdaa225c79143349283e710a422b967c1b9184",
+    "mock-run.log": "16f81d946202f193b5a816823dcdaa225c79143349283e710a422b967c1b9184",
+    "postgres-version.txt": "891e4fd21666e66b5362e2b13d1bda45cc4402505a2a1548fd6c5ca7cdaae9da",
+    "recovery.jsonl": "41eaac9055750d0ada715528359fc05bbfa1f51be45d9c498be3a76226c9708b",
+    "runtime-versions.json": "4765201d9905955cbae9f995efd4ace4a312b2f46230ab9b42ff203d5a321829",
+    "services.jsonl": "1c963e765bddc00c87ce6b0b861c0ba7d632bf83b330336c3beedf49b198984b",
+    "smoke.jsonl": "9e1446fe40ecb8166d8ba64d13b51826b259073b775ba769ff2e34d7ab734705"
+  },
+  "code_sha256": {
+    "Dockerfile": "d77f3580d43c5480a8d581d905bca951aa736f8efc2865e4b19f91f3b47ce769",
+    "docker-compose.ch02b-test.yml": "8606a74f62d52705ee564feb181c5897fc3ae4f5e1c91cdb84e5c994e1ed7120",
+    "scripts/ch02b_integration.sh": "ba894597d2b467e6023506e3b1d09edbaffff7c3f6fb3f61f9aff39d4295b2d9",
+    "tests/test_policy_recovery_postgres.py": "6e979307fc8e1e52b356ae68b769c04cd8a5ad9585dce412752f202eac53a01d",
+    "tests/probes/ch02b_process.py": "a4e5ef9a7ce349bb08d8f807871f7735ad552d0bde76d60c74c82be75f011c24",
+    "src/repopilot/graph/builder.py": "7de6dc3ec4bdda560e17a928fe25bfc8f4c04d7be7b17aacaed0ec385adf5da8",
+    "src/repopilot/policy_feedback.py": "e2767cff1f33150dbe840768df7323ad0605843e6f7c68ba16faa6cf44c1827a",
+    "src/repopilot/worker.py": "4a36b4fa9f5bf23e691661bc6470fd16be6fdd400aafced11cf20c27079b7f5c"
+  },
+  "recovery_scope": {
+    "policy_checkpoint": "explicit continuation in a fresh process after a hard exit; production Worker dependencies and durable call ledger",
+    "approval_checkpoint": "real API and Worker service, including restart and pinned pre-CH-02B graph source",
+    "automatic_queue_reclaim": false
+  },
+  "offline_suite": {
+    "passed": 154,
+    "skipped": 9,
+    "line_coverage_percent": 80.78,
+    "python": "3.13.5"
+  }
+}
