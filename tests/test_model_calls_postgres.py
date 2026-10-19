@@ -30,14 +30,22 @@ pytestmark = pytest.mark.skipif(
 
 
 async def reset_owned_tables() -> None:
+    assert make_url(POSTGRES_URL).database == "repopilot_ch10_test"
     engine = create_async_engine(POSTGRES_URL)
     try:
         async with engine.begin() as connection:
-            await connection.execute(sa.text("DROP TABLE IF EXISTS model_call_attempts CASCADE"))
-            await connection.execute(sa.text("DROP TABLE IF EXISTS model_call_budgets CASCADE"))
-            await connection.execute(sa.text("DROP TABLE IF EXISTS task_events CASCADE"))
-            await connection.execute(sa.text("DROP TABLE IF EXISTS tasks CASCADE"))
-            await connection.execute(sa.text("DROP TABLE IF EXISTS alembic_version CASCADE"))
+            for table in (
+                "approval_decisions",
+                "approval_requests",
+                "test_evidence",
+                "candidates",
+                "model_call_attempts",
+                "model_call_budgets",
+                "task_events",
+                "tasks",
+                "alembic_version",
+            ):
+                await connection.execute(sa.text(f"DROP TABLE IF EXISTS {table} CASCADE"))
     finally:
         await engine.dispose()
 

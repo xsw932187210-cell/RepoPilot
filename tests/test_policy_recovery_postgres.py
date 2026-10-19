@@ -45,7 +45,7 @@ async def child(phase: str, scenario: str, task_id: str) -> int:
 
 
 async def database() -> Database:
-    assert make_url(POSTGRES_URL).database == "repopilot_ch02b_test", (
+    assert make_url(POSTGRES_URL).database in {"repopilot_ch02b_test", "repopilot_ch03a_test"}, (
         "The CH-02B probe refuses non-dedicated databases"
     )
     db = Database(POSTGRES_URL)
@@ -77,9 +77,18 @@ async def snapshot(task_row):
 async def approve_and_wait(task_id: str) -> dict:
     assert API_URL
     async with httpx.AsyncClient(base_url=API_URL, timeout=5, trust_env=False) as client:
+        view = (await client.get(f"/api/v1/tasks/{task_id}/approval")).json()
         response = await client.post(
             f"/api/v1/tasks/{task_id}/approval",
-            json={"approved": True, "feedback": "isolated CH-02B probe"},
+            json={
+                "schema_version": "approval-v2",
+                "approval_id": view["approval_id"],
+                "request_version": view["request_version"],
+                "candidate_id": view["candidate"]["candidate_id"],
+                "evidence_digest": view["evidence"]["evidence_digest"],
+                "approved": True,
+                "feedback": "isolated CH-02B probe",
+            },
         )
         assert response.status_code == 200
         for _ in range(60):
@@ -162,7 +171,7 @@ async def test_postgres_policy_correction_survives_process_exit(scenario: str) -
 
 
 @pytest.mark.asyncio
-async def test_pre_ch02b_approval_checkpoint_resumes_in_current_worker() -> None:
+async def test_pre_ch03a_unbound_checkpoint_requires_revalidation() -> None:
     db = await database()
     try:
         row = await task(db)
@@ -175,18 +184,26 @@ async def test_pre_ch02b_approval_checkpoint_resumes_in_current_worker() -> None
         ).read_bytes()
         before = await db.get_model_call_metrics(row.id)
         assert before is not None and before["reserved_calls"] == 3
-        completed = await approve_and_wait(row.id)
+        async with httpx.AsyncClient(base_url=API_URL, trust_env=False) as client:
+            response = await client.get(f"/api/v1/tasks/{row.id}/approval")
+            assert response.status_code == 409
+            assert response.json()["detail"] == "legacy_approval_requires_revalidation"
+            response = await client.post(
+                f"/api/v1/tasks/{row.id}/approval",
+                json={"approved": True},
+            )
+            assert response.status_code == 422
         current = await db.get_task(row.id)
         assert current is not None and current.graph_thread_id == row.graph_thread_id
-        assert completed["result"]["policy_retry_count"] == 0
+        assert current.status is TaskStatus.AWAITING_APPROVAL
         after = await db.get_model_call_metrics(row.id)
         assert after is not None and after["reserved_calls"] == 3
-        nodes = completed["result"]["node_metrics"]
+        nodes = current.result["node_metrics"]
         assert sum(item["node"] == "test_runner" for item in nodes) == 1
-        assert sum(item["node"] == "finalize" for item in nodes) == 1
+        assert sum(item["node"] == "finalize" for item in nodes) == 0
         assert (
             Path(old_state["workspace"]) / "tests" / "test_calculator.py"
         ).read_bytes() == original_tests
-        print("CH-02B legacy_checkpoint=12b9e3d current_worker_resume=passed calls=3")
+        print("CH-03A legacy_checkpoint=12b9e3d requires_revalidation=passed calls=3")
     finally:
         await db.close()

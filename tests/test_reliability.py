@@ -7,6 +7,7 @@ import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 
+from repopilot.candidates import bound_resume
 from repopilot.config import Settings
 from repopilot.db import Database
 from repopilot.events import JobQueue
@@ -75,11 +76,53 @@ async def test_checkpoint_can_resume_after_graph_rebuild(tmp_path: Path) -> None
 
     rebuilt_graph = build_graph(deps, saver)
     completed = await rebuilt_graph.ainvoke(
-        Command(resume={"approved": True, "feedback": "resume after rebuild"}),
+        Command(resume=bound_resume(interrupted, approved=True, feedback="resume after rebuild")),
         config=config,
     )
     assert completed["status"] == "completed"
     assert any(metric["node"] == "approval" for metric in completed["node_metrics"])
+
+
+@pytest.mark.parametrize("decision", [{"approved": True}, True, {"approved": "true"}])
+async def test_graph_cannot_resume_from_an_unbound_approval(tmp_path: Path, decision) -> None:
+    from repopilot.approvals import ApprovalConflict
+
+    deps = dependencies(tmp_path)
+    config = {"configurable": {"thread_id": "unbound-approval"}}
+    graph = build_graph(deps, InMemorySaver())
+    await graph.ainvoke(graph_input("unbound-approval"), config=config)
+    with pytest.raises(ApprovalConflict, match="stale_approval_binding"):
+        await graph.ainvoke(Command(resume=decision), config=config)
+
+
+async def test_waiting_approval_uses_original_artifact_after_workspace_changes(
+    tmp_path: Path,
+) -> None:
+    deps = dependencies(tmp_path)
+    config = {"configurable": {"thread_id": "frozen-approval"}}
+    graph = build_graph(deps, InMemorySaver())
+    result = await graph.ainvoke(graph_input("frozen-approval"), config=config)
+    (Path(result["workspace"]) / "calculator.py").write_text("# later workspace bytes\n")
+    completed = await graph.ainvoke(
+        Command(resume=bound_resume(result, approved=True)),
+        config=config,
+    )
+    assert completed["status"] == "completed"
+    assert completed["candidate"] == result["candidate"]
+    assert completed["test_evidence"] == result["test_evidence"]
+
+
+async def test_approved_graph_state_cannot_publish_different_edit_bytes(tmp_path: Path) -> None:
+    from repopilot.security import SecurityError
+
+    deps = dependencies(tmp_path)
+    config = {"configurable": {"thread_id": "modified-publish-intent"}}
+    graph = build_graph(deps, InMemorySaver())
+    result = await graph.ainvoke(graph_input("modified-publish-intent"), config=config)
+    altered = [{**edit, "content": "# different bytes\n"} for edit in result["edits"]]
+    await graph.aupdate_state(config, {"edits": altered})
+    with pytest.raises(SecurityError, match="differs from the approved artifact"):
+        await graph.ainvoke(Command(resume=bound_resume(result, approved=True)), config=config)
 
 
 class RejectOnceModel(MockAgentModel):
@@ -226,9 +269,9 @@ async def test_tool_policy_rejection_gets_one_atomic_coder_retry(tmp_path: Path)
     assert result["policy_feedback"] is None
     workspace = tmp_path / "workspaces" / "policy-retry"
     assert "return a + b" in (workspace / "calculator.py").read_text(encoding="utf-8")
-    assert "invalid test rewrite" not in (
-        workspace / "tests" / "test_calculator.py"
-    ).read_text(encoding="utf-8")
+    assert "invalid test rewrite" not in (workspace / "tests" / "test_calculator.py").read_text(
+        encoding="utf-8"
+    )
 
 
 class AlwaysViolatesPolicy(MockAgentModel):
@@ -273,9 +316,9 @@ async def test_consecutive_policy_violations_stop_without_partial_write(tmp_path
     assert model.propose_calls == 2
     workspace = tmp_path / "workspaces" / "repeated-policy-denial"
     assert "return a - b" in (workspace / "calculator.py").read_text(encoding="utf-8")
-    assert "# forbidden" not in (
-        workspace / "tests" / "test_calculator.py"
-    ).read_text(encoding="utf-8")
+    assert "# forbidden" not in (workspace / "tests" / "test_calculator.py").read_text(
+        encoding="utf-8"
+    )
 
 
 class ViolationAfterReviewModel(MockAgentModel):
@@ -305,9 +348,7 @@ class ViolationAfterReviewModel(MockAgentModel):
             )
         return changes
 
-    async def review(
-        self, issue_title: str, diff: str, test_result: SandboxResult
-    ) -> ReviewOutput:
+    async def review(self, issue_title: str, diff: str, test_result: SandboxResult) -> ReviewOutput:
         del issue_title, diff, test_result
         return ReviewOutput(
             approved=False,
@@ -683,6 +724,12 @@ class FakeContainers:
 class FakeDockerClient:
     def __init__(self) -> None:
         self.containers = FakeContainers()
+        self.images = self
+
+    def get(self, name: str):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(id="sha256:" + "1" * 64)
 
     def close(self) -> None:
         pass

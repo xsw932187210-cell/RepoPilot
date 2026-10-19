@@ -1,0 +1,123 @@
+name: repopilot-ch03a-test
+
+x-probe-environment: &probe-environment
+  DATABASE_URL: postgresql+asyncpg://repopilot:repopilot@postgres:5432/repopilot_ch03a_test
+  LANGGRAPH_DATABASE_URL: postgresql://repopilot:repopilot@postgres:5432/repopilot_ch03a_test?sslmode=disable
+  REDIS_URL: redis://redis:6379/0
+  MODEL_PROVIDER: mock
+  MODEL_MAX_CALLS: "8"
+  OPENAI_API_KEY: ""
+  OPENAI_BASE_URL: ""
+  GITHUB_WRITE_ENABLED: "false"
+  GITHUB_TOKEN: ""
+  API_KEY: ""
+  WORKSPACE_ROOT: /workspaces
+  SANDBOX_BACKEND: docker
+  SANDBOX_IMAGE: ${COMPOSE_PROJECT_NAME}-sandbox:local
+  RUNNING_IN_CONTAINER: "true"
+
+x-app: &app
+  image: ${COMPOSE_PROJECT_NAME}-app:local
+  build:
+    context: .
+    target: runtime
+  environment: *probe-environment
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: repopilot
+      POSTGRES_PASSWORD: repopilot
+      POSTGRES_DB: repopilot_ch03a_test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U repopilot -d repopilot_ch03a_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7.4-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  sandbox:
+    image: ${COMPOSE_PROJECT_NAME}-sandbox:local
+    build:
+      context: .
+      dockerfile: Dockerfile.sandbox
+    command: ["python", "-c", "print('CH-03A sandbox ready')"]
+
+  migrate:
+    <<: *app
+    command: ["repopilot-migrate", "upgrade"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    <<: *app
+    ports:
+      - "127.0.0.1:${CH03A_API_PORT:-58030}:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    volumes:
+      - workspaces:/workspaces
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  worker:
+    <<: *app
+    command: ["python", "-m", "repopilot.worker"]
+    group_add: ["0"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      sandbox:
+        condition: service_completed_successfully
+    volumes:
+      - workspaces:/workspaces
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  probe:
+    image: ${COMPOSE_PROJECT_NAME}-test:local
+    build:
+      context: .
+      target: integration-test
+    command: ["python", "-m", "pytest", "tests/test_approvals_postgres.py", "-q", "-s"]
+    group_add: ["0"]
+    environment:
+      <<: *probe-environment
+      REPOPILOT_CH03A_POSTGRES_TEST_URL: postgresql+asyncpg://repopilot:repopilot@postgres:5432/repopilot_ch03a_test
+      REPOPILOT_CH03A_API_URL: http://api:8000
+      REPOPILOT_POSTGRES_TEST_URL: postgresql+asyncpg://repopilot:repopilot@postgres:5432/repopilot_ch09_test
+      REPOPILOT_CH10_POSTGRES_TEST_URL: postgresql+asyncpg://repopilot:repopilot@postgres:5432/repopilot_ch10_test
+      REPOPILOT_CH02B_LEGACY_SOURCE: /legacy/src
+      REPOPILOT_CH02B_POSTGRES_TEST_URL: postgresql+asyncpg://repopilot:repopilot@postgres:5432/repopilot_ch03a_test
+      REPOPILOT_CH02B_API_URL: http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+      worker:
+        condition: service_started
+    volumes:
+      - workspaces:/workspaces
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${CH03A_LEGACY_ROOT:?prepared by scripts/ch03a_integration.sh}:/legacy:ro
+
+volumes:
+  postgres-data:
+  workspaces:

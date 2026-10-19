@@ -24,6 +24,8 @@ known limitations, and acceptance criteria for the next iterations (Chinese).
 - Explainable BM25 + Python AST symbol retrieval with source/test dependency expansion and a
   bounded context budget.
 - Durable PostgreSQL checkpoints and `Command(resume=...)` human approval.
+- Frozen complete candidates, image/command-bound test evidence, versioned one-time approval
+  decisions and durable retryable resume intents.
 - Versioned application-schema migrations, optimistic task-state updates, and explicit result/event
   JSON versions.
 - Durable per-task model-call reservations, bounded provider retries/timeouts, conservative
@@ -117,14 +119,23 @@ curl -X POST http://localhost:8000/api/v1/tasks \
   }'
 ```
 
-When the task reaches `awaiting_approval`, inspect its result and events, then resume the durable
-LangGraph thread:
+When the task reaches `awaiting_approval`, inspect `GET /api/v1/tasks/TASK_ID/approval` for the
+frozen candidate, complete manifest, test evidence and Reviewer risk. Fetch the full Diff from
+`/api/v1/tasks/TASK_ID/candidates/CANDIDATE_ID/diff`. Then resume the durable thread using the exact
+bindings from that view (the helper builds the required `approval-v2` body):
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/tasks/TASK_ID/approval \
-  -H 'Content-Type: application/json' \
-  -d '{"approved": true, "feedback": "Reviewed diff and test evidence"}'
+curl -fsS http://localhost:8000/api/v1/tasks/TASK_ID/approval \
+  | python3 scripts/approval_payload.py 'Reviewed full diff and test evidence' \
+  | curl -fsS -X POST http://localhost:8000/api/v1/tasks/TASK_ID/approval \
+      -H 'Content-Type: application/json' --data-binary @-
 ```
+
+Legacy boolean-only requests return 422. A committed decision whose Redis delivery fails returns
+202 with `saved=true`, `dispatch_state=pending` and a decision ID. Explicitly retry that ID at
+`POST /api/v1/tasks/TASK_ID/approval/dispatch`; do not create another approval. Old unbound
+checkpoints require a new task and fresh tests. See [candidate and approval contracts](docs/candidate-approvals.md).
+Automatic outbox delivery and approved-base GitHub publication are later change cards.
 
 GitHub writes are off by default. To enable draft-PR creation, set all of the following locally:
 
@@ -154,9 +165,13 @@ report as a workflow artifact and fails if any deterministic case regresses. Thi
 measures workflow and retrieval reliability, not LLM coding ability.
 
 Run `make ch02b-integration` for the isolated PostgreSQL/Redis/Docker policy-correction probe,
-legacy approval-checkpoint compatibility, API smoke and actual Worker restart. It uses a dedicated
+explicit legacy-checkpoint refusal, API smoke and actual Worker restart. It uses a dedicated
 Compose project, fixed Mock configuration and automatic project-scoped cleanup. See the
 [CH-02B verification record](docs/ch02b-verification-2026-10-19.md) for results and recovery limits.
+
+Run `make ch03a-integration` to additionally verify bound approvals, previous-head migration,
+opposite-decision concurrency, commit/process-exit recovery, real Redis connection failure and
+artifact corruption refusal. It also reruns policy probes, mock evaluation and restart smoke.
 
 After configuring an OpenAI-compatible model in the ignored `.env`, run `make eval-real` for a
 separately labelled model-quality report. See [docs/evaluation.md](docs/evaluation.md) for the

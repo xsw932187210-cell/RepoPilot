@@ -47,9 +47,10 @@ RepoPilot 面向 Python 代码仓库维护者，将 Issue 描述转化为候选�
 | Redis | List 队列、短租约锁、取消标记、Pub/Sub 通知 | [events.py](src/repopilot/events.py) |
 | Worker | 消费任务、取得执行权、调用图、持久化任务结果 | [worker.py](src/repopilot/worker.py) |
 | LangGraph | 显式节点、条件路由、状态和人工中断 | [builder.py](src/repopilot/graph/builder.py) |
-| PostgreSQL | Compose 中的任务、事件、模型调用账本与图 checkpoint 存储；应用表使用版本化迁移，checkpoint 仍由 LangGraph 自有入口管理 | [db.py](src/repopilot/db.py)、[migrations](src/repopilot/migrations/)、[docker-compose.yml](docker-compose.yml) |
+| PostgreSQL | 任务、事件、调用账本、候选/证据/审批与恢复意图；应用表用 Alembic 迁移，checkpoint 仍由 LangGraph 自有入口管理 | [db.py](src/repopilot/db.py)、[approvals.py](src/repopilot/approvals.py)、[migrations](src/repopilot/migrations/) |
 | Model call control | 调用前预留、角色/重试总预算、provider 错误分类、超时/退避、用量与恢复记账 | [model_calls.py](src/repopilot/model_calls.py)、[llm.py](src/repopilot/llm.py) |
 | Workspace / Retrieval | 准备工作区、检索完整文件、预检并应用修改 | [repository.py](src/repopilot/repository.py)、[retrieval.py](src/repopilot/retrieval.py) |
+| Candidate artifact | 冻结完整文件、权限与基线，校验后提供临时测试副本和完整 Diff | [candidates.py](src/repopilot/candidates.py) |
 | Docker sandbox | 在一次性快照内运行允许的测试命令 | [sandbox.py](src/repopilot/sandbox.py) |
 | GitHub publisher | 在工作流审批后按配置创建分支和 Draft PR | [github.py](src/repopilot/github.py) |
 | Evaluation runtime | 案例复现、对照实验、续跑，复用受控调用状态机并汇总证据 | [real_evaluation.py](src/repopilot/real_evaluation.py)、[eval_runtime.py](src/repopilot/eval_runtime.py) |
@@ -92,7 +93,10 @@ reviewer → approval 中断 → 拒绝：cancelled / 同意：finalize → comp
 | GET | `/api/v1/tasks/{task_id}/metrics` | 节点运行次数、耗时、迭代数、检索规模 |
 | GET | `/api/v1/tasks/{task_id}/events?after_id=...` | 从数据库查询带 payload schema 版本的历史事件 |
 | GET | `/api/v1/tasks/{task_id}/stream` | 先输出历史，再订阅实时通知 |
-| POST | `/api/v1/tasks/{task_id}/approval` | 仅在等待审批时接收决定，否则 `409` |
+| GET | `/api/v1/tasks/{task_id}/approval` | 审批版本、冻结候选/manifest、测试证据、风险与决定 |
+| GET | `/api/v1/tasks/{task_id}/candidates/{candidate_id}[/diff]` | 受 API Key 保护的完整 manifest 或未截断 Diff |
+| POST | `/api/v1/tasks/{task_id}/approval` | 强制 approval-v2 绑定，CAS 保存一次决定；精确重试返回原决定，旧请求 422、冲突 409 |
+| POST | `/api/v1/tasks/{task_id}/approval/dispatch` | 显式重投已保存的 pending/enqueued 恢复意图 |
 | POST | `/api/v1/tasks/{task_id}/cancel` | 写取消标记并更新对外状态 |
 
 SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub 订阅之间存在消息空窗；不能保证实时流无丢失。取消接口返回 `cancelled` 也不代表当前外部调用或容器已立即停止。
@@ -123,6 +127,7 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 
 ### RP-04：测试、审查与返工
 
+- 测试前记录实际 base SHA，并冻结完整候选 artifact；测试只运行校验后的临时副本。候选、实际 Docker 镜像 ID、命令/策略版本、结果和时间形成 `test-evidence-v1`，失败运行也保留证据。展示 Diff 的截断不参与候选身份。
 - 非空 Diff、测试退出码为零且未超时，是进入人工审批的确定性门槛；模型的错误同意不能覆盖失败的门槛。
 - 默认最多 2 轮 Coder 迭代。确定性失败在剩余预算内返工，预算用完仍未通过则结束为 `failed`。
 - 确定性门槛通过后，Reviewer 的中/高风险否决可在剩余迭代预算内触发返工；低风险否决或预算耗尽时将意见交给人工审批。
@@ -137,8 +142,9 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 
 - Compose 使用持久化 PostgreSQL checkpoint；审批恢复继续同一个图线程。
 - CH-02B 的 Coder 提案和 `apply_policy` 拒绝/计数分别 checkpoint；恢复后不清零全任务策略纠正次数，但 checkpoint 与文件写入不是事务，也不等于 CH-04B 的 Worker fencing。
-- 2026-10-19 在真实 PostgreSQL/Redis/Docker 环境中验证拒绝提交后硬退出执行进程，再显式接续同一图线程；纠正限额与调用账本保留。另行验证实际 Worker 服务在审批等待期间重启，以及固定旧版图源码生成的审批 checkpoint 由当前 Worker 恢复；中途接续不是生产队列自动重领。
-- RepoPilot 自有 `tasks/task_events/model_call_budgets/model_call_attempts` 使用 Alembic 版本链；空库、精确匹配的旧无版本库和已版本化库走同一升级入口。局部或未知无版本结构拒绝自动 stamp。LangGraph checkpoint 表不由 RepoPilot 猜字段迁移，继续使用 `AsyncPostgresSaver.setup()`。
+- 2026-10-19 的 CH-02B 验证策略拒绝提交后硬退出，再显式接续同一图线程及账本；旧审批由当时 Worker 恢复是历史证据。CH-03A 当前版要求冻结候选/证据，旧无绑定 checkpoint 明确拒绝，不自动补造审批；实际 Worker 重启保持同一个新审批对象。
+- 自有任务、事件、调用账本及 `candidates/test_evidence/approval_requests/approval_decisions` 走 Alembic 版本链；空库、精确旧无版本库、已版本化库用同一入口，未知结构拒绝自动 stamp。checkpoint 仍由 `AsyncPostgresSaver.setup()` 管理。
+- 审批决定、一次性请求消费、任务状态 CAS、待投递恢复意图和审计事件同事务提交；Redis 失败返回已保存的 pending 决定及重试入口。Worker 只使用数据库决定，不能由消息布尔值授权。`enqueued` 不是消费确认，尚无自动 Outbox 投递器。
 - 模型请求与数据库不是跨系统事务：预留先提交；恢复时，请求前崩溃留下的 `RESERVED` 和可能已发送的 `UNKNOWN` 都保守消耗预算，不当作免费重试。账本独立于 checkpoint，Worker 重启不清零。
 - Worker/API 的任务写入使用 expected status/version 的原子条件更新，过期 Worker 不能覆盖已变化的任务行；这只是应用状态 CAS，不是所有权 epoch，也不能撤销已经发生的工作区或外部副作用。
 - Redis 锁使用 `SET NX EX 900`；释放时比较 token，防止旧持有者删除新锁。
@@ -155,7 +161,7 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 - 快照拒绝符号链接和特殊文件；标准输出/错误在返回时截断并脱敏。返回长度限制不代表生成日志过程中已有完整流量限额。
 - Worker 对 Docker socket 的访问仍是高权限边界，容器共享宿主内核。
 - 图在 `approval` 中断后才可进入 `finalize`；GitHub 写入另需显式启用、token、允许的 owner。demo 和关闭写入的任务完成时可以没有 PR。
-- 发布只创建独立分支和 Draft PR，不自动合并。审批与发布尚未绑定固定 base SHA / 候选内容摘要，且 publisher 自身不验证完整审批证据；这一保证依赖当前图的调用路径。
+- 发布只创建独立分支和 Draft PR，不自动合并。测试与审批已绑定候选/实际 base SHA，`finalize` 校验 artifact 和 edits 一致；publisher 仍读取发布时分支基线，未实现获批 base 构建、持久化发布意图或远端对账，端到端发布绑定留给 CH-03B。
 
 验证入口：[test_security.py](tests/test_security.py)、[test_sandbox.py](tests/test_sandbox.py)、[test_github.py](tests/test_github.py)、[容器探针](examples/sandbox_probe/test_isolation.py)。
 
@@ -208,9 +214,9 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 | --- | --- | --- |
 | 项目级权限适配 | 默认测试/构建/凭据受保护，create 关闭；特例目前由服务端 Python policy 注入，还没有版本化项目 manifest | CH-07A |
 | 预检后外部改写 / 写入中断 | 无文件锁或多文件回滚保证 | CH-05 |
-| 审批等待期间基线变化 | 发布时读取当前分支，未绑定测试时的基线与候选 | CH-03 |
+| 审批等待期间基线变化 | 测试与审批已有冻结候选/base SHA；publisher 仍读取当前分支，尚无发布意图/远端对账 | CH-03B（先完成 CH-05A） |
 | 队列出队后崩溃 / 锁到期 | 无自动回收或阻止过期 Worker 副作用的机制 | CH-04 |
-| 数据库与 Redis/事件/checkpoint 的交接 | 任务状态已有 status/version CAS，但创建/审批决定与投递、事件发布仍没有跨系统原子交接 | CH-04A |
+| 数据库与 Redis/事件/checkpoint 的交接 | 审批决定与 pending 意图已可靠保存并可显式重投；创建任务仍有交接窗口，消费无 ACK/自动找回 | CH-04A |
 | 取消与任务超时 | 对外状态和实际执行停止可能不同步 | CH-06 |
 | 历史事件切换实时订阅 | SSE 可能漏掉切换窗口事件 | CH-06 |
 | 在线日志 / 状态脱敏范围 | 评测 sanitizer 不覆盖所有在线错误、payload 和 checkpoint | CH-06 |
@@ -308,6 +314,10 @@ CH-01A、CH-02B 已于 2026-10-19 完成本地验收，仍待对应 PR/合并处
 
 候选存储接口由 CH-03A 定义：manifest/digest 由服务端对完整候选字节生成，候选记录绑定不可变 artifact 引用，测试和审批按该引用读取。CH-05A 实现 staging 与代次切换并复用同一接口；`current_generation` 只是当前选择指针，不改变旧审批所绑定的候选。CH-03B 必须在 CH-05A 后实现，发布只能读取获批引用，不能跟随最新指针。
 
+CH-03A 本轮接口映射（2026-10-19，验收中）：`ArtifactStore.freeze/materialize/read_diff` 保存 `sha256:<manifest_digest>` 引用；manifest 覆盖除根目录 `.git` 元数据以外的完整普通文件，包含原始字节摘要与文件权限，目录规范为 0755，拒绝链接与特殊文件。`candidate-v1` 绑定 base SHA、代次、能力策略和完整 Diff 摘要，`test-evidence-v1` 绑定镜像实际 ID、规范命令、运行策略、结果与时间。新增四张表由 `20261019_0004` 迁移建立；失败测试也保留候选与证据。
+
+审批 API 保留 `/api/v1/tasks/{id}/approval` 路径，但请求强制 `schema_version=approval-v2`、`approval_id/request_version/candidate_id/evidence_digest/approved`；旧布尔请求明确 422，不补齐成最新候选。GET 返回审批摘要、Reviewer 风险、manifest 与测试证据，受现有 API Key 访问控制；候选 `/candidates/{candidate_id}/diff` 返回未截断 Diff。`request_version` 为进入等待审批时的任务版本。decision 与 `awaiting_approval → queued` CAS、恢复意图及审计事件同一事务保存；Redis 失败返回 202 和 `saved=true / dispatch_state=pending / queue_delivery_failed`，可用 `/approval/dispatch` 显式重投同一 decision。`enqueued` 只代表尝试被 Redis 接受，不是消费确认；CH-04A 之前没有后台自动投递或崩溃重领。Worker 从数据库读取决定，不信任队列中的布尔值。完全相同的重试返回原决定，相反决定或旧绑定 409。缺少冻结候选的旧审批 checkpoint 不自动转换，GET 明确 409 `legacy_approval_requires_revalidation`；可取消旧任务并创建新任务重新测试。
+
 四个全局约束：
 
 1. **代码身份一致**：被测试、被审批和被提交的必须是同一个候选；不能只比较一段展示用 Diff。
@@ -391,7 +401,7 @@ CH-01A、CH-02B 已于 2026-10-19 完成本地验收，仍待对应 PR/合并处
 
 #### CH-03A：冻结候选和一次性审批决定
 
-- **状态**：TODO。**优先级/规模**：P0 / L。**硬依赖**：CH-02A、CH-09。
+- **状态**：IN_PROGRESS（2026-10-19，`codex/ch-03a-candidate-approval`，基线 `b23ac4f`；接口实现及验收中）。**优先级/规模**：P0 / L。**硬依赖**：CH-02A、CH-09。
 - **入口**：`repository.py`、`sandbox.py`、`models.py`、`db.py`、`api.py`、`graph/builder.py`。
 - **实施步骤**：
   1. 准备仓库时记录实际 base commit；从待测完整快照生成确定性 manifest/digest，包含路径、文件模式和内容摘要，候选 ID 不依赖易截断的展示 Diff。定义最小不可变 artifact 存取接口并持久化引用；后续 staging 实现复用该接口，不能使审批绑定可变工作区路径。
@@ -830,6 +840,7 @@ pytest --cov=repopilot --cov-report=term-missing --cov-fail-under=70 -q
 # Docker、镜像与服务准备好后：确定性工作流及运行验收
 make ch10-migration-test
 make ch02b-integration
+make ch03a-integration
 make eval
 make smoke
 make smoke-recovery
@@ -856,6 +867,7 @@ smoke 使用已经运行的服务。若 `.env` 选择真实模型，应按 [READ
 - [架构](docs/architecture.md)：组件、图与信任边界。
 - [运行时正确性](docs/runtime-correctness.md)：机制失效时的行为与限制。
 - [数据库迁移与状态版本](docs/database-migrations.md)：应用表/checkpoint 边界、版本链、状态转移、部署与失败恢复。
+- [冻结候选与一次性审批](docs/candidate-approvals.md)：artifact 存取、approval-v2、CAS、投递失败恢复及旧 checkpoint 边界。
 - [模型调用预算与 provider 故障](docs/model-call-control.md)：配置、账本状态、错误分类、重试与崩溃窗口。
 - [工作区能力策略](docs/workspace-capabilities.md)：版本化 read/write/create 权限、拒绝原因与边界。
 - [CH-02B 隔离服务验收](docs/ch02b-verification-2026-10-19.md)：策略纠正、持久化限额、硬退出后显式接续、旧审批 checkpoint 与实际 Worker 重启的验证范围。

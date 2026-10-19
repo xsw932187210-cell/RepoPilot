@@ -11,6 +11,9 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.types import Command
 from redis.asyncio import Redis
 
+from repopilot.approval_models import TestEvidence
+from repopilot.approvals import ApprovalConflict, ApprovalStore
+from repopilot.candidates import Candidate
 from repopilot.config import Settings, get_settings
 from repopilot.db import Database, TaskStateConflict
 from repopilot.events import EventBus, JobQueue
@@ -49,6 +52,9 @@ def result_summary(result: dict[str, Any]) -> dict[str, Any]:
         "node_metrics": result.get("node_metrics", []),
         "pull_request_url": result.get("pull_request_url"),
         "error": result.get("error"),
+        "candidate_id": (result.get("candidate") or {}).get("candidate_id"),
+        "evidence_digest": (result.get("test_evidence") or {}).get("evidence_digest"),
+        "approval_decision_id": result.get("approval_decision_id"),
     }
 
 
@@ -69,6 +75,7 @@ class Worker:
         self.workspaces = WorkspaceManager(settings)
         self.sandbox = build_sandbox(settings)
         self.publisher = GitHubPublisher(settings)
+        self.approvals = ApprovalStore(database)
 
     async def _dependencies(self, task_id: str) -> GraphDependencies:
         policy = call_policy_from_settings(self.settings)
@@ -90,6 +97,7 @@ class Worker:
             publisher=self.publisher,
             events=self.events,
             queue=self.queue,
+            approvals=self.approvals,
         )
 
     async def run_forever(self) -> None:
@@ -136,7 +144,11 @@ class Worker:
             dependencies = await self._dependencies(task_id)
             graph = build_graph(dependencies, self.checkpointer)
             config = {"configurable": {"thread_id": task.graph_thread_id}}
-            resume = job.get("resume")
+            # A queue message is a hint. Only the committed decision may resume a
+            # production approval; duplicate initial deliveries also resolve here.
+            resume = await self.approvals.resume_for_running_task(active_task)
+            if job.get("resume") is not None and resume is None:
+                raise ApprovalConflict("legacy_approval_requires_revalidation")
             if resume is None:
                 graph_input: dict[str, Any] | Command = self._initial_state(task)
             else:
@@ -145,12 +157,12 @@ class Worker:
             interrupts = result.get("__interrupt__", [])
             if interrupts:
                 payloads = [getattr(item, "value", str(item)) for item in interrupts]
-                active_task = await self.database.transition_task(
+                active_task = await self.approvals.open_request(
                     task_id,
-                    expected_status=TaskStatus.RUNNING,
                     expected_version=active_task.state_version,
-                    status=TaskStatus.AWAITING_APPROVAL,
-                    result={"approval_requests": payloads, **result_summary(result)},
+                    candidate=Candidate.model_validate(result["candidate"]),
+                    evidence=TestEvidence.model_validate(result["test_evidence"]),
+                    summary={"approval_requests": payloads, **result_summary(result)},
                 )
                 await self.events.publish(
                     task_id,

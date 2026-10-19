@@ -349,6 +349,25 @@ class Database:
                     current_status=TaskStatus(current.status),
                     current_version=current.state_version,
                 )
+            if status in {TaskStatus.CANCELLED, TaskStatus.FAILED}:
+                from repopilot.approvals import ApprovalRecord, DecisionRecord
+
+                await session.execute(
+                    update(ApprovalRecord)
+                    .where(
+                        ApprovalRecord.task_id == task_id,
+                        ApprovalRecord.status == "waiting",
+                    )
+                    .values(status="cancelled")
+                )
+                await session.execute(
+                    update(DecisionRecord)
+                    .where(
+                        DecisionRecord.task_id == task_id,
+                        DecisionRecord.dispatch_state.in_(["pending", "enqueued"]),
+                    )
+                    .values(dispatch_state="blocked", dispatch_error="task_stopped")
+                )
             await session.commit()
             record = await session.get(TaskRecord, task_id)
             if record is None:  # The primary key cannot disappear inside this transaction.

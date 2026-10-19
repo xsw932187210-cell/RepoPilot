@@ -24,9 +24,10 @@ while [ "$attempt" -lt 60 ]; do
   sleep 1
 done
 
+approval_payload=$(curl -fsS "$api_url/api/v1/tasks/$task_id/approval" | python3 scripts/approval_payload.py)
 curl -fsS -X POST "$api_url/api/v1/tasks/$task_id/approval" \
   -H 'Content-Type: application/json' \
-  -d '{"approved":true,"feedback":"smoke test approval"}' >/dev/null
+  -d "$approval_payload" >/dev/null
 
 attempt=0
 while [ "$attempt" -lt 60 ]; do

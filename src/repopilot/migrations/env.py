@@ -7,6 +7,7 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+from repopilot import approvals  # noqa: F401 -- register the approval metadata.
 from repopilot.db import Base
 
 config = context.config

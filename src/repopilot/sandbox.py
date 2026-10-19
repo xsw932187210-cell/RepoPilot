@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 import stat
+import sys
 import tarfile
 import tempfile
 import time
@@ -61,7 +62,7 @@ def _write_workspace_snapshot(workspace: Path, destination: BinaryIO) -> None:
                             raise SecurityError("Sandbox workspace exceeds snapshot byte limit")
                         entry = tarfile.TarInfo(entry_path)
                         entry.size = opened.st_size
-                        entry.mode = 0o755 if opened.st_mode & 0o111 else 0o644
+                        entry.mode = stat.S_IMODE(opened.st_mode) & 0o777
                         entry.uid = entry.gid = 10001
                         archive.addfile(entry, source)
                 else:
@@ -101,6 +102,7 @@ class LocalSandbox:
             stderr=redact_secrets(stderr)[-20_000:],
             duration_ms=int((time.perf_counter() - started) * 1000),
             timed_out=timed_out,
+            image_id=f"local-test-only:python-{sys.version_info.major}.{sys.version_info.minor}",
         )
 
 
@@ -136,6 +138,8 @@ class DockerSandbox:
         stderr = ""
         exit_code = 1
         try:
+            image_id = client.images.get(self.settings.sandbox_image).id
+            kwargs["image"] = image_id
             with tempfile.TemporaryFile() as snapshot:
                 _write_workspace_snapshot(workspace, snapshot)
                 container = client.containers.create(**kwargs)
@@ -173,6 +177,7 @@ class DockerSandbox:
             stderr=redact_secrets(stderr)[-20_000:],
             duration_ms=int((time.perf_counter() - started) * 1000),
             timed_out=timed_out,
+            image_id=image_id,
         )
 
 

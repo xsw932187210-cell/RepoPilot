@@ -26,6 +26,7 @@ CMD ["uvicorn", "repopilot.api:app", "--host", "0.0.0.0", "--port", "8000"]
 FROM runtime AS integration-test
 USER root
 COPY tests ./tests
+COPY docs/evidence/2026-09-09-failure-ledger.json ./docs/evidence/2026-09-09-failure-ledger.json
 RUN pip install ".[dev]"
 USER repopilot
 

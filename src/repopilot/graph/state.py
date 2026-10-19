@@ -13,6 +13,10 @@ class RepoPilotState(TypedDict, total=False):
     test_command: str
     max_iterations: int
     workspace: str
+    base_sha: str
+    candidate: dict[str, Any]
+    test_evidence: dict[str, Any]
+    approval_decision_id: str
 
     plan: dict[str, Any]
     research_tree: list[str]

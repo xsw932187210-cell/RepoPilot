@@ -16,13 +16,15 @@ flowchart LR
   R --> C[Coder]
   T --> C
   C --> AP[Apply policy: single writer]
-  AP -->|valid batch| S[Docker test runner]
+  AP -->|valid batch| A[Freeze complete candidate]
+  A --> S[Docker tests on frozen artifact]
   AP -->|one task-wide correction| C
   S --> V[Reviewer]
   V -->|medium/high risk: one bounded remediation| C
   V -->|approved, low-risk, or second candidate| H[HITL interrupt]
   H -->|approved| GH[Governed GitHub tool]
   G --> CP[(PostgreSQL checkpoints)]
+  H --> D[(Bound decision and resume intent)]
   W --> E[(Task and event tables)]
   M[Versioned app migration] --> E
   M --> L
@@ -39,7 +41,7 @@ flowchart LR
    `.git`, case aliases, symbolic links, hard links, and special files are rejected. See
    [workspace capability policy](workspace-capabilities.md).
 3. Test commands are parsed to argument arrays; shell operators and arbitrary executables are rejected.
-4. Tests execute from a disposable snapshot of the current task workspace, without inheriting the
+4. Tests execute from a disposable materialization of a content-addressed candidate, without inheriting the
    worker's mounts, network access, Linux capabilities, or privilege escalation. Symlinks and
    special files are rejected when the snapshot is built.
 5. GitHub writes require a non-empty diff, passing tests, an allowlisted owner, runtime enablement,
@@ -57,6 +59,13 @@ Every graph node is checkpointed by `AsyncPostgresSaver`. The stable `graph_thre
 the task record is the recovery cursor. Approval resumes the same thread with
 `Command(resume=...)`; it does not rebuild the workflow from scratch.
 
+Before tests, `ArtifactStore` freezes complete bytes/modes and base SHA. Tests, Reviewer context
+and the versioned human decision refer to that candidate and evidence digest. Decision, task CAS,
+audit event and pending resume intent commit together. Redis delivery failures remain visible and
+can be explicitly retried; Worker resolves the decision from SQL rather than message booleans.
+Unbound legacy approvals require a new task/retest. See [candidate and approval contracts](candidate-approvals.md).
+Automatic queue recovery and approved-base publication still belong to CH-04A/CH-03B.
+
 When deterministic validation fails, or when the reviewer reports a concrete medium/high-risk
 finding, the coder refreshes repository context from the already modified workspace before
 applying feedback. A low-risk or evidence-only reviewer concern goes directly to HITL; after one
@@ -73,7 +82,7 @@ attempts, while every new model request still consumes the same durable call led
 
 Redis is intentionally not the source of truth. It owns dispatch, short-lived locks,
 cancellation flags, and live event fan-out. PostgreSQL owns task history, events, the model-call
-ledger, and graph state. RepoPilot's Alembic revisions own task/event/call-ledger application
+ledger, candidate/evidence/approval records, and graph state. RepoPilot's Alembic revisions own these application
 tables; LangGraph checkpoint tables stay behind `AsyncPostgresSaver.setup()` and are never modified
 by guessed application migrations. The application migration service must complete before API or
 Worker starts. Existing

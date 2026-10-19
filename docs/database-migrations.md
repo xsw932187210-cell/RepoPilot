@@ -2,7 +2,7 @@
 
 RepoPilot owns a small application schema and upgrades it with Alembic. The migration boundary is
 deliberately narrow: RepoPilot revisions may change `tasks`, `task_events`, model-call ledger
-tables, and `alembic_version`; they do not inspect or rewrite LangGraph checkpoint tables.
+tables, candidate/evidence/approval tables, and `alembic_version`; they do not rewrite LangGraph tables.
 
 ## Ownership boundary
 
@@ -10,6 +10,7 @@ tables, and `alembic_version`; they do not inspect or rewrite LangGraph checkpoi
 | --- | --- |
 | Task metadata, status, result, and event history | RepoPilot Alembic revisions under `src/repopilot/migrations/`; run `repopilot-migrate upgrade` |
 | Per-task model-call policy, reservations, attempts, outcomes, retry waits, and trusted usage | RepoPilot Alembic revision `20260921_0003`; initialized lazily for a task before its first controlled model request |
+| Candidate/artifact references, test evidence, approval versions, decisions and resume intents | RepoPilot Alembic revision `20261019_0004`; artifacts also require the shared workspace volume |
 | LangGraph checkpoints | `langgraph-checkpoint-postgres`; the worker calls the provider-supported `AsyncPostgresSaver.setup()` entry point |
 | Redis queue, cancellation keys, locks, and Pub/Sub | Ephemeral coordination state; not part of a database migration |
 
@@ -24,6 +25,7 @@ separately.
 | `20260921_0001` | Exact baseline for the application tables that existed before CH-09 |
 | `20260921_0002` | Adds optimistic task-state versioning and owned-JSON schema versions |
 | `20260921_0003` | Adds CH-10's per-task model-call budget and attempt ledger |
+| `20261019_0004` | Adds CH-03A's candidates, test evidence, approval requests and one-time decisions/resume intents |
 
 `Database.setup()` now runs the same upgrade path as the CLI. Compose also has a one-shot `migrate`
 service, and API/Worker startup waits for that service to finish successfully.
@@ -65,6 +67,13 @@ defaults true until an attempt lacks trustworthy provider usage or has an unknow
 Attempt status has no permissive default and is always written explicitly by the controlled call
 boundary. No ownership epoch, candidate, approval, Outbox, or future billing fields are included.
 
+Revision `20261019_0004` adds four tables without fabricating candidate/evidence/decision rows
+for old tasks. Task/event rows and checkpoints remain unchanged. Old unbound awaiting checkpoints
+return `legacy_approval_requires_revalidation`; cancel/create a new task to rerun tests. Required
+`approval-v2` request fields reject legacy boolean requests with 422. Decisions and pending resume
+intents commit with task CAS; an enqueue failure is explicit and retryable. This does not implement
+an automatic Outbox or ownership epoch. See [candidate and approval contracts](candidate-approvals.md).
+
 ## Task state contract
 
 Every task state update supplies the status and version that the caller observed. The database
@@ -99,7 +108,7 @@ For an existing deployment:
 2. Confirm no task is actively executing and take a database backup appropriate to the deployment.
 3. Deploy the new image and run exactly one migrator: `repopilot-migrate upgrade`. With Compose,
    `docker compose run --rm migrate` uses the same entry point.
-4. Verify `repopilot-migrate current` reports `20260921_0003`.
+4. Verify `repopilot-migrate current` reports `20261019_0004`. Back up the artifact volume with SQL.
 5. Start only the new API and Worker image, then run the normal smoke checks.
 
 A fresh `docker compose up --build -d` performs step 3 through the one-shot `migrate` service. Do

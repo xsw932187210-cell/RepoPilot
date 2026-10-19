@@ -6,6 +6,7 @@ import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 
+from repopilot.candidates import bound_resume
 from repopilot.config import Settings
 from repopilot.github import GitHubPublisher
 from repopilot.graph import GraphDependencies, build_graph
@@ -72,7 +73,7 @@ async def test_graph_repairs_demo_and_requires_approval(tmp_path: Path) -> None:
     }
 
     completed = await graph.ainvoke(
-        Command(resume={"approved": True, "feedback": "ship it"}), config=config
+        Command(resume=bound_resume(result, approved=True, feedback="ship it")), config=config
     )
     assert completed["status"] == "completed"
     assert completed["pull_request_url"] is None
@@ -97,7 +98,7 @@ async def test_human_can_reject_verified_change(tmp_path: Path) -> None:
     )
     graph = build_graph(deps, InMemorySaver())
     config = {"configurable": {"thread_id": "reject-e2e"}}
-    await graph.ainvoke(
+    result = await graph.ainvoke(
         {
             "task_id": "reject-e2e",
             "repository_url": "demo://buggy-calculator",
@@ -113,7 +114,8 @@ async def test_human_can_reject_verified_change(tmp_path: Path) -> None:
         config=config,
     )
     rejected = await graph.ainvoke(
-        Command(resume={"approved": False, "feedback": "needs manual review"}), config=config
+        Command(resume=bound_resume(result, approved=False, feedback="needs manual review")),
+        config=config,
     )
     assert rejected["status"] == "cancelled"
 

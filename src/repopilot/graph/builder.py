@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,9 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 from pydantic import ValidationError
 
+from repopilot.approval_models import TestEvidence, evidence_identity
+from repopilot.approvals import ApprovalConflict, ApprovalStore
+from repopilot.candidates import ArtifactStore, Candidate
 from repopilot.config import Settings
 from repopilot.events import EventBus, JobQueue
 from repopilot.github import GitHubPublisher
@@ -84,6 +88,7 @@ class GraphDependencies:
     publisher: GitHubPublisher
     events: EventBus | None = None
     queue: JobQueue | None = None
+    approvals: ApprovalStore | None = None
 
     async def emit(
         self,
@@ -111,6 +116,8 @@ class GraphDependencies:
 
 
 def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
+    artifacts = ArtifactStore(deps.settings.workspace_root / ".artifacts")
+
     async def prepare(state: RepoPilotState) -> dict[str, Any]:
         started = time.perf_counter()
         await deps.ensure_active(state)
@@ -126,6 +133,7 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
         )
         return {
             "workspace": str(workspace),
+            "base_sha": await deps.workspaces.base_commit(workspace),
             "status": "running",
             "iteration": 0,
             "node_metrics": [node_metric("prepare", duration_ms)],
@@ -342,13 +350,44 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
     async def test_runner(state: RepoPilotState) -> dict[str, Any]:
         started = time.perf_counter()
         await deps.ensure_active(state)
-        result = await deps.sandbox.run(Path(state["workspace"]), state["test_command"])
+        candidate = await artifacts.freeze(
+            Path(state["workspace"]),
+            task_id=state["task_id"],
+            base_sha=state["base_sha"],
+            generation=state.get("iteration", 0),
+            policy_version=state.get("capability_policy_version", "legacy"),
+        )
+        with artifacts.materialize(candidate) as snapshot:
+            result = await deps.sandbox.run(snapshot, state["test_command"])
+        evidence = TestEvidence(
+            evidence_digest="",
+            candidate_id=candidate.candidate_id,
+            artifact_digest=candidate.artifact_digest,
+            image_id=result.image_id,
+            command=result.command,
+            policy={
+                "sandbox_version": result.policy_version,
+                "command_version": "test-command-v1",
+                "backend": deps.settings.sandbox_backend,
+                "timeout_seconds": deps.settings.sandbox_timeout_seconds,
+                "memory": deps.settings.sandbox_memory,
+                "network_disabled": deps.settings.sandbox_backend == "docker",
+                "workspace_policy_version": candidate.policy_version,
+            },
+            result=result,
+            observed_at=datetime.now(UTC),
+        )
+        evidence = evidence.model_copy(update={"evidence_digest": evidence_identity(evidence)})
+        if deps.approvals:
+            await deps.approvals.record_evidence(state["task_id"], candidate, evidence)
         duration_ms = elapsed_ms(started)
         await deps.emit(
             state,
             "test_runner",
             "Sandbox tests passed" if result.passed else "Sandbox tests failed",
             {
+                "candidate_id": candidate.candidate_id,
+                "evidence_digest": evidence.evidence_digest,
                 "exit_code": result.exit_code,
                 "duration_ms": result.duration_ms,
                 "timed_out": result.timed_out,
@@ -356,6 +395,9 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
             duration_ms,
         )
         return {
+            "candidate": candidate.model_dump(mode="json"),
+            "test_evidence": evidence.model_dump(mode="json"),
+            "diff": artifacts.read_diff(candidate).decode("utf-8", errors="replace")[:100_000],
             "test_result": result.model_dump(),
             "node_metrics": [node_metric("test_runner", duration_ms, state.get("iteration", 0))],
         }
@@ -433,10 +475,30 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
             return "coder"
         return "failed"
 
-    def approval(state: RepoPilotState) -> dict[str, Any]:
+    async def approval(state: RepoPilotState) -> dict[str, Any]:
         started = time.perf_counter()
+        await deps.ensure_active(state)
+        if "candidate" not in state or "test_evidence" not in state:
+            raise ApprovalConflict("legacy_approval_requires_revalidation")
+        candidate = Candidate.model_validate(state["candidate"])
+        evidence = TestEvidence.model_validate(state["test_evidence"])
+        if (
+            evidence_identity(evidence) != evidence.evidence_digest
+            or evidence.candidate_id != candidate.candidate_id
+            or evidence.artifact_digest != candidate.artifact_digest
+            or not evidence.result.passed
+        ):
+            raise ApprovalConflict("invalid_candidate_evidence_binding")
         decision = interrupt(
             {
+                "schema_version": "approval-v2",
+                "candidate_id": candidate.candidate_id,
+                "artifact_digest": candidate.artifact_digest,
+                "base_sha": candidate.base_sha,
+                "evidence_digest": evidence.evidence_digest,
+                "candidate_url": (
+                    f"/api/v1/tasks/{state['task_id']}/candidates/{candidate.candidate_id}"
+                ),
                 "question": (
                     "Approve the verified change and allow the configured GitHub write tool?"
                 ),
@@ -446,12 +508,26 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
                 "diff_preview": state.get("diff", "")[:8_000],
             }
         )
-        approved = bool(decision.get("approved")) if isinstance(decision, dict) else bool(decision)
-        feedback = str(decision.get("feedback", "")) if isinstance(decision, dict) else ""
+        if (
+            not isinstance(decision, dict)
+            or decision.get("schema_version") != "approval-v2"
+            or decision.get("candidate_id") != candidate.candidate_id
+            or decision.get("evidence_digest") != evidence.evidence_digest
+            or type(decision.get("approved")) is not bool
+        ):
+            raise ApprovalConflict("stale_approval_binding")
+        if deps.approvals:
+            saved = await deps.approvals.validate_resume(state["task_id"], decision)
+            approved, feedback = saved.approved, saved.feedback
+        else:
+            if deps.settings.github_write_enabled:
+                raise ApprovalConflict("persistent_approval_required_for_publication")
+            approved, feedback = decision["approved"], str(decision.get("feedback", ""))
         duration_ms = elapsed_ms(started)
         return {
             "human_approved": approved,
             "human_feedback": feedback,
+            "approval_decision_id": str(decision.get("decision_id", "offline-evaluation")),
             "status": "approved" if approved else "cancelled",
             "node_metrics": [node_metric("approval", duration_ms, state.get("iteration", 0))],
         }
@@ -461,6 +537,11 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
 
     async def finalize(state: RepoPilotState) -> dict[str, Any]:
         started = time.perf_counter()
+        await deps.ensure_active(state)
+        artifacts.read_diff(Candidate.model_validate(state["candidate"]))
+        artifacts.validate_edits(
+            Candidate.model_validate(state["candidate"]), state.get("edits", [])
+        )
         edits = [FileEdit.model_validate(item) for item in state.get("edits", [])]
         result = await deps.publisher.publish(
             task_id=state["task_id"],

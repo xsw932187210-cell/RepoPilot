@@ -145,6 +145,12 @@ class WorkspaceManager:
             max_file_bytes=settings.max_file_bytes
         )
 
+    async def base_commit(self, workspace: Path) -> str:
+        code, stdout, _ = await run_process("git", "rev-parse", "--verify", "HEAD", cwd=workspace)
+        if code != 0:
+            raise SecurityError("Could not resolve the prepared repository base commit")
+        return stdout.strip()
+
     async def prepare(
         self,
         task_id: str,

@@ -76,11 +76,6 @@ class TaskView(BaseModel):
     updated_at: datetime
 
 
-class ApprovalRequest(BaseModel):
-    approved: bool
-    feedback: str = Field(default="", max_length=2_000)
-
-
 class EventView(BaseModel):
     id: int
     task_id: str
@@ -137,6 +132,8 @@ class SandboxResult(BaseModel):
     stderr: str = ""
     duration_ms: int
     timed_out: bool = False
+    image_id: str = "unreported-test-runner"
+    policy_version: str = "sandbox-v1"
 
     @property
     def passed(self) -> bool:

@@ -25,7 +25,9 @@ async def run(args: argparse.Namespace) -> None:
         github_write_enabled=False,
         model_max_calls=2 if args.scenario == "budget" else 8,
     )
-    assert make_url(settings.database_url).database == "repopilot_ch02b_test"
+    assert make_url(settings.database_url).database in {
+        "repopilot_ch02b_test", "repopilot_ch03a_test",
+    }
     database = Database(settings.database_url)
     redis = Redis.from_url(settings.redis_url)
     try:
@@ -106,19 +108,29 @@ async def run(args: argparse.Namespace) -> None:
             interrupts = result.get("__interrupt__", [])
             summary = result_summary(result)
             if interrupts:
+                from repopilot.approval_models import TestEvidence
+                from repopilot.candidates import Candidate
+
                 status = TaskStatus.AWAITING_APPROVAL
                 summary["approval_requests"] = [item.value for item in interrupts]
+                await worker.approvals.open_request(
+                    task.id,
+                    expected_version=task.state_version,
+                    candidate=Candidate.model_validate(result["candidate"]),
+                    evidence=TestEvidence.model_validate(result["test_evidence"]),
+                    summary=summary,
+                )
             else:
                 assert result["status"] == "failed"
                 status = TaskStatus.FAILED
-            await database.transition_task(
-                task.id,
-                expected_status=TaskStatus.RUNNING,
-                expected_version=task.state_version,
-                status=status,
-                result=summary,
-                error=result.get("error"),
-            )
+                await database.transition_task(
+                    task.id,
+                    expected_status=TaskStatus.RUNNING,
+                    expected_version=task.state_version,
+                    status=status,
+                    result=summary,
+                    error=result.get("error"),
+                )
             print(json.dumps({"scenario": args.scenario, "status": status.value}))
     finally:
         await redis.aclose()

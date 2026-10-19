@@ -49,12 +49,18 @@ class SnapshotClient:
     def __init__(self, container: SnapshotContainer) -> None:
         self.container = container
         self.containers = self
+        self.images = self
         self.kwargs: dict[str, object] = {}
         self.closed = False
 
     def create(self, **kwargs: object) -> SnapshotContainer:
         self.kwargs = kwargs
         return self.container
+
+    def get(self, name: str):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(id="sha256:" + "1" * 64)
 
     def close(self) -> None:
         self.closed = True
@@ -80,6 +86,7 @@ async def test_docker_uses_only_current_task_snapshot(
     result = await DockerSandbox(settings).run(workspace, "python -m pytest -q")
 
     assert result.passed
+    assert result.image_id == client.kwargs["image"] == "sha256:" + "1" * 64
     assert not {"volumes", "volumes_from", "mounts"}.intersection(client.kwargs)
     assert client.kwargs["working_dir"] == "/workspace"
     assert client.kwargs["user"] == "10001:10001"
