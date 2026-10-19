@@ -151,6 +151,10 @@ class WorkspaceManager:
             raise SecurityError("Could not resolve the prepared repository base commit")
         return stdout.strip()
 
+    def base_repository(self, workspace: Path) -> Path:
+        """Trusted commit source; exported evaluation workspaces override this."""
+        return workspace
+
     async def prepare(
         self,
         task_id: str,

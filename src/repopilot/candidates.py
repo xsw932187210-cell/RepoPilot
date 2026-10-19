@@ -251,9 +251,16 @@ class ArtifactStore:
         base_sha: str,
         generation: int,
         policy_version: str,
+        base_repository: Path | None = None,
     ) -> Candidate:
         return await asyncio.to_thread(
-            self._freeze, workspace, task_id, base_sha, generation, policy_version
+            self._freeze,
+            workspace,
+            task_id,
+            base_sha,
+            generation,
+            policy_version,
+            base_repository or workspace,
         )
 
     def _freeze(
@@ -263,6 +270,7 @@ class ArtifactStore:
         base_sha: str,
         generation: int,
         policy_version: str,
+        base_repository: Path,
     ) -> Candidate:
         if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", base_sha):
             raise SecurityError("An actual base commit is required to freeze a candidate")
@@ -292,7 +300,7 @@ class ArtifactStore:
             base.mkdir()
             with tarfile.open(bundle / "tree.tar") as archive:
                 _extract(archive, tree, entries)
-            _write_base(workspace, base_sha, base)
+            _write_base(base_repository, base_sha, base)
             # --no-index includes additions, deletions, modes and binary patches. The
             # stable base/tree prefixes are documented in the full-diff API.
             diff = _git(

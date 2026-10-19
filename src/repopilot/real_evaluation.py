@@ -113,6 +113,14 @@ class OfflineWorkspace(WorkspaceManager):
         }
         return self.destination
 
+    async def base_commit(self, workspace: Path) -> str:
+        return self.task.source.buggy_commit
+
+    def base_repository(self, workspace: Path) -> Path:
+        # Keep Git history/metadata outside the model/test workspace. ArtifactStore
+        # reads only this pinned commit's tree/blobs from the trusted source checkout.
+        return self.source
+
     def inspect(self, workspace: Path, issue_text: str, search_terms: list[str]):
         del search_terms
         context = super().inspect(workspace, issue_text, [])

@@ -11,6 +11,11 @@ The mutable workspace path is not an approval credential.
 `materialize(candidate)` verifies and creates a temporary test tree; `read_diff(candidate)`
 returns the complete stored Diff. CH-05A staging will reuse this interface.
 
+History-free evaluation exports supply a trusted `base_repository` and the pinned buggy commit
+through the workspace adapter. Base tree/blobs are read there without adding Git metadata or
+history to the model/test workspace. The implementation fingerprint changes with this adapter;
+historical paid-model records are not reused as results for the new runtime.
+
 - Canonical `manifest-v1` contains the base SHA and sorted paths, file permission bits,
   byte counts and SHA-256 content digests. Directory modes normalize to 0755. Root `.git`
   metadata is excluded; other regular files, including untracked and binary files, are included.

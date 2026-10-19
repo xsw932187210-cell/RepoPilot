@@ -356,6 +356,7 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
             base_sha=state["base_sha"],
             generation=state.get("iteration", 0),
             policy_version=state.get("capability_policy_version", "legacy"),
+            base_repository=deps.workspaces.base_repository(Path(state["workspace"])),
         )
         with artifacts.materialize(candidate) as snapshot:
             result = await deps.sandbox.run(snapshot, state["test_command"])
