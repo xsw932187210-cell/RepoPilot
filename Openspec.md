@@ -193,6 +193,7 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 | 证据 | 记录结果 | 解释边界 |
 | --- | --- | --- |
 | 工程验证 | 2026-09-21：135 passed、3 个专用 PostgreSQL 条件测试在全量套件中跳过，80.01% 行覆盖率；lint、PostgreSQL 16.15 CH-10 迁移 2/2、Mock eval 10/10、smoke、审批恢复 smoke 通过 | CH-10 PostgreSQL 条件测试已由独立 Compose 实例另行实跑；provider 故障使用确定性 transport，不是真实 provider 集成或计费证据 |
+| CH-03A 候选与审批 | 2026-10-19：Linux Python 3.12 全量 204 passed / 0 skipped，82.91% coverage；Mock 10/10、API smoke、实际 Worker 重启通过；14 项服务条件入口均实跑 | 仅 Mock 与隔离 PostgreSQL/Redis/Docker；审批绑定、并发一次消费、投递失败保存/显式重试成立，不代表自动队列恢复、fencing 或最终 GitHub 发布身份绑定 |
 | CH-01A 离线诊断 | 2026-10-19：核对 40 个 case-mode，公开 12 个未通过项的观察分类与未知根因；lint、154 passed / 3 skipped、80.78% 行覆盖率 | 对 2026-09-09 v7 历史记录做离线分析；不是新真实模型实验，也不补足 CH-02B 集成验收 |
 | CH-02B 服务验收 | 2026-10-19：PostgreSQL 16.15 / Redis / Docker 下 6 项专项通过，容器内 Mock 10/10，API smoke 和实际 Worker 审批重启恢复通过，专属资源清理确认 | 中途 checkpoint 经测试入口显式恢复；未实现自动队列找回。离线套件 154 passed / 9 skipped，80.78%；6 项服务测试另行实跑，另外 3 项 PostgreSQL 条件入口未重跑 |
 | Mock 工作流回归 | 10/10 | 验证流程及确定性夹具，不代表 LLM 编码能力 |
@@ -292,7 +293,7 @@ S/M/L 表示相对范围：S 通常是独立诊断或小接口；M 是一组紧�
 
 2026-10-19 确认的质量迭代顺序：先做 CH-01A 失败归因，再通过 CH-07A/B/C 建立跨项目开发集和冻结保留集；按证据选择 CH-13 Reviewer 校准或 CH-01B 任务路由，每次只验证一个主要策略变化。CH-14 的片段检索、CH-21 的压缩/历史案例复用由大文件、长任务或重复仓库任务的瓶颈触发；CH-12 多用户权限由明确使用需求触发，不作为本轮前置功能。
 
-CH-01A、CH-02B 已于 2026-10-19 完成本地验收，仍待对应 PR/合并处理。CH-02A、CH-09、CH-10 已合并。下一项 P0 建议为 **CH-03A**（候选、测试和审批身份绑定）；质量数据方向可独立开展 **CH-07A**。执行顺序始终以各卡硬依赖为准。
+CH-01A、CH-02B、CH-03A 已于 2026-10-19 完成本地验收，仍待对应 PR/合并处理。CH-02A、CH-09、CH-10 已合并。下一项 P0 建议为 **CH-05A**（staging 候选与完整代次切换），完成后才能推进 CH-03B；质量数据方向可独立开展 **CH-07A**。执行顺序始终以各卡硬依赖为准。
 
 ### 8.4 跨任务接口约定（已落实项与待实现设计）
 
@@ -304,9 +305,9 @@ CH-01A、CH-02B 已于 2026-10-19 完成本地验收，仍待对应 PR/合并处
 | --- | --- | --- |
 | 任务版本 | 已落地 `task_id / state_version / status`，状态更新比较旧 status/version；这不是 Worker ownership epoch | CH-09 |
 | 执行尝试 | `attempt_id / owner_epoch / lease_expires_at`；标识一次合法执行所有权 | CH-04B；此前不得宣称已受 fencing 保护 |
-| 候选身份 | `candidate_id / base_sha / artifact_digest / generation / policy_version` | CH-03A；CH-05A 复用 |
-| 测试证据 | 候选摘要、镜像身份、测试策略版本、命令规范、结果和时间；区分可见测试与独立验收 | CH-03A |
-| 审批凭据 | `decision_id / task_id / candidate_id / evidence_digest / approved / actor / timestamp`；先用单用户身份，后由 CH-12 提供认证主体 | CH-03A |
+| 候选身份 | 已落地 `candidate_id / base_sha / artifact_digest / artifact_ref / generation / policy_version / diff_digest` | CH-03A；CH-05A 复用 |
+| 测试证据 | 已落地 `test-evidence-v1`：候选/产物摘要、实际镜像 ID、策略版本、规范命令、结果和时间；configured-tests 与独立验收分开 | CH-03A |
+| 审批凭据 | 已落地 `approval_id / request_version / decision_id / task_id / candidate_id / evidence_digest / approved / actor / decided_at`；固定单用户主体，CH-12 后再扩展 | CH-03A |
 | 发布意图 | `publish_intent_id / decision_id / target_repo / approved_base_sha / branch / phase / remote_ids` | CH-03B |
 | 可恢复任务消息 | 版本、`job_id / task_id / kind / decision_id`；不在 Redis 消息体中传凭据或大段代码 | CH-04A |
 | 调用记账 | 已落地 `model_call_budgets/model_call_attempts`；任务级上限、调用前预留、`reserved/started/succeeded/failed/unknown`、累计退避、用量完整性、provider/model/adapter/schema/fallback 身份；重启不清零，不等于 Worker fencing | CH-10 |
@@ -314,7 +315,7 @@ CH-01A、CH-02B 已于 2026-10-19 完成本地验收，仍待对应 PR/合并处
 
 候选存储接口由 CH-03A 定义：manifest/digest 由服务端对完整候选字节生成，候选记录绑定不可变 artifact 引用，测试和审批按该引用读取。CH-05A 实现 staging 与代次切换并复用同一接口；`current_generation` 只是当前选择指针，不改变旧审批所绑定的候选。CH-03B 必须在 CH-05A 后实现，发布只能读取获批引用，不能跟随最新指针。
 
-CH-03A 本轮接口映射（2026-10-19，验收中）：`ArtifactStore.freeze/materialize/read_diff` 保存 `sha256:<manifest_digest>` 引用；manifest 覆盖除根目录 `.git` 元数据以外的完整普通文件，包含原始字节摘要与文件权限，目录规范为 0755，拒绝链接与特殊文件。`candidate-v1` 绑定 base SHA、代次、能力策略和完整 Diff 摘要，`test-evidence-v1` 绑定镜像实际 ID、规范命令、运行策略、结果与时间。新增四张表由 `20261019_0004` 迁移建立；失败测试也保留候选与证据。
+CH-03A 接口映射（2026-10-19，已实现并验收）：`ArtifactStore.freeze/materialize/read_diff` 保存 `sha256:<manifest_digest>` 引用；manifest 覆盖除根目录 `.git` 元数据以外的完整普通文件，包含原始字节摘要与文件权限，目录规范为 0755，拒绝链接与特殊文件。`candidate-v1` 绑定 base SHA、代次、能力策略和完整 Diff 摘要，`test-evidence-v1` 绑定镜像实际 ID、规范命令、运行策略、结果与时间。新增四张表由 `20261019_0004` 迁移建立；失败测试也保留候选与证据。
 
 无 Git 历史的真实评测导出目录由受信任 `OfflineWorkspace` 适配器提供固定 buggy commit 和源仓库 `base_repository`，只读取对应树/blob，不把 `.git` 或历史交给模型/沙箱。其实现变更进入评测指纹；不得复用历史模型记录来宣称新运行时已实测。
 
@@ -403,7 +404,7 @@ CH-03A 本轮接口映射（2026-10-19，验收中）：`ArtifactStore.freeze/ma
 
 #### CH-03A：冻结候选和一次性审批决定
 
-- **状态**：IN_PROGRESS（2026-10-19，`codex/ch-03a-candidate-approval`，基线 `b23ac4f`；接口实现及验收中）。**优先级/规模**：P0 / L。**硬依赖**：CH-02A、CH-09。
+- **状态**：VERIFIED（2026-10-19，204 passed / 0 skipped，82.91% coverage，Mock/服务故障/Worker 重启均通过；尚未推送或合并）。**优先级/规模**：P0 / L。**硬依赖**：CH-02A、CH-09。
 - **入口**：`repository.py`、`sandbox.py`、`models.py`、`db.py`、`api.py`、`graph/builder.py`。
 - **实施步骤**：
   1. 准备仓库时记录实际 base commit；从待测完整快照生成确定性 manifest/digest，包含路径、文件模式和内容摘要，候选 ID 不依赖易截断的展示 Diff。定义最小不可变 artifact 存取接口并持久化引用；后续 staging 实现复用该接口，不能使审批绑定可变工作区路径。
@@ -413,6 +414,7 @@ CH-03A 本轮接口映射（2026-10-19，验收中）：`ArtifactStore.freeze/ma
 - **验收场景**：相同快照摘要稳定；单字节/模式/文件变化产生新候选；两个相反审批并发只有一个生效；旧审批和非等待状态被拒；Worker 重启后仍恢复原审批对象与证据。
 - **交付**：候选/证据/decision schema、迁移、审批 API 的兼容策略与 PostgreSQL 集成测试。
 - **范围边界**：API 请求兼容性若需变更，应版本化或给明确错误，不能让旧的无版本 `approved=true` 自动批准最新候选。
+- **本轮交付**：`a5b5dab`、`c00b23b`、`9e62ce7`；[接口契约](docs/candidate-approvals.md)、[验收记录](docs/ch03a-verification-2026-10-19.md)、[机器证据](docs/evidence/2026-10-19-ch03a-verification.json)。审批请求强制 `approval-v2`，旧请求 422、旧无绑定 checkpoint 409 需重新测试；pending 意图支持显式重投。发布意图与获批 base 构建仍属 CH-03B。
 
 #### CH-03B：发布绑定、幂等意图与远端对账
 
@@ -870,6 +872,7 @@ smoke 使用已经运行的服务。若 `.env` 选择真实模型，应按 [READ
 - [运行时正确性](docs/runtime-correctness.md)：机制失效时的行为与限制。
 - [数据库迁移与状态版本](docs/database-migrations.md)：应用表/checkpoint 边界、版本链、状态转移、部署与失败恢复。
 - [冻结候选与一次性审批](docs/candidate-approvals.md)：artifact 存取、approval-v2、CAS、投递失败恢复及旧 checkpoint 边界。
+- [CH-03A 隔离验收](docs/ch03a-verification-2026-10-19.md)：全量服务测试、并发决定、提交后硬退出、Redis 故障、Worker 重启、来源摘要及失败记录。
 - [模型调用预算与 provider 故障](docs/model-call-control.md)：配置、账本状态、错误分类、重试与崩溃窗口。
 - [工作区能力策略](docs/workspace-capabilities.md)：版本化 read/write/create 权限、拒绝原因与边界。
 - [CH-02B 隔离服务验收](docs/ch02b-verification-2026-10-19.md)：策略纠正、持久化限额、硬退出后显式接续、旧审批 checkpoint 与实际 Worker 重启的验证范围。
@@ -1034,3 +1037,16 @@ smoke 使用已经运行的服务。若 `.env` 选择真实模型，应按 [READ
 - 证据与清理：[验证报告](docs/ch02b-verification-2026-10-19.md)、[计数/摘要 JSON](docs/evidence/2026-10-19-ch02b-verification.json)；原始报告在本地忽略目录 `reports/repopilot_ch02b_20261019_68210/`。专属容器、网络、PostgreSQL/workspace 数据卷按项目标签查询后确认均已移除，临时旧源码目录已清理；测试镜像和构建缓存保留，没有全局 prune。
 - 兼容边界：没有修改生产图路由、API 或数据库 schema。中途 checkpoint 是测试入口显式恢复，不是 Redis 消费崩溃后的自动重领；审批 checkpoint 的真实 Worker 重启另行实跑。旧版兼容针对固定源码与本轮依赖环境；仍需停止旧 Worker 后升级，不支持把新 `apply_policy` 中途 checkpoint 直接交给旧图。队列/fencing、候选冻结和写入事务边界仍按 CH-04、CH-03A/CH-05A 分别推进。
 - 状态与下一项：CH-02B 更新为 VERIFIED，尚未推送、创建 PR 或合并；当前分支继承 CH-01A，本地后续 PR 应明确基线和提交范围。下一项 P0 为 CH-03A（候选、测试、审批身份绑定），CH-07A 是可独立推进的质量数据方向；本轮未自动启动下一张卡。
+
+### 2026-10-19 · CH-03A · 冻结候选、一次性决定与恢复意图
+
+- 起始基线：干净的 `codex/ch-02b-integration-validation@b23ac4f`；新建 `codex/ch-03a-candidate-approval`，保留 CH-01A/CH-02B 的未合并提交。CH-02A `a2cb1d5`、CH-09 `59d996f`、CH-10 `adbca64` 均在本地主线历史与基线内，没有覆盖已有修改。
+- 代码提交：`a5b5dab` 实现，`c00b23b` 适配无 Git 历史的真实评测目录，`9e62ce7` 将无法解析的 manifest/tar 统一为受控完整性拒绝。公开结果见[验收报告](docs/ch03a-verification-2026-10-19.md)与[摘要 JSON](docs/evidence/2026-10-19-ch03a-verification.json)。
+- 变更范围：记录实际 base SHA，对完整普通文件/模式/内容建立 content-addressed artifact；测试固定临时副本，保存镜像/命令/策略/结果证据；完整 Diff/manifest 受现有 API Key 保护。新增四表迁移 `20261019_0004`。审批使用强绑定 v2、事务 CAS 和唯一 decision，决定/恢复意图/审计事件与 queued 状态同事务保存。Redis 投递失败返回 202 pending 与显式重试；Worker 从 SQL 读取决定，不接受消息布尔值授权。没有引入后台 Outbox、fencing、staging 代次切换或真实 GitHub 写入。
+- 验证：macOS arm64 / Python 3.13.5，lint、190 passed / 14 skipped、82.02% coverage；隔离 Linux arm64 / Python 3.12.15 完整套件 204 passed / 0 skipped、82.91% coverage，14 个 PostgreSQL/服务条件入口全部实跑，包括 CH-09/CH-10 升级及故障回滚。Mock eval 10/10、API smoke、实际 Worker 审批重启均退出 0。模型调用为 3 → 3、unknown=0，测试与 finalize 各 1 次。67 份镜像内 Python 源文件摘要与交付代码一致。
+- 故障与恢复：相反审批并发仅一个生效；旧绑定、旧代次、非等待、过期与已取消请求拒绝；决定提交后 `os._exit(87)` 仍恢复原对象及 pending 意图；真实 Redis SDK 连接拒绝后重开 DB、显式重投，原 Worker 完成原任务。损坏产物不保存决定，人工拒绝不进入 finalize；等待时改工作区不会改变获批 artifact。无 Git 导出评测保留 pinned source commit 且不把 `.git` 交给模型/沙箱。
+- 失败记录：首次全量 `repopilot_ch03a_20261019_72798` 因测试镜像缺历史账本夹具、覆盖率混入旧源码而失败（200 passed / 1 failed、64.74%）。补齐夹具与覆盖率配置后保留中间及最终通过记录，没有降低 70% 门槛。窄范围与中间版本结果不充当最终版本证据。
+- 环境与清理：Docker Engine 29.5.3、PostgreSQL 16.15、Redis 7.4 镜像、LangGraph 1.2.16、PG saver 3.2.0；仅 Mock、凭据为空、GitHub 写入关闭。最终 project `repopilot_ch03a_20261019_75308`，API 58030；原始 JUnit、日志、镜像/源码摘要与 smoke 位于本地忽略目录 `reports/<project>/`。本轮各 project 容器/网络/卷均经标签查询确认移除，测试镜像/构建缓存保留，无主实例重启或全局 prune。
+- 兼容与限制：停止旧进程、备份 SQL 与 artifact volume，前向迁移到 `20261019_0004`。旧布尔审批明确 422；缺绑定旧 checkpoint 明确 409，需取消/新建后重测，不能对当前工作区补造历史授权。存储为应用层不可变与篡改检测，不保证服务管理员无法改写；SQL/文件/Redis 非统一事务，仍可能有 orphan 或 running 任务需人工恢复。publisher 的获批 base 与远端对账未完成，不能声称最终 GitHub commit 身份或 exactly-once。
+- PR / 规范：仅本地提交，未推送、创建 PR 或合并；PR 范围/验证/兼容说明已备于验收文档。RP-01/04/05/06、当前缺口、8.4 接口、README/架构/运行时/迁移契约均更新；CH-03A 为 VERIFIED，其他卡状态未顺带改成完成，历史质量结果保持原样。
+- 下一项：建议 CH-05A（staging 与完整可见代次）；依赖已有实现。之后再做 CH-03B；质量数据支线 CH-07A 可另选。本轮交付后停止，不自动启动下一卡。

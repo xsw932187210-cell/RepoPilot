@@ -1,0 +1,310 @@
+{
+  "schema_version": "ch03a-verification-v1",
+  "recorded_at": "2026-10-19T10:02:15.280946+00:00",
+  "task": "CH-03A",
+  "branch": "codex/ch-03a-candidate-approval",
+  "baseline_commit": "b23ac4f",
+  "code_commit": "9e62ce70d477fea60fba7a93217e20bec7038d1e",
+  "scope": {
+    "paid_model_calls": false,
+    "github_writes_enabled": false,
+    "remote_publication_binding_verified": false,
+    "automatic_queue_recovery_implemented": false
+  },
+  "commands": {
+    "lint": "ruff check .",
+    "host_tests": "python -m pytest --cov=repopilot --cov-report=term-missing --cov-fail-under=70 -q",
+    "services": "./scripts/ch03a_integration.sh"
+  },
+  "host_tests": {
+    "python": "3.13.5",
+    "platform": "macOS arm64",
+    "passed": 190,
+    "skipped": 14,
+    "failed": 0,
+    "coverage_percent": 82.02,
+    "note": "The 14 conditional PostgreSQL/service entries also ran in the full isolated suite."
+  },
+  "service_tests": {
+    "tests": 204,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "passed": 204,
+    "coverage_percent": 82.91,
+    "duration_seconds": 81.232,
+    "warnings": 3,
+    "coverage_excludes_only_pinned_legacy_source": "/legacy/*"
+  },
+  "runtime": {
+    "checkpoint_postgres": "3.2.0",
+    "langgraph": "1.2.16",
+    "pytest": "8.4.2",
+    "python": "3.12.15",
+    "docker_engine": "29.5.3",
+    "postgres": "16.15",
+    "redis_image": "redis:7.4-alpine"
+  },
+  "migration_head": "20261019_0004",
+  "image_ids": {
+    "app": "sha256:d5da4aa0b8914e8358bf84960c5d9342e729489217d3dc2812c07e17554ecd26",
+    "test": "sha256:cf73bc8d65d174eb8b425d8bde133f38679202a26463f4211b85442730cf79fd",
+    "sandbox": "sha256:2131c0b21aed712acf48e209ac78b347ef62d97177ca28b07973d0c733a105d8"
+  },
+  "mock_evaluation": {
+    "metadata": {
+      "dataset": "evals/cases.jsonl",
+      "dataset_sha256": "6e5c1012e81c11d9a4cda4d2d5f761313398f5383bb0a3a71960e6569b25bdf7",
+      "retrieval_phase": "first_pass_before_edits",
+      "retrieval_config": {
+        "max_context_files": 12,
+        "max_context_chars": 70000,
+        "max_file_bytes": 120000
+      },
+      "provider": "mock",
+      "model": "deterministic-mock-v1",
+      "note": "Mock results are a deterministic workflow regression baseline, not LLM quality."
+    },
+    "summary": {
+      "count": 10,
+      "successful": 10,
+      "success_rate": 1.0,
+      "task_completion_rate": 1.0,
+      "test_pass_rate": 1.0,
+      "scope_match_rate": 1.0,
+      "retrieval_all_targets_hit_rate": 1.0,
+      "retrieval_target_recall": 1.0,
+      "retrieval_recall_at_3": 1.0,
+      "retrieval_recall_at_5": 1.0,
+      "retrieval_mrr": 1.0,
+      "mean_retrieved_files": 6.8,
+      "hitl_rate": 1.0,
+      "mean_iterations": 1.0,
+      "median_duration_ms": 886,
+      "p95_duration_ms": 901,
+      "categories": {
+        "boundary": {
+          "count": 3,
+          "success_rate": 1.0
+        },
+        "collections": {
+          "count": 1,
+          "success_rate": 1.0
+        },
+        "configuration": {
+          "count": 1,
+          "success_rate": 1.0
+        },
+        "identity": {
+          "count": 1,
+          "success_rate": 1.0
+        },
+        "isolation": {
+          "count": 1,
+          "success_rate": 1.0
+        },
+        "logic": {
+          "count": 1,
+          "success_rate": 1.0
+        },
+        "resilience": {
+          "count": 1,
+          "success_rate": 1.0
+        },
+        "text": {
+          "count": 1,
+          "success_rate": 1.0
+        }
+      }
+    }
+  },
+  "api_smoke": {
+    "task_id": "ac7ac645-01dd-4015-b357-85e5ea13a354",
+    "status": "completed",
+    "model_calls_reserved": 3,
+    "model_calls_succeeded": 3,
+    "model_calls_unknown": 0,
+    "node_runs": {
+      "prepare": 1,
+      "planner": 1,
+      "researcher": 1,
+      "test_analyst": 1,
+      "coder": 1,
+      "apply_policy": 1,
+      "test_runner": 1,
+      "reviewer": 1,
+      "approval": 1,
+      "finalize": 1
+    }
+  },
+  "worker_restart": {
+    "task_id": "f046a15e-fb9d-4507-98f1-3b7e2b194fb6",
+    "status": "completed",
+    "model_calls_reserved": 3,
+    "model_calls_succeeded": 3,
+    "model_calls_unknown": 0,
+    "node_runs": {
+      "prepare": 1,
+      "planner": 1,
+      "researcher": 1,
+      "test_analyst": 1,
+      "coder": 1,
+      "apply_policy": 1,
+      "test_runner": 1,
+      "reviewer": 1,
+      "approval": 1,
+      "finalize": 1
+    },
+    "approval_manifest_evidence_identical": true
+  },
+  "cleanup": {
+    "project": "repopilot_ch03a_20261019_75308",
+    "resources_removed": true
+  },
+  "attempts": [
+    {
+      "project": "repopilot_ch03a_20261019_71157",
+      "status": "passed_targeted",
+      "passed": 11,
+      "failed": 0,
+      "coverage_percent": null,
+      "resources_removed": true
+    },
+    {
+      "project": "repopilot_ch03a_20261019_72798",
+      "status": "failed",
+      "passed": 200,
+      "failed": 1,
+      "coverage_percent": 64.74,
+      "resources_removed": true
+    },
+    {
+      "project": "repopilot_ch03a_20261019_73085",
+      "status": "passed_intermediate",
+      "passed": 201,
+      "failed": 0,
+      "coverage_percent": 82.64,
+      "resources_removed": true
+    },
+    {
+      "project": "repopilot_ch03a_20261019_73897",
+      "status": "passed_intermediate",
+      "passed": 202,
+      "failed": 0,
+      "coverage_percent": 82.82,
+      "resources_removed": true
+    },
+    {
+      "project": "repopilot_ch03a_20261019_75308",
+      "status": "passed_final",
+      "passed": 204,
+      "failed": 0,
+      "coverage_percent": 82.91,
+      "resources_removed": true
+    }
+  ],
+  "local_ignored_report_directory": "reports/repopilot_ch03a_20261019_75308",
+  "local_artifact_sha256": {
+    "integration.xml": "2d405e23e88e01a29879bde2dd46a8e25a0630a549c0da24dbaad5663689db73",
+    "integration.log": "2ec81f147e8cea587ac0c86b2c12d0b9c3c6eca3d0c7e0563bfcc63e55acd17f",
+    "build.log": "d78e137c5553acc3e0138a376cde3c45ee313633dc9773e914cf43ba4795ebf3",
+    "mock-evaluation.json": "777161927039ee7bd3ffac11995449a82d2eb8773e3c901ae87266d3d82dcf94",
+    "mock-run.log": "777161927039ee7bd3ffac11995449a82d2eb8773e3c901ae87266d3d82dcf94",
+    "runtime-versions.json": "4765201d9905955cbae9f995efd4ace4a312b2f46230ab9b42ff203d5a321829",
+    "image-ids.jsonl": "e21405872d7c386af8e0d175d377b159674cffcacf0faa84cbfaa86fd948780f",
+    "source-hashes.json": "c56242d374f5182d51d47d88164397a660be94944e00e5bcd5fe06b64dc413b9",
+    "smoke.jsonl": "8078fa5f57662271f10948b0c9f6240ce25a2d3b2555ae9088a7a724c67304f3",
+    "recovery.jsonl": "94b04bc5a956be5ef12724721f1d174ce57e056a657d29e4556defc4175c0571",
+    "postgres-version.txt": "891e4fd21666e66b5362e2b13d1bda45cc4402505a2a1548fd6c5ca7cdaae9da",
+    "services.jsonl": "48177905def06c281bf1b6b488a1040635f979132908ca445464139f6b0cb744",
+    "cleanup.json": "d36a53b66d5db6d440236c4ee6d1a025626b590d48303d91b94742d86421bae1"
+  },
+  "tested_python_source_sha256": {
+    "src/repopilot/__init__.py": "f37df0ff88ae0460083109dc5be44016b6d4590b27f3d65e1eaee7f67f4218fc",
+    "src/repopilot/acceptance.py": "6774373de9f6b0c32478ca6c6868c0da1fc55846a552f8769e322240ec19ee42",
+    "src/repopilot/api.py": "200f55c999a9f381a81c4899fc4ea07fd2a4bc7e278839ec67d8681a1cee0eeb",
+    "src/repopilot/approval_models.py": "92ad327cab9dd7e1f958724172d561fd0a78c6ad7bcb99250619b0aa6d9cb383",
+    "src/repopilot/approvals.py": "ec605a8bc2b822eb63065b07596ff429339ce4067122d097be3b50856105fe1e",
+    "src/repopilot/candidates.py": "4996850087808e551372afea9efa8f8635738a450c0ce8b2e8e5f8b63c56469d",
+    "src/repopilot/capabilities.py": "8045cc46a23f47432a557324480bc9dc7fb1edb0c114a66f08cac32d38bff04b",
+    "src/repopilot/config.py": "b9350381788e695eaeb626224f9e926ead3402b05c6dd0b8fabc4f9759f7fc67",
+    "src/repopilot/db.py": "4357787c28523fd61dabd330df3357995870a9ae2deee7c5d4d1c7fd0a93601a",
+    "src/repopilot/eval_report.py": "612eb7e2114ece072e06b89050735d93eac6d9d92b97f1f3caeab99eed97e43f",
+    "src/repopilot/eval_runtime.py": "038527a5f8a5549546672c11e3c165af21106d9a7794f6f788540d66461911b6",
+    "src/repopilot/evaluation.py": "ac62c14c6a983602e15b766d5ac8a578e1141e57dd61a7e3f320b43c8a25f291",
+    "src/repopilot/events.py": "3ebb15aeb94e2a7d004bbcd5676eeef99db70792683bccc19bb09f55d36a859e",
+    "src/repopilot/failure_analysis.py": "480086c5cd2ee785e43ee3cb751541c889eef71ea4d386d5e2ef9930eefc14e4",
+    "src/repopilot/github.py": "8200ea5298bc09031022ba5f1a66d4d73a60455793221f5520038ac0e9dcf8e5",
+    "src/repopilot/graph/__init__.py": "9de793791dea8a0881dd3cb1b233e7082cd9d636d79471e08ff0fa6a57902034",
+    "src/repopilot/graph/builder.py": "4176417b625153bad326648298ccf464345c4b386b4892841cedec98dfbf9c14",
+    "src/repopilot/graph/state.py": "19040a20dab5d386282805a5c47f4d90fa375fe351df9066cba47402e560fc71",
+    "src/repopilot/llm.py": "7050e956cb3729e5a3e4d87181893c989d6d71648972e98533c0f439a85735a2",
+    "src/repopilot/migrations/__init__.py": "0a9019f589c2870d377498531e2919f02860a89d6d43e167d081d5ef7f5ede33",
+    "src/repopilot/migrations/__main__.py": "c4847e1e78185f38d0c6130d1c1196a5a8d5e1d1c796ebc2408f2a226d8856d0",
+    "src/repopilot/migrations/cli.py": "840d143bef408780284930716cade474697404cbb45a7a8201b5a64e78b58fbc",
+    "src/repopilot/migrations/env.py": "64a7ec2773669b74025417b3c051b60f9e67f7d32298c2f356b0f2bd1c72758a",
+    "src/repopilot/migrations/versions/20260921_0001_legacy_baseline.py": "3dfffc8135ded11c8a11d1e27f8a0b5483c0942d0aa1685fd2ec3a8a42edcc67",
+    "src/repopilot/migrations/versions/20260921_0002_versioned_state.py": "b5f8e039dd081016975e4ddf589736893e03142803bba9d483dd44b6091698e1",
+    "src/repopilot/migrations/versions/20260921_0003_model_call_ledger.py": "e087287775e45729c56d6a0209416a046843ac228ac0c0c83af368bec1b640c8",
+    "src/repopilot/migrations/versions/20261019_0004_candidate_approval.py": "e41d4bba956b2e9c43a95a474c8bbfc1f6a8c7ff359967aa6ed02de2ee13ab2d",
+    "src/repopilot/migrations/versions/__init__.py": "968ff1d75b4c0d4a99457be06ea732cc5dcabd46db559eadae2673441531a3dc",
+    "src/repopilot/model_calls.py": "b52c4c69bbce8422519b5d1f83a86d55e5b794197bf7d02dfd61ff6d4aee2b04",
+    "src/repopilot/models.py": "2efc722076fd66cfe0f84633b404b9532a00c7dfac2306636ef70396d947a5fb",
+    "src/repopilot/policy_feedback.py": "e2767cff1f33150dbe840768df7323ad0605843e6f7c68ba16faa6cf44c1827a",
+    "src/repopilot/real_evaluation.py": "3baae81efc620e79411426dd96520e18ab53f6c343ddac6c7b91cdf238178d5f",
+    "src/repopilot/real_tasks.py": "dc80eb01899a4d40b9533092427b843ffedc3258a16642373dd7c99dd43ed2ef",
+    "src/repopilot/repository.py": "c64f34ff3748aee794341071b103a5e1c9f37270085dec71575918b20c713a43",
+    "src/repopilot/retrieval.py": "4ca70cc4733047f00ec7bc10e52932d031e1e6c5ff2b10189d8945db9dc65826",
+    "src/repopilot/sandbox.py": "ad511c156f8ed0b6675b23ccc25c285857d7cac9912517b49e15dd4f9cd29bf9",
+    "src/repopilot/security.py": "a5dd3440e858813f0ca56428daf225f736f6f2f6ebb087c0071886964a09fc0f",
+    "src/repopilot/worker.py": "05ca7db2fb3e4975e101bec91968373008cf179d7f0f2d5698a7fa0850a60441",
+    "tests/approval_helpers.py": "83c5b0082e7c267ba0329b1b95c9faa4bb846ab126ac8cb5ecf52905b6c1ea2f",
+    "tests/probes/approval_decide.py": "1b95dffe75b4f1267216bdb077f033dc1219e0d3fd5690983991a660678b69b9",
+    "tests/probes/ch02b_process.py": "1ff9fa8a2798c7a7d4786253a6d766f66a9859f169b3be4845dc0a759186cbdb",
+    "tests/test_acceptance.py": "6348e745af118f831493bdab27a594e6fc8d18cff1e9e18b771b79e5c33296f0",
+    "tests/test_approvals.py": "1b3db80fe8d749d3c08c36ab27ba0f813b41fcd2b1d58b998a556c0be6fc1266",
+    "tests/test_approvals_postgres.py": "2db8f23fbcc656bc2045175a02789b9b262c65830888650b4d4bf11808fb73b9",
+    "tests/test_candidates.py": "f994cda2b87923c1b5a84ad06db100b423ad6fde71d47b705e27ac540a0c5e66",
+    "tests/test_capabilities.py": "e055f5323ae3b5b9b7219d7958c9e13fda22cb25d04b554562c38c9c6bd3341e",
+    "tests/test_eval_report.py": "7ec3ed0aa5a9c6ded7299a068efeb079bf8df28f614876cbb6d6d154ce245d60",
+    "tests/test_eval_runtime.py": "47f688d76a3b7faccd7e7de137fd0baf2d8e6bc8aa0b8ae67e0a41c41da337cd",
+    "tests/test_evaluation.py": "6a51184b65054e9f78c20188d1a99cfc06effb38342891b6a4a8911e0c8d3fd0",
+    "tests/test_failure_analysis.py": "f1beb9ec7e16bf3cef8778d42d1792e37d0c3396419c85e2a70b5f36f0608493",
+    "tests/test_github.py": "633094987e4d0a741cd2c2830d53ca72d521fde287bd22a9cf816011fbf7b559",
+    "tests/test_graph.py": "b7258acba8c42bb3e38ea4ce13ddcf5f122e6ca19e128e9462c5e1b64d4610a1",
+    "tests/test_llm.py": "367e68d8a35ff31a7013d912f6d2fb42decdeb9186c4f380f76d15652c3e4f4f",
+    "tests/test_metrics.py": "d4980a8412bd38ba0029fe40aca4a4d215bbbce93aa716c121d3f44d1d48acd1",
+    "tests/test_migrations.py": "24aee84ff0fc10fafb67e75b4ecbecea4e74e5c045eec20208f05a60931776fe",
+    "tests/test_migrations_postgres.py": "9e0f3e751c469bd257e047bc06bea34145dacd56682242c71106695237b47629",
+    "tests/test_model_calls.py": "c137f53e16d12ced9df41b5533f64a500cbb3c9ab14c93872b7863ebcf878158",
+    "tests/test_model_calls_postgres.py": "8964bbe8565f8c95dd07b34b5e594cf306f8e4832dc45fc9115017025cabb2b8",
+    "tests/test_models.py": "623fa2873d9ce4766fb880b9b757e4725ae7330a36befd70112fe781f224b057",
+    "tests/test_policy_recovery_postgres.py": "5f70040a628cc302aa30fc8e5706a139a28d62836c0df21d7cdfa09b9e4c7db8",
+    "tests/test_real_evaluation.py": "bd08dea8f959fc7442adfba4901d19762a8e4a279ca71717be149dc0a4d380e5",
+    "tests/test_real_tasks.py": "e3fcd7b7af411acbb85e933176663c30e66a243b23c1b14b4e4a6ef377f12f38",
+    "tests/test_reliability.py": "9a350f14c43e63d9000665d4e7dbe858ac5f5aa0d2447684600a87439b9b731c",
+    "tests/test_retrieval.py": "c98daf71159a1d1558e51f1a3a10b0de313117619bc9bc9b66a8a183f122dc10",
+    "tests/test_runtime_boundaries.py": "851593259660fb519f96be7dcb30b958842120c41f6db476c660345cf2c8b791",
+    "tests/test_sandbox.py": "4b0c5e38ce9978cd545a815b7390c89b13823ac8dcce9a475a00dc813e165b54",
+    "tests/test_security.py": "1d330de080281b0b5935ff41c846ad6254cd2d023823b352d05cec8e2645fea6"
+  },
+  "tested_python_sources_match_workspace": true,
+  "additional_verification_inputs_sha256": {
+    "Dockerfile": "da2c54a1fda5f11bb8eb9be7cfd0f0908b118816f0a85f7ef6972d615126876c",
+    "Makefile": "f0fae9aaee6ffeebc480e193a9d4495db6b22318db62ece1ca1bb6288e2a6b1f",
+    "docker-compose.ch03a-test.yml": "142f929c04b0d98ba0114ec3cef0c6ae0234b73a154251804df2eaf27301dd33",
+    "scripts/ch03a_integration.sh": "29f6204a7e06bcd6b8ffe47fc94bfea759ea2c53515879f3cefd47f8c32f877c",
+    "scripts/approval_payload.py": "3a290cca77aeee08ef9b5462ec25e56daee76ed838bfcb92a2fbe683d2a4bf9f",
+    "scripts/smoke.sh": "dcd203f3f363036c439782a23b8891a296ef1cdc76b8d6d5382631eb790b38d8",
+    "scripts/recovery_smoke.sh": "6556c1cb39ca3b6be52b65059f3146951a176890f5ae08a303ca21e593760629",
+    "tests/coverage.ch03a.ini": "aa20b95aa39541441761763a497aa8d54a87691e37f9d086c2b6a4cd1330ed47",
+    "docs/evidence/2026-09-09-failure-ledger.json": "564d6b89ebb37040fe678e0e3267fe49820b61905c827201d8ee9ba405b7d0c0"
+  },
+  "compatibility": {
+    "approval_schema": "approval-v2",
+    "legacy_boolean_request_status": 422,
+    "legacy_checkpoint_status": 409,
+    "legacy_checkpoint_reason": "legacy_approval_requires_revalidation",
+    "legacy_action": "Cancel old task and create a new task for fresh tests."
+  }
+}
