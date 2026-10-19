@@ -384,7 +384,7 @@ CH-01A、CH-02B 已于 2026-10-19 完成本地验收，仍待对应 PR/合并处
   4. 上下文过期时重新读取后重提；纯策略违规只给允许范围内的修复建议，持续违规则停止。
 - **验收场景**：首次改测试被拒、第二次合法源文件修改成功；连续违规停止；预算耗尽时不额外调用；刷新后旧 expected-content 不可复用；错误摘要无敏感内容。
 - **交付**：规范化反馈模型、可观测计数、三类 Mock 场景及状态恢复测试。
-- **本轮验证**：[CH-02B 服务验收](docs/ch02b-verification-2026-10-19.md) 与 [公开计数证据](docs/evidence/2026-10-19-ch02b-verification.json)。`make ch02b-integration` 提供独立服务/旧版源码夹具和资源清理；专项 6/6、Mock 10/10、API smoke、Worker 审批重启通过。中途 checkpoint 的显式进程恢复与队列自动恢复分别陈述。
+- **本轮验证**：验收提交 `d931426`；[CH-02B 服务验收](docs/ch02b-verification-2026-10-19.md) 与 [公开计数证据](docs/evidence/2026-10-19-ch02b-verification.json)。`make ch02b-integration` 提供独立服务/旧版源码夹具和资源清理；专项 6/6、Mock 10/10、API smoke、Worker 审批重启通过。中途 checkpoint 的显式进程恢复与队列自动恢复分别陈述。
 - **范围边界**：零 SecurityError 不是必须实现的指标；不能通过静默丢弃非法 edits 后应用剩余修改来“修复”违规批次。
 
 ### CH-03：绑定审批证据与最终发布
@@ -1009,3 +1009,14 @@ smoke 使用已经运行的服务。若 `.env` 选择真实模型，应按 [READ
 - 兼容边界：新增工具只读取历史 JSON，修改范围不含在线编排、数据库迁移和真实模型评测行为。新测试保护观察分类、分母、未知根因和公开导出边界，不宣称已经修复历史候选或完成真实服务故障重放。
 - PR / 合并：本轮保存为本地提交，未推送或创建 PR；CH-01A 标为 VERIFIED，尚非 MERGED。若后续提交 PR，需说明分支基于尚待验收的 CH-02B，或将本轮独立提交移到合适基线后再提交。
 - 下一张建议：先完成 CH-02B 的隔离服务验收；跨项目质量评测可另选 CH-07A，再按 CH-07B/C 冻结开发/保留集。未自动启动下一张卡。
+
+### 2026-10-19 · CH-02B · 隔离服务验收收尾
+
+- 起始基线：干净的 `codex/ch-01a-failure-analysis@f27e847`，包含 CH-02B 原实现 `9032103`。创建本地分支 `codex/ch-02b-integration-validation`；没有覆盖父分支或未提交修改，CH-02A、CH-10 的实现已在基线内。
+- 验收提交：`d931426`。新增专属 Compose、`make ch02b-integration` 入口、测试构建阶段、硬退出/恢复进程夹具及 6 个服务测试；更新架构图、工作区能力、运行时说明与公开验证记录。默认 Docker 构建仍为生产运行镜像，显式 test target 才安装开发依赖。
+- 环境：Docker Engine 29.5.3、PostgreSQL 16.15、Redis 7.4 镜像、容器 Python 3.12.15、LangGraph 1.2.16、PostgreSQL saver 3.2.0；仅使用 Mock，模型凭据为空、GitHub 写入关闭。最初基础镜像 EOF 后重试构建成功，未调整用户全局 Docker 或网络配置。
+- 故障与兼容验证：拒绝在真实 PostgreSQL 提交后以 `os._exit(86)` 结束执行进程，新的进程显式接续同一图线程和调用账本；合法纠正、持续违规、预算耗尽、刷新后旧摘要及错误脱敏 5 项通过。由固定 `12b9e3d` 的旧 Worker/图源码生成的审批 checkpoint 能经当前 API/Worker 完成原任务，调用数仍为 3、测试没有重跑。
+- 全流程验证：最终实例 `repopilot_ch02b_20261019_68210` 的专项测试 6 passed / 0 skipped；容器内 Mock eval 10/10；API smoke 与实际 Worker 服务审批重启 smoke 通过，调用预留/成功均为 3、unknown 为 0、测试与 finalize 各一次。本地完整套件 154 passed / 9 skipped，80.78% coverage，lint、脚本语法、默认 Docker 构建、文档链接与来源摘要检查通过。离线跳过的 6 项服务测试已单独实跑，另 3 项 PostgreSQL 条件入口本轮未重复执行。
+- 证据与清理：[验证报告](docs/ch02b-verification-2026-10-19.md)、[计数/摘要 JSON](docs/evidence/2026-10-19-ch02b-verification.json)；原始报告在本地忽略目录 `reports/repopilot_ch02b_20261019_68210/`。专属容器、网络、PostgreSQL/workspace 数据卷按项目标签查询后确认均已移除，临时旧源码目录已清理；测试镜像和构建缓存保留，没有全局 prune。
+- 兼容边界：没有修改生产图路由、API 或数据库 schema。中途 checkpoint 是测试入口显式恢复，不是 Redis 消费崩溃后的自动重领；审批 checkpoint 的真实 Worker 重启另行实跑。旧版兼容针对固定源码与本轮依赖环境；仍需停止旧 Worker 后升级，不支持把新 `apply_policy` 中途 checkpoint 直接交给旧图。队列/fencing、候选冻结和写入事务边界仍按 CH-04、CH-03A/CH-05A 分别推进。
+- 状态与下一项：CH-02B 更新为 VERIFIED，尚未推送、创建 PR 或合并；当前分支继承 CH-01A，本地后续 PR 应明确基线和提交范围。下一项 P0 为 CH-03A（候选、测试、审批身份绑定），CH-07A 是可独立推进的质量数据方向；本轮未自动启动下一张卡。
