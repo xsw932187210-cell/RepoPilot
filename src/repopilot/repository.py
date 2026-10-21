@@ -107,12 +107,13 @@ class RepositoryContext:
         return f"{prefix[:prefix_budget]}{''.join(rendered_files)}"
 
 
-async def run_process(
+async def run_process_bytes(
     *args: str,
     cwd: Path | None = None,
     timeout_seconds: int = 120,
     env: dict[str, str] | None = None,
-) -> tuple[int, str, str]:
+    input_bytes: bytes | None = None,
+) -> tuple[int, bytes, bytes]:
     control = current_control()
     if control:
         timeout_seconds = control.timeout(timeout_seconds)
@@ -123,6 +124,7 @@ async def run_process(
             env=env,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            stdin=asyncio.subprocess.PIPE if input_bytes is not None else None,
             start_new_session=True,
         )
     )
@@ -138,8 +140,8 @@ async def run_process(
         if control:
             await control.track(resource)
             control.check()
-        stdout, stderr = await controlled(process.communicate(), timeout_seconds)
-        return process.returncode, stdout.decode(errors="replace"), stderr.decode(errors="replace")
+        stdout, stderr = await controlled(process.communicate(input_bytes), timeout_seconds)
+        return process.returncode, stdout, stderr
     finally:
         if process:
             try:
@@ -159,6 +161,18 @@ async def run_process(
                 ) from None
             if control and resource:
                 await control.track(resource, remove=True)
+
+
+async def run_process(
+    *args: str,
+    cwd: Path | None = None,
+    timeout_seconds: int = 120,
+    env: dict[str, str] | None = None,
+) -> tuple[int, str, str]:
+    code, stdout, stderr = await run_process_bytes(
+        *args, cwd=cwd, timeout_seconds=timeout_seconds, env=env
+    )
+    return code, stdout.decode(errors="replace"), stderr.decode(errors="replace")
 
 
 class WorkspaceManager:

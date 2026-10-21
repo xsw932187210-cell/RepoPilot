@@ -7,6 +7,7 @@ they never receive the stored artifact itself. Generation commits only publish c
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import io
 import json
@@ -23,7 +24,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-from repopilot.execution import drain_thread
+from repopilot.execution import current_control, drain_thread
 from repopilot.security import SecurityError, normalize_workspace_path
 
 MAX_ARTIFACT_BYTES = 100 * 1024 * 1024
@@ -94,20 +95,41 @@ def _path(raw: str) -> str:
 
 
 def _git(workspace: Path, *args: str, input_bytes: bytes | None = None) -> bytes:
-    result = subprocess.run(  # noqa: S603 -- argument array, no shell or model command.
-        ["git", *args],  # noqa: S607 -- same trusted PATH used by repository preparation.
-        cwd=workspace,
-        capture_output=True,
-        timeout=120,
-        input=input_bytes,
-        env={
-            **os.environ,
-            "GIT_TERMINAL_PROMPT": "0",
-            "GIT_CONFIG_NOSYSTEM": "1",
-            "GIT_CONFIG_GLOBAL": os.devnull,
-            "LC_ALL": "C",
-        },
-    )
+    environment = {
+        **os.environ,
+        "GIT_TERMINAL_PROMPT": "0",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "LC_ALL": "C",
+    }
+    control = current_control()
+    if control:
+        # Freeze runs in a joined thread. Execute its binary Git I/O on the same
+        # event loop as the other controlled process groups, preserving exact bytes.
+        from repopilot.repository import run_process_bytes
+
+        future = asyncio.run_coroutine_threadsafe(
+            run_process_bytes(
+                "git",
+                *args,
+                cwd=workspace,
+                timeout_seconds=120,
+                env=environment,
+                input_bytes=input_bytes,
+            ),
+            control.loop,
+        )
+        code, stdout, stderr = future.result()
+        result = subprocess.CompletedProcess(["git", *args], code, stdout, stderr)
+    else:
+        result = subprocess.run(  # noqa: S603 -- trusted argument array, no shell.
+            ["git", *args],  # noqa: S607 -- same trusted PATH as preparation.
+            cwd=workspace,
+            capture_output=True,
+            timeout=120,
+            input=input_bytes,
+            env=environment,
+        )
     if result.returncode not in ({0, 1} if args[0] == "diff" else {0}):
         raise SecurityError("Could not generate the complete candidate diff")
     return result.stdout

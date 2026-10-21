@@ -61,6 +61,7 @@ proved, the record stays pending; it does not become successful merely because a
 ## Resource and publication boundaries
 
 Subprocesses start new sessions; only the captured invocation's process group is killed.
+Candidate freezing routes its thread-based binary Git I/O through the same controlled runner.
 Docker containers use a fresh execution label and task label. The exact ID returned by `create`
 is persisted before `start`. Cancellation kills only that object, joins its SDK thread and checks
 removal. Containers continue using snapshots, no host mounts, disabled networking and the existing

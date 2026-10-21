@@ -490,3 +490,48 @@ async def test_stop_notifications_reuse_committed_event_ids(database):
     ids = [json.loads(call.args[1])["id"] for call in redis.publish.await_args_list]
     assert len(events) == 2
     assert ids == [events[0].id, events[1].id] * 2
+
+
+@pytest.mark.parametrize("external_abort", [False, True])
+async def test_frozen_candidate_git_uses_controlled_process_group(
+    tmp_path, monkeypatch, external_abort
+):
+    import signal
+
+    from repopilot.candidates import _git
+
+    entered, closed = asyncio.Event(), asyncio.Event()
+
+    async def communicate(input_bytes):
+        assert input_bytes == b"\x00\xff"
+        entered.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            closed.set()
+
+    process = SimpleNamespace(pid=43210, communicate=communicate, wait=AsyncMock(return_value=0))
+    launch = AsyncMock(return_value=process)
+    killed = []
+    monkeypatch.setattr("repopilot.repository.asyncio.create_subprocess_exec", launch)
+    monkeypatch.setattr(
+        "repopilot.repository.os.killpg", lambda pid, sig: killed.append((pid, sig))
+    )
+    control = ExecutionControl("freeze", 30)
+    with control.bind():
+        operation = asyncio.create_task(
+            control.run(
+                drain_thread(_git, tmp_path, "hash-object", "--stdin", input_bytes=b"\x00\xff")
+            )
+        )
+        await asyncio.wait_for(entered.wait(), 2)
+        if external_abort:
+            operation.cancel()
+        else:
+            control.stop()
+        with pytest.raises(asyncio.CancelledError if external_abort else ExecutionStopped):
+            await asyncio.wait_for(operation, 2)
+    assert closed.is_set() and killed == [(43210, signal.SIGKILL)]
+    assert launch.call_args.kwargs["start_new_session"]
+    assert control.resources == []
+    assert control.scope == ("attempt" if external_abort else "task")

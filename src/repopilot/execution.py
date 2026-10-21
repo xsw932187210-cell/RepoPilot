@@ -148,6 +148,9 @@ class ExecutionControl:
                 # A per-operation timeout may be shorter than the task deadline.
                 raise TimeoutError("execution_operation_timeout")
             raise ExecutionStopped(self.reason, self.scope)
+        except asyncio.CancelledError:
+            self.abort_attempt()
+            raise
         finally:
             signal.cancel()
             await asyncio.gather(signal, return_exceptions=True)
@@ -156,7 +159,7 @@ class ExecutionControl:
                 # CleanupFailed must override a stop signal: stopped is not confirmed.
                 try:
                     await join_task(task)
-                except asyncio.CancelledError:
+                except (asyncio.CancelledError, ExecutionStopped):
                     pass
 
 
