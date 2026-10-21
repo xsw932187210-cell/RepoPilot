@@ -1105,3 +1105,8 @@ smoke 使用已经运行的服务。若 `.env` 选择真实模型，应按 [READ
 
 - 用户随后要求推送；已推送 [codex/ch-03b-publication-reconciliation](https://github.com/xsw932187210-cell/RepoPilot/tree/codex/ch-03b-publication-reconciliation)，首次推送包含 `b1ce1bd` 及全部本地依赖历史，并设置 origin tracking。
 - 上述“未推送”是验收完成时的历史状态；当前为分支已推送、未创建 PR、未合并。CH-03B 保持 VERIFIED。此次仅同步分支与交付元数据，没有改动实现或重写历史评测结果。
+
+### 2026-10-22 · CH-03B · PR 交接
+
+- 用户授权创建 PR 后，已创建草稿 [PR #8](https://github.com/xsw932187210-cell/RepoPilot/pull/8)：base `main`，head `codex/ch-03b-publication-reconciliation@17c12e4`。包含 CH-02B/CH-01A/CH-03A/CH-05A/CH-03B 的未合并依赖历史，共 18 个提交。
+- PR 仍为 Draft/Open，未合并；CH-03B 保持 VERIFIED。原验收与真实评测口径不变。用户下一轮范围明确为 CH-06A，将从该实现建立独立分支。

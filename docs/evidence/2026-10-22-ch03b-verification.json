@@ -133,8 +133,12 @@
   "remote": {
     "branch_url": "https://github.com/xsw932187210-cell/RepoPilot/tree/codex/ch-03b-publication-reconciliation",
     "first_pushed_commit": "b1ce1bd",
+    "merged": false,
     "publisher_transport": "httpx.MockTransport",
-    "pull_request_created": false,
+    "pull_request_created": true,
+    "pull_request_creation_date": "2026-10-22",
+    "pull_request_state": "draft_open",
+    "pull_request_url": "https://github.com/xsw932187210-cell/RepoPilot/pull/8",
     "push_update_date": "2026-10-22",
     "pushed": true,
     "pushed_at_verification": false,

@@ -108,7 +108,7 @@ CLI 默认仅 GET 对账且不修改终态；显式继续只允许原任务仍�
 完整任务停止确认仍属 CH-06A；没有后台自动投递/自动重试，没有多 Worker ownership/fencing，
 SQL 与 GitHub 不是跨系统事务，base 检查也不与远端分支移动原子同步。
 
-## 待提交 PR 说明
+## PR 记录
 
 建议标题：Bind GitHub publication to approved artifacts and reconcile uncertain remote effects.
 
@@ -116,5 +116,5 @@ SQL 与 GitHub 不是跨系统事务，base 检查也不与远端分支移动原
 阶段 receipt，响应丢失后查原对象，分支冲突停止，PR 未定时禁止重复创建，并保留取消/基线变化后的效果。
 
 验证见上表。PR 应声明基于 `b7cf1c9` 的依赖栈。验收完成时仅有本地提交；同日用户要求同步后，
-已推送 [codex/ch-03b-publication-reconciliation](https://github.com/xsw932187210-cell/RepoPilot/tree/codex/ch-03b-publication-reconciliation)，首次推送包含 `b1ce1bd` 及其已提交依赖历史。尚未创建 PR 或合并；验收数字与源码身份保持不变。
+已推送 [codex/ch-03b-publication-reconciliation](https://github.com/xsw932187210-cell/RepoPilot/tree/codex/ch-03b-publication-reconciliation)，首次推送包含 `b1ce1bd` 及其已提交依赖历史。已创建草稿 [PR #8](https://github.com/xsw932187210-cell/RepoPilot/pull/8)，base 为 main，创建时 head 为 `17c12e4`，包含 18 个尚未合并的依赖提交；未合并。验收数字与源码身份保持不变。
 下一张可选 **CH-06A**，其 CH-09/CH-10/CH-03B 硬依赖已有实现与证据；本轮不执行。
