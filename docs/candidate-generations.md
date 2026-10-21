@@ -81,6 +81,8 @@ On Worker startup, `reconcile_staging()` scans running tasks. Before executing a
 also reconciles its stages. `GenerationCoordinator.recover(task_id)` takes the same writer lock,
 compares each retained journal to the committed operation and verifies complete artifacts. It
 persists a metadata-only `recovery.json` beside the journals and logs stage IDs/states, not source.
+Journal reads require a regular single-link file, valid staging schema/field types, and a bounded
+64 MiB metadata read. Invalid metadata remains classified as corrupt for operator inspection.
 
 | Observation | Classification | Action |
 | --- | --- | --- |

@@ -180,6 +180,8 @@ generation CAS/replay, and a pinned CH-03A approval upgrade, plus the same full 
 smoke checks. The dedicated test Compose file pins the previously verified Python base digest;
 `CH05A_PYTHON_IMAGE` can select another base explicitly. Source and tests are rebuilt and hashed.
 See [generation storage and recovery](docs/candidate-generations.md) for compatibility and limits.
+The [2026-10-21 verification record](docs/ch05a-verification-2026-10-21.md) documents the full
+229-test service run, source checks, faults and cleanup, including intermediate failures.
 
 After configuring an OpenAI-compatible model in the ignored `.env`, run `make eval-real` for a
 separately labelled model-quality report. See [docs/evaluation.md](docs/evaluation.md) for the
