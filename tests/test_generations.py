@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 
@@ -13,6 +14,7 @@ from repopilot.candidates import ArtifactStore, capture_manifest
 from repopilot.db import Database
 from repopilot.generations import GenerationConflict, GenerationCoordinator, SQLGenerationStore
 from repopilot.models import FileEdit, TaskStatus
+from repopilot.policy_feedback import content_sha256
 from repopilot.repository import WorkspaceManager
 from repopilot.security import SecurityError
 from repopilot.worker import Worker
@@ -295,3 +297,26 @@ async def test_corrupt_journal_types_are_retained_without_blocking_recovery(tmp_
     assert {item["state"] for item in reports} == {"committed", "corrupt"}
     assert path.exists()
     assert await coordinator.store.current(parent.task_id) == parent
+
+
+async def test_crlf_context_hash_and_next_generation_preserve_exact_bytes(tmp_path):
+    coordinator, parent, workspace, context, _ = await generation_case(tmp_path / "ws")
+    crlf = context["calculator.py"].replace("\n", "\r\n")
+    first = await coordinator.apply(
+        parent, [FileEdit(path="calculator.py", content=crlf)],
+        expected_contents=context, base_repository=workspace,
+    )
+    with coordinator.artifacts.materialize(first) as snapshot:
+        refreshed = coordinator.workspaces.inspect(snapshot, "calculator add", ["add"])
+        raw = (snapshot / "calculator.py").read_bytes()
+        assert refreshed.files["calculator.py"] == crlf
+        assert content_sha256(crlf) == hashlib.sha256(raw).hexdigest()
+    fixed = crlf.replace("return a - b", "return a + b")
+    second = await coordinator.apply(
+        first, [FileEdit(path="calculator.py", content=fixed)],
+        expected_contents=refreshed.files, base_repository=workspace,
+    )
+    with coordinator.artifacts.materialize(second) as snapshot:
+        assert (snapshot / "calculator.py").read_bytes() == fixed.encode("utf-8")
+    assert second.generation == 2
+    assert "return a - b" in (workspace / "calculator.py").read_text()

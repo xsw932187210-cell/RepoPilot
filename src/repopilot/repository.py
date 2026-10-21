@@ -242,7 +242,10 @@ class WorkspaceManager:
         contents: dict[str, str] = {}
         for relative, absolute in sorted(all_files):
             try:
-                content = absolute.read_text(encoding="utf-8")
+                # Intent hashes and descriptor writes compare exact UTF-8 bytes;
+                # universal newline translation would make CRLF context stale.
+                with absolute.open(encoding="utf-8", newline="") as source:
+                    content = source.read()
             except (OSError, UnicodeDecodeError):
                 continue
             contents[relative] = content
@@ -450,7 +453,8 @@ class WorkspaceManager:
                     "expected-absent target already exists",
                     policy_version=self.capability_policy.version,
                 )
-            previous = target.read_text(encoding="utf-8")
+            with target.open(encoding="utf-8", newline="") as source:
+                previous = source.read()
             if expected_contents is not None:
                 expected = expected_by_identity.get(normalized.identity)
                 if expected is None:

@@ -1,0 +1,16 @@
+# Optional local integration path: reuse dependencies, reinstall all current code.
+# The default CH-05A Compose build still uses the production Dockerfile.
+ARG DEPENDENCY_IMAGE
+FROM ${DEPENDENCY_IMAGE} AS runtime
+USER root
+WORKDIR /app
+COPY pyproject.toml README.md LICENSE ./
+COPY src ./src
+COPY tests ./tests
+COPY examples ./examples
+COPY evals ./evals
+COPY docs/evidence/2026-09-09-failure-ledger.json ./docs/evidence/2026-09-09-failure-ledger.json
+RUN pip install --no-deps .
+USER repopilot
+
+FROM runtime AS integration-test

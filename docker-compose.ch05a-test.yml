@@ -20,9 +20,11 @@ x-app: &app
   image: ${COMPOSE_PROJECT_NAME}-app:local
   build:
     context: .
+    dockerfile: ${CH05A_DOCKERFILE:-Dockerfile}
     target: runtime
     args:
       PYTHON_IMAGE: ${CH05A_PYTHON_IMAGE:-python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1}
+      DEPENDENCY_IMAGE: ${CH05A_DEPENDENCY_IMAGE:-}
   environment: *probe-environment
 
 services:
@@ -100,9 +102,11 @@ services:
     image: ${COMPOSE_PROJECT_NAME}-test:local
     build:
       context: .
+      dockerfile: ${CH05A_DOCKERFILE:-Dockerfile}
       target: integration-test
       args:
         PYTHON_IMAGE: ${CH05A_PYTHON_IMAGE:-python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1}
+        DEPENDENCY_IMAGE: ${CH05A_DEPENDENCY_IMAGE:-}
     command: ["python", "-m", "pytest", "tests/test_generations_postgres.py", "-q", "-s"]
     group_add: ["0"]
     environment:

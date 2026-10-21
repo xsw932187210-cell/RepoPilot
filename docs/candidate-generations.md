@@ -38,6 +38,8 @@ a database/process-restart guarantee.
 3. Materialize the verified parent into `tree/`. Validate the whole edit batch and its context
    before model writes. Descriptor-relative writes use `O_NOFOLLOW`, regular/single-link checks,
    expected bytes and exclusive creation where the trusted low-level API permits creation.
+   Context and preflight reads preserve UTF-8 newline bytes, including CRLF, so intent hashes
+   and raw-file freshness checks refer to the same content.
    The online generation protocol currently permits existing-file writes only.
 4. Verify the entire resulting tree against the parent plus the complete authorized edit set,
    including every unedited byte, path and mode. Build `tree.tar` and full Diff, then write the

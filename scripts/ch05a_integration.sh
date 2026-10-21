@@ -58,6 +58,12 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+if [ -n "${CH05A_DEPENDENCY_IMAGE:-}" ]; then
+  export CH05A_DOCKERFILE=Dockerfile.ch05a-cached
+  docker image inspect "$CH05A_DEPENDENCY_IMAGE" --format '{{json .Id}}' \
+    >"$report_root/dependency-image-id.json"
+fi
+
 # Only the trusted, pinned pre-CH-05A source is exposed to the legacy child.
 git archive 12b9e3d src | tar -x -C "$CH05A_LEGACY_ROOT"
 git archive a1e5f41 src | tar -x -C "$CH05A_APPROVAL_LEGACY_ROOT"
