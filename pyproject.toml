@@ -43,6 +43,7 @@ dev = [
 repopilot-worker = "repopilot.worker:main"
 repopilot-eval = "repopilot.evaluation:main"
 repopilot-migrate = "repopilot.migrations.cli:main"
+repopilot-publish = "repopilot.publication_cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/repopilot"]

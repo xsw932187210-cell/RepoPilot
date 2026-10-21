@@ -35,6 +35,7 @@ async def reset_owned_tables() -> None:
     try:
         async with engine.begin() as connection:
             for table in (
+                "publish_intents",
                 "generation_heads",
                 "candidate_generations",
                 "approval_decisions",

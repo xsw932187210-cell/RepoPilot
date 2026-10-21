@@ -18,12 +18,13 @@ from repopilot.candidates import ArtifactStore, Candidate, capture_manifest
 from repopilot.config import Settings
 from repopilot.events import EventBus, JobQueue
 from repopilot.generations import GenerationCoordinator, MemoryGenerationStore, SQLGenerationStore
-from repopilot.github import GitHubPublisher
+from repopilot.github import GitHubPublisher, PublishResult
 from repopilot.graph.state import RepoPilotState
 from repopilot.llm import AgentModel
 from repopilot.model_calls import ModelCallControlError
 from repopilot.models import CodeChangeOutput, FileEdit, PlanOutput, ReviewOutput, SandboxResult
 from repopilot.policy_feedback import normalized_policy_feedback, validate_modification_intent
+from repopilot.publication import PublicationStore
 from repopilot.repository import RepositoryContext, WorkspaceManager
 from repopilot.sandbox import DockerSandbox, LocalSandbox
 from repopilot.security import SecurityError
@@ -549,6 +550,7 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
             "human_approved": approved,
             "human_feedback": feedback,
             "approval_decision_id": str(decision.get("decision_id", "offline-evaluation")),
+            "publication_protocol_version": "publish-intent-v1",
             "status": "approved" if approved else "cancelled",
             "node_metrics": [node_metric("approval", duration_ms, state.get("iteration", 0))],
         }
@@ -563,29 +565,58 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
         artifacts.validate_edits(
             Candidate.model_validate(state["candidate"]), state.get("edits", [])
         )
-        edits = [FileEdit.model_validate(item) for item in state.get("edits", [])]
-        result = await deps.publisher.publish(
-            task_id=state["task_id"],
-            repository_url=state["repository_url"],
-            base_branch=state["base_branch"],
-            issue_title=state["issue_title"],
-            edits=edits,
-        )
+        reason = deps.publisher.disabled_reason(state["repository_url"])
+        if reason:
+            result = PublishResult(published=False, reason=reason)
+            if deps.approvals:
+                store = PublicationStore(deps.approvals.database, artifacts)
+                existing = await store.for_decision(
+                    state["task_id"], state.get("approval_decision_id", ""),
+                )
+                if existing:
+                    deps.publisher.store = store
+                    result = await deps.publisher.publish(intent_id=existing)
+        else:
+            if not deps.approvals:
+                raise ApprovalConflict("persistent_approval_required_for_publication")
+            if state.get("publication_protocol_version") != "publish-intent-v1":
+                raise ApprovalConflict("legacy_publication_requires_reconciliation")
+            store = PublicationStore(deps.approvals.database, artifacts)
+            intent = await store.ensure(
+                state["task_id"], state["approval_decision_id"],
+                state["candidate"]["candidate_id"],
+            )
+            deps.publisher.store = store
+
+            async def cancelled() -> bool:
+                return bool(deps.queue and await deps.queue.is_cancelled(state["task_id"]))
+
+            result = await deps.publisher.publish(
+                intent_id=intent.publish_intent_id, cancelled=cancelled,
+            )
+        receipt = result.receipt.model_dump(mode="json") if result.receipt else None
+        status = "completed"
+        if result.receipt and result.receipt.phase != "published":
+            status = "cancelled" if result.receipt.cancel_requested else "failed"
         duration_ms = elapsed_ms(started)
         await deps.emit(
             state,
             "finalize",
-            "Draft pull request created" if result.published else "Verified artifact is ready",
+            "Publication reconciled" if receipt else "Verified artifact is ready",
             {
                 "pull_request_url": result.pull_request_url,
                 "branch": result.branch,
                 "publish_reason": result.reason,
+                "publish_receipt": receipt,
             },
             duration_ms,
         )
         return {
-            "status": "completed",
+            "status": status,
             "pull_request_url": result.pull_request_url,
+            "publish_receipt": receipt,
+            "publish_reason": result.reason,
+            **({"error": result.reason} if status == "failed" else {}),
             "node_metrics": [node_metric("finalize", duration_ms, state.get("iteration", 0))],
         }
 

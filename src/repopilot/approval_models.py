@@ -58,6 +58,7 @@ class ApprovalDecision(BaseModel):
     decided_at: datetime
     dispatch_state: Literal["pending", "enqueued", "consumed", "blocked"]
     dispatch_error: str | None = None
+    publication_protocol_version: Literal["publish-intent-v1"] | None = None
 
     def resume_payload(self) -> dict[str, Any]:
         return {

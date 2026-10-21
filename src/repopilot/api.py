@@ -32,6 +32,7 @@ from repopilot.models import (
     TaskStatus,
     TaskView,
 )
+from repopilot.publication import PublicationStore, PublishReceipt
 from repopilot.security import (
     SecurityError,
     parse_test_command,
@@ -190,6 +191,16 @@ async def get_task_metrics(task_id: str, request: Request, _: Protected) -> Task
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     model_calls = await database.get_model_call_metrics(task_id)
     return summarize_task_metrics(task, model_calls)
+
+
+@app.get("/api/v1/tasks/{task_id}/publication", response_model=list[PublishReceipt])
+async def get_publication(task_id: str, request: Request, _: Protected) -> list[PublishReceipt]:
+    settings, database, _, _, _ = resources(request)
+    if await database.get_task(task_id) is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return await PublicationStore(
+        database, ArtifactStore(settings.workspace_root / ".artifacts"),
+    ).receipts(task_id)
 
 
 @app.get("/api/v1/tasks/{task_id}/events", response_model=list[EventView])

@@ -17,6 +17,7 @@ class RepoPilotState(TypedDict, total=False):
     candidate: dict[str, Any]
     test_evidence: dict[str, Any]
     approval_decision_id: str
+    publication_protocol_version: str
 
     plan: dict[str, Any]
     research_tree: list[str]
@@ -47,5 +48,7 @@ class RepoPilotState(TypedDict, total=False):
     human_approved: bool
     human_feedback: str
     pull_request_url: str | None
+    publish_receipt: dict[str, Any] | None
+    publish_reason: str | None
     status: str
     error: str

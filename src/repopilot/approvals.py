@@ -470,4 +470,9 @@ class ApprovalStore:
         from repopilot.generations import SQLGenerationStore
 
         await SQLGenerationStore(self.database).assert_current(current.candidate)
-        return decision
+        # Only an approval interrupt resumed by this protocol may start a new publication.
+        # Old already-approved/finalizing checkpoints may have sent untracked HTTP requests.
+        async with self.database.sessions() as session, session.begin():
+            row = await session.get(DecisionRecord, decision.decision_id)
+            row.payload = {**row.payload, "publication_protocol_version": "publish-intent-v1"}
+        return decision.model_copy(update={"publication_protocol_version": "publish-intent-v1"})

@@ -58,6 +58,8 @@ def result_summary(result: dict[str, Any]) -> dict[str, Any]:
         "generation": (result.get("candidate") or {}).get("generation"),
         "evidence_digest": (result.get("test_evidence") or {}).get("evidence_digest"),
         "approval_decision_id": result.get("approval_decision_id"),
+        "publish_receipt": result.get("publish_receipt"),
+        "publish_reason": result.get("publish_reason"),
     }
 
 
