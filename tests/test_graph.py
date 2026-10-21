@@ -6,7 +6,7 @@ import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 
-from repopilot.candidates import bound_resume
+from repopilot.candidates import ArtifactStore, Candidate, bound_resume
 from repopilot.config import Settings
 from repopilot.github import GitHubPublisher
 from repopilot.graph import GraphDependencies, build_graph
@@ -77,8 +77,13 @@ async def test_graph_repairs_demo_and_requires_approval(tmp_path: Path) -> None:
     )
     assert completed["status"] == "completed"
     assert completed["pull_request_url"] is None
-    fixed = (tmp_path / "workspaces" / "graph-e2e" / "calculator.py").read_text()
-    assert "return a + b" in fixed
+    with ArtifactStore(settings.workspace_root / ".artifacts").materialize(
+        Candidate.model_validate(completed["candidate"])
+    ) as snapshot:
+        assert "return a + b" in (snapshot / "calculator.py").read_text()
+    assert "return a - b" in (
+        settings.workspace_root / "graph-e2e" / "calculator.py"
+    ).read_text()
 
 
 @pytest.mark.asyncio

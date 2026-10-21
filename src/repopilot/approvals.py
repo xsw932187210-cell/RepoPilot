@@ -148,6 +148,9 @@ class ApprovalStore:
     ) -> None:
         self._validate_evidence(task_id, candidate, evidence)
         async with self.database.sessions() as session, session.begin():
+            from repopilot.generations import require_current
+
+            await require_current(session, task_id, candidate.candidate_id)
             await self._save_evidence(session, task_id, candidate, evidence)
 
     async def open_request(
@@ -167,6 +170,9 @@ class ApprovalStore:
         version = expected_version + 1
         summary = {**summary, "approval_id": approval_id, "approval_request_version": version}
         async with self.database.sessions() as session:
+            from repopilot.generations import require_current
+
+            await require_current(session, task_id, candidate.candidate_id)
             result = await session.execute(
                 update(TaskRecord)
                 .where(
@@ -331,6 +337,9 @@ class ApprovalStore:
                 raise ApprovalConflict("task_not_awaiting_approval")
             if task.state_version != request.request_version:
                 raise ApprovalConflict("stale_approval_version")
+            from repopilot.generations import require_current
+
+            await require_current(session, task_id, row.candidate_id)
             decision = ApprovalDecision(
                 decision_id=str(uuid.uuid4()),
                 approval_id=row.id,
@@ -430,6 +439,9 @@ class ApprovalStore:
         if task.state_version != decision.request_version + 2:
             raise ApprovalConflict("stale_approval_resume")
         async with self.database.sessions() as session, session.begin():
+            from repopilot.generations import require_current
+
+            await require_current(session, task.id, decision.candidate_id)
             outcome = await session.execute(
                 update(DecisionRecord)
                 .where(
@@ -455,4 +467,7 @@ class ApprovalStore:
             or resume != decision.resume_payload()
         ):
             raise ApprovalConflict("stale_approval_resume")
+        from repopilot.generations import SQLGenerationStore
+
+        await SQLGenerationStore(self.database).assert_current(current.candidate)
         return decision

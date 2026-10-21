@@ -1,6 +1,7 @@
 # Frozen candidates and bound approval decisions (CH-03A)
 
-The graph freezes repository contents before each test run. Tests receive a disposable
+The graph freezes the initial repository and each staged proposal before selecting its generation.
+Tests receive a disposable
 materialization of that artifact, and approval identifies the same candidate and evidence.
 The mutable workspace path is not an approval credential.
 
@@ -9,7 +10,8 @@ The mutable workspace path is not an approval credential.
 `ArtifactStore.freeze(workspace, task_id, base_sha, generation, policy_version)` returns
 `candidate-v1`. `base_sha` is the prepared Git HEAD recorded before edits.
 `materialize(candidate)` verifies and creates a temporary test tree; `read_diff(candidate)`
-returns the complete stored Diff. CH-05A staging will reuse this interface.
+returns the complete stored Diff. [CH-05A generation storage](candidate-generations.md) reuses this
+interface and commits a complete artifact before Test Runner can use it.
 
 History-free evaluation exports supply a trusted `base_repository` and the pinned buggy commit
 through the workspace adapter. Base tree/blobs are read there without adding Git metadata or
@@ -91,7 +93,8 @@ blocks pending/enqueued intents.
 CH-04A still owns automatic outbox dispatch, queue acknowledgements and recovery after dequeue.
 CH-04B owns fencing. A crash after task claim can strand a running task; there is no new watchdog.
 Artifact storage and SQL are not one transaction: freezing can leave an unreferenced bundle,
-but approval never references a partially published bundle.
+but approval never references a partially published bundle. CH-05A retains and reconciles staging
+journals and checks generation freshness while persisting evidence, approval and task results.
 
 `finalize` checks the artifact and that state edits match its bytes. Publisher still has its
 original edits/base-branch interface. Approved-base construction, remote reconciliation and

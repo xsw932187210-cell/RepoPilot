@@ -312,6 +312,7 @@ class Database:
         status: TaskStatus,
         result: dict[str, Any] | None | object = _UNCHANGED,
         error: str | None | object = _UNCHANGED,
+        expected_candidate_id: str | None = None,
     ) -> TaskView:
         if status not in ALLOWED_TASK_TRANSITIONS[expected_status]:
             raise InvalidTaskTransition(expected_status, status)
@@ -328,6 +329,10 @@ class Database:
             values["error"] = error
 
         async with self.sessions() as session:
+            if expected_candidate_id is not None:
+                from repopilot.generations import require_current
+
+                await require_current(session, task_id, expected_candidate_id)
             outcome = await session.execute(
                 update(TaskRecord)
                 .where(

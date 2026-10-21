@@ -6,7 +6,8 @@ from repopilot.approvals import ApprovalStore
 from repopilot.candidates import ArtifactStore
 from repopilot.config import Settings
 from repopilot.db import Database
-from repopilot.models import SandboxResult, TaskCreate, TaskStatus
+from repopilot.generations import GenerationCoordinator, SQLGenerationStore
+from repopilot.models import FileEdit, SandboxResult, TaskCreate, TaskStatus
 from repopilot.repository import WorkspaceManager
 
 
@@ -33,13 +34,19 @@ async def approval_case(database: Database, root: Path, *, ttl_seconds: int = 86
     manager = WorkspaceManager(settings)
     workspace = await manager.prepare(task.id, task.repository_url, task.base_branch)
     source = workspace / "calculator.py"
-    source.write_text(source.read_text().replace("return a - b", "return a + b"))
-    candidate = await ArtifactStore(root / ".artifacts").freeze(
-        workspace,
-        task_id=task.id,
-        base_sha=await manager.base_commit(workspace),
-        generation=1,
-        policy_version=manager.capability_policy.version,
+    before = source.read_text()
+    coordinator = GenerationCoordinator(
+        ArtifactStore(root / ".artifacts"), SQLGenerationStore(database), manager
+    )
+    baseline = await coordinator.initialize(
+        task.id, workspace, await manager.base_commit(workspace)
+    )
+    candidate = await coordinator.apply(
+        baseline, [FileEdit(
+            path="calculator.py", content=before.replace("return a - b", "return a + b"),
+            reason="fixture fix",
+        )],
+        expected_contents={"calculator.py": before}, base_repository=workspace,
     )
     # These store-level fixtures intentionally do not claim actual test execution.
     result = SandboxResult(command=["pytest"], exit_code=0, duration_ms=1, image_id="unit-fixture")

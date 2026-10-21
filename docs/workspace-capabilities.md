@@ -64,8 +64,8 @@ A denial produces `policy-feedback-v1`: a stable `reason_code`, a target path on
 matches a non-sensitive path in the readable context, `allowed_actions=["write"]`, a bounded list
 of exact editable paths, and fixed guidance. The exception message and rejected arbitrary path
 are never copied to the model, node event, or task error summary. A rejected batch is discarded in
-full; legal edits in that batch are not applied. The graph re-inspects the workspace before the
-next proposal, and a digest from the previous snapshot fails as `stale_content`.
+full; legal edits in that batch are not applied. The graph re-inspects its bound generation before
+the next proposal; a digest that differs from that generation fails as `stale_content`.
 
 `policy_retry_count` allows one correction for the entire task, not one per Coder iteration. It
 is checkpointed by the separate `apply_policy` node before the next `coder` call. A second denial
@@ -75,12 +75,11 @@ including the correction, use the existing CH-10 task-wide call ledger. If that 
 the controlled caller makes no transport request and the graph stops with
 `model_call_budget_exhausted`. The count is distinct from Coder iterations and provider retries.
 
-This is recovery from a policy denial, not a filesystem transaction: an external writer can still
-race after preflight, and an I/O failure during sequential write can leave a partial result.
-The checkpoint and workspace are also not one transaction. A crash after a successful write but
-before the `apply_policy` checkpoint may re-run preflight against changed bytes; CH-03A/CH-05A
-remain responsible for immutable candidate identity and atomic visible generations. CH-04B must
-add Worker ownership fencing before concurrent writers can be treated as safe.
+The low-level writer is still not a filesystem transaction. The online graph now writes private
+stages through [CH-05A generation storage](candidate-generations.md), so a later file failure
+cannot change the selected candidate. Exact committed-operation replay handles the graph
+checkpoint gap, while superseded parents/results are refused. External byte/link changes are
+detected and retained without blind rollback. Worker ownership fencing remains CH-04B.
 
 ## Verification
 

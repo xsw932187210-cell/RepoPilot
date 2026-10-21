@@ -12,8 +12,9 @@ from sqlalchemy import select
 from repopilot.api import app
 from repopilot.approval_models import evidence_identity
 from repopilot.approvals import ApprovalConflict, ApprovalStore, DecisionRecord, EvidenceRecord
-from repopilot.candidates import ArtifactStore, candidate_identity
+from repopilot.candidates import ArtifactStore, digest_json
 from repopilot.db import Database
+from repopilot.generations import SQLGenerationStore
 from repopilot.models import TaskStatus
 
 
@@ -229,6 +230,7 @@ async def test_old_request_cannot_approve_a_later_generation(database, tmp_path)
         generation=2,
         policy_version=view.candidate.policy_version,
     )
+    await SQLGenerationStore(database).commit(view.candidate, digest_json("test-next"), candidate)
     evidence = view.evidence.model_copy(
         update={
             "candidate_id": candidate.candidate_id,
@@ -252,8 +254,7 @@ async def test_old_request_cannot_approve_a_later_generation(database, tmp_path)
 async def test_failed_test_evidence_is_persisted_without_an_approval(database, tmp_path):
     _, view = await approval_case(database, tmp_path / "workspaces")
     store = ApprovalStore(database)
-    candidate = view.candidate.model_copy(update={"generation": 2})
-    candidate = candidate.model_copy(update={"candidate_id": candidate_identity(candidate)})
+    candidate = view.candidate
     evidence = view.evidence.model_copy(
         update={
             "candidate_id": candidate.candidate_id,

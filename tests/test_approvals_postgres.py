@@ -27,14 +27,14 @@ pytestmark = pytest.mark.skipif(not POSTGRES_URL, reason="isolated CH-03A Postgr
 
 
 async def database():
-    assert make_url(POSTGRES_URL).database == "repopilot_ch03a_test"
+    assert make_url(POSTGRES_URL).database in {"repopilot_ch03a_test", "repopilot_ch05a_test"}
     result = Database(POSTGRES_URL)
     await result.setup()
     return result
 
 
 async def test_postgres_previous_head_upgrade_preserves_tasks_and_events():
-    assert make_url(POSTGRES_URL).database == "repopilot_ch03a_test"
+    assert make_url(POSTGRES_URL).database in {"repopilot_ch03a_test", "repopilot_ch05a_test"}
     name = f"repopilot_ch03a_migration_{uuid.uuid4().hex}"
     admin = await asyncpg.connect(POSTGRES_URL.replace("+asyncpg", ""))
     url = make_url(POSTGRES_URL).set(database=name).render_as_string(hide_password=False)

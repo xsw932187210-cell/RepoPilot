@@ -26,6 +26,8 @@ known limitations, and acceptance criteria for the next iterations (Chinese).
 - Durable PostgreSQL checkpoints and `Command(resume=...)` human approval.
 - Frozen complete candidates, image/command-bound test evidence, versioned one-time approval
   decisions and durable retryable resume intents.
+- Private staged proposals, complete artifact generations selected by database CAS, retained
+  orphan journals and exact-operation replay after a generation/checkpoint handoff interruption.
 - Versioned application-schema migrations, optimistic task-state updates, and explicit result/event
   JSON versions.
 - Durable per-task model-call reservations, bounded provider retries/timeouts, conservative
@@ -172,6 +174,12 @@ Compose project, fixed Mock configuration and automatic project-scoped cleanup. 
 Run `make ch03a-integration` to additionally verify bound approvals, previous-head migration,
 opposite-decision concurrency, commit/process-exit recovery, real Redis connection failure and
 artifact corruption refusal. It also reruns policy probes, mock evaluation and restart smoke.
+
+Run `make ch05a-integration` for staged multi-file failure, retained orphan reconciliation,
+generation CAS/replay, and a pinned CH-03A approval upgrade, plus the same full regression and
+smoke checks. The dedicated test Compose file pins the previously verified Python base digest;
+`CH05A_PYTHON_IMAGE` can select another base explicitly. Source and tests are rebuilt and hashed.
+See [generation storage and recovery](docs/candidate-generations.md) for compatibility and limits.
 
 After configuring an OpenAI-compatible model in the ignored `.env`, run `make eval-real` for a
 separately labelled model-quality report. See [docs/evaluation.md](docs/evaluation.md) for the

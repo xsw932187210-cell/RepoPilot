@@ -2,7 +2,7 @@
 
 RepoPilot owns a small application schema and upgrades it with Alembic. The migration boundary is
 deliberately narrow: RepoPilot revisions may change `tasks`, `task_events`, model-call ledger
-tables, candidate/evidence/approval tables, and `alembic_version`; they do not rewrite LangGraph tables.
+tables, candidate/evidence/approval/generation tables, and `alembic_version`; they do not rewrite LangGraph tables.
 
 ## Ownership boundary
 
@@ -11,6 +11,7 @@ tables, candidate/evidence/approval tables, and `alembic_version`; they do not r
 | Task metadata, status, result, and event history | RepoPilot Alembic revisions under `src/repopilot/migrations/`; run `repopilot-migrate upgrade` |
 | Per-task model-call policy, reservations, attempts, outcomes, retry waits, and trusted usage | RepoPilot Alembic revision `20260921_0003`; initialized lazily for a task before its first controlled model request |
 | Candidate/artifact references, test evidence, approval versions, decisions and resume intents | RepoPilot Alembic revision `20261019_0004`; artifacts also require the shared workspace volume |
+| Append-only candidate generations and current complete-candidate pointer | RepoPilot Alembic revision `20261021_0005`; stage journals and artifact bytes remain on the shared volume |
 | LangGraph checkpoints | `langgraph-checkpoint-postgres`; the worker calls the provider-supported `AsyncPostgresSaver.setup()` entry point |
 | Redis queue, cancellation keys, locks, and Pub/Sub | Ephemeral coordination state; not part of a database migration |
 
@@ -26,6 +27,7 @@ separately.
 | `20260921_0002` | Adds optimistic task-state versioning and owned-JSON schema versions |
 | `20260921_0003` | Adds CH-10's per-task model-call budget and attempt ledger |
 | `20261019_0004` | Adds CH-03A's candidates, test evidence, approval requests and one-time decisions/resume intents |
+| `20261021_0005` | Adds CH-05A's generation records/current pointer; seeds existing explicit CH-03A approval bindings without retesting or editing artifacts |
 
 `Database.setup()` now runs the same upgrade path as the CLI. Compose also has a one-shot `migrate`
 service, and API/Worker startup waits for that service to finish successfully.
@@ -74,6 +76,14 @@ return `legacy_approval_requires_revalidation`; cancel/create a new task to reru
 intents commit with task CAS; an enqueue failure is explicit and retryable. This does not implement
 an automatic Outbox or ownership epoch. See [candidate and approval contracts](candidate-approvals.md).
 
+Revision `20261021_0005` adds `candidate_generations` and `generation_heads`. The latest explicit
+CH-03A approval binding seeds each existing task's head with its original candidate/generation;
+the migration never guesses from a mutable workspace or the latest failed test. Existing decisions,
+evidence and graph checkpoints are preserved. Unbound running checkpoints need cancellation and
+a fresh task for revalidation. New graph proposals require a current parent CAS; evidence,
+approval and final result writes check that generation. Stage reconciliation keeps incomplete,
+orphan and corrupt data for inspection. See [generation storage/recovery](candidate-generations.md).
+
 ## Task state contract
 
 Every task state update supplies the status and version that the caller observed. The database
@@ -108,7 +118,7 @@ For an existing deployment:
 2. Confirm no task is actively executing and take a database backup appropriate to the deployment.
 3. Deploy the new image and run exactly one migrator: `repopilot-migrate upgrade`. With Compose,
    `docker compose run --rm migrate` uses the same entry point.
-4. Verify `repopilot-migrate current` reports `20261019_0004`. Back up the artifact volume with SQL.
+4. Verify `repopilot-migrate current` reports `20261021_0005`. Back up the artifact volume with SQL.
 5. Start only the new API and Worker image, then run the normal smoke checks.
 
 A fresh `docker compose up --build -d` performs step 3 through the one-shot `migrate` service. Do

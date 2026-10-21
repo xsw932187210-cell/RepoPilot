@@ -10,13 +10,15 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.types import Command
 from redis.asyncio import Redis
+from sqlalchemy import select
 
 from repopilot.approval_models import TestEvidence
 from repopilot.approvals import ApprovalConflict, ApprovalStore
-from repopilot.candidates import Candidate
+from repopilot.candidates import ArtifactStore, Candidate
 from repopilot.config import Settings, get_settings
-from repopilot.db import Database, TaskStateConflict
+from repopilot.db import Database, TaskRecord, TaskStateConflict
 from repopilot.events import EventBus, JobQueue
+from repopilot.generations import GenerationConflict, GenerationCoordinator, SQLGenerationStore
 from repopilot.github import GitHubPublisher
 from repopilot.graph import GraphDependencies, build_graph
 from repopilot.graph.builder import TaskCancelled
@@ -53,6 +55,7 @@ def result_summary(result: dict[str, Any]) -> dict[str, Any]:
         "pull_request_url": result.get("pull_request_url"),
         "error": result.get("error"),
         "candidate_id": (result.get("candidate") or {}).get("candidate_id"),
+        "generation": (result.get("candidate") or {}).get("generation"),
         "evidence_digest": (result.get("test_evidence") or {}).get("evidence_digest"),
         "approval_decision_id": result.get("approval_decision_id"),
     }
@@ -89,6 +92,12 @@ class Worker:
                 reconciled,
             )
         call_control = ControlledModelCaller(ledger, policy)
+        generations = SQLGenerationStore(self.database)
+        recovered = await GenerationCoordinator(
+            ArtifactStore(self.settings.workspace_root / ".artifacts"), generations, self.workspaces
+        ).recover(task_id)
+        if recovered:
+            logger.info("Task %s staging reconciliation: %s", task_id, recovered)
         return GraphDependencies(
             settings=self.settings,
             model=build_agent_model(self.settings, call_control=call_control),
@@ -98,15 +107,33 @@ class Worker:
             events=self.events,
             queue=self.queue,
             approvals=self.approvals,
+            generations=generations,
         )
 
     async def run_forever(self) -> None:
+        await self.reconcile_staging()
         logger.info("RepoPilot worker is ready")
         while True:
             job = await self.queue.dequeue(wait_seconds=5)
             if job is None:
                 continue
             await self.handle(job)
+
+    async def reconcile_staging(self) -> dict[str, list[dict[str, Any]]]:
+        """Classify retained data on startup; never enqueue or adopt a candidate."""
+        async with self.database.sessions() as session:
+            task_ids = (await session.execute(
+                select(TaskRecord.id).where(TaskRecord.status == TaskStatus.RUNNING.value)
+            )).scalars().all()
+        coordinator = GenerationCoordinator(
+            ArtifactStore(self.settings.workspace_root / ".artifacts"),
+            SQLGenerationStore(self.database), self.workspaces,
+        )
+        reports = {}
+        for task_id in task_ids:
+            reports[task_id] = await coordinator.recover(task_id)
+            logger.info("Task %s startup staging reconciliation: %s", task_id, reports[task_id])
+        return reports
 
     async def handle(self, job: dict[str, Any]) -> None:
         task_id = str(job["task_id"])
@@ -185,6 +212,7 @@ class Worker:
                 status=final_status,
                 result=result_summary(result),
                 error=result.get("error"),
+                expected_candidate_id=(result.get("candidate") or {}).get("candidate_id"),
             )
             await self.events.publish(
                 task_id,
@@ -192,7 +220,7 @@ class Worker:
                 node="worker",
                 message=f"Task finished with status {final_status.value}",
             )
-        except TaskStateConflict as exc:
+        except (TaskStateConflict, GenerationConflict) as exc:
             logger.info("Discarding stale task state update: %s", exc)
         except TaskCancelled as exc:
             if active_task is not None and active_task.status is TaskStatus.RUNNING:

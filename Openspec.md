@@ -1,6 +1,6 @@
 # RepoPilot 项目规范与迭代验收
 
-> 更新日期：2026-10-19；本轮起始基线：`f27e847`；本轮 CH-02B 服务验收通过，尚有后续任务；最近完整真实模型评测：2026-09-09。
+> 更新日期：2026-10-21；本轮起始基线：`a1e5f41`；本轮 CH-05A 开发与验收中，尚有后续任务；最近完整真实模型评测：2026-09-09。
 > 本文是现有项目的规范入口，记录当前行为、证据和后续变更的验收标准。
 > 本次建立的是单文件规范，尚未接入 OpenSpec CLI，也不代表已建立其提案、归档或自动校验流程。
 > 规划版本：Roadmap v3。CH-01～CH-08、CH-21 为主题编号，具体开发选带字母的子任务；新增的上下文与历史案例探索按需启动。
@@ -120,14 +120,14 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 - 默认不允许新建文件。受信任 policy 如显式允许 create，还必须同时满足目录、扩展名、字节上限和调用方提供的 `expected_absent`，并使用排他创建避免静默覆盖。
 - `CodeChangeOutput-v2` 的每项在线写意图须携带精确路径、`action=write` 和当前内容 SHA-256；程序先验证意图，再由写边界执行全批预检。旧 `FileEdit` 的摘要字段保持可选以兼容直接调用/已有 artifact，但图入口强制要求。
 - 某项预检失败时不开始批次写入；拒绝转换为 `policy-feedback-v1` 的稳定 reason、受控路径和允许动作，不向 Coder 传异常原文。`apply_policy` 在下一次 Coder 请求前 checkpoint 全任务最多一次的 `policy_retry_count`；持续违规以 `policy_retry_exhausted` 停止，过期内容摘要不能在刷新后复用。
-- 实际写入为逐文件操作；通过预检不等于原子事务。外部进程在检查后改文件、写到一半发生 I/O 错误，仍可能产生竞态或部分写入。
+- 模型修改只写入新的私有 staging；整批文件、manifest 和完整 Diff 刷盘验证后，以数据库 CAS 选择完整代次，不覆盖原 checkout。第二个文件写失败只留下不可见的部分 stage，不改变 current generation。受支持 writer 由任务级 OS 文件锁串行化；描述符写入拒绝链接置换，整树摘要核对外部改动，失败保留现场且不盲目回滚。此边界不等于文件系统/数据库事务或 Worker fencing。
 - 真实评测仍注入更严格的 policy：只允许修改导出时已记录的 `thefuck/**/*.py`，不允许新路径，且独立验收 overlay 只在另一个全新工作区中加入。
 
-验证入口：[能力策略说明](docs/workspace-capabilities.md)、[test_capabilities.py](tests/test_capabilities.py)、[test_runtime_boundaries.py](tests/test_runtime_boundaries.py)、[test_reliability.py](tests/test_reliability.py)、[test_real_evaluation.py](tests/test_real_evaluation.py)。
+验证入口：[能力策略说明](docs/workspace-capabilities.md)、[候选代次契约](docs/candidate-generations.md)、[test_generations.py](tests/test_generations.py)、[test_capabilities.py](tests/test_capabilities.py)、[test_runtime_boundaries.py](tests/test_runtime_boundaries.py)、[test_reliability.py](tests/test_reliability.py)、[test_real_evaluation.py](tests/test_real_evaluation.py)。
 
 ### RP-04：测试、审查与返工
 
-- 测试前记录实际 base SHA，并冻结完整候选 artifact；测试只运行校验后的临时副本。候选、实际 Docker 镜像 ID、命令/策略版本、结果和时间形成 `test-evidence-v1`，失败运行也保留证据。展示 Diff 的截断不参与候选身份。
+- prepare 记录实际 base SHA 和 generation 0；apply_policy 完成暂存候选后提交新代次。检索、测试与审批固定读取图状态绑定的完整 artifact，测试只运行校验后的临时副本。候选、实际 Docker 镜像 ID、命令/策略版本、结果和时间形成 `test-evidence-v1`，失败运行也保留证据。展示 Diff 的截断不参与候选身份；旧图的证据、审批及最终结果不能提交到更新的代次。
 - 非空 Diff、测试退出码为零且未超时，是进入人工审批的确定性门槛；模型的错误同意不能覆盖失败的门槛。
 - 默认最多 2 轮 Coder 迭代。确定性失败在剩余预算内返工，预算用完仍未通过则结束为 `failed`。
 - 确定性门槛通过后，Reviewer 的中/高风险否决可在剩余迭代预算内触发返工；低风险否决或预算耗尽时将意见交给人工审批。
@@ -143,7 +143,8 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 - Compose 使用持久化 PostgreSQL checkpoint；审批恢复继续同一个图线程。
 - CH-02B 的 Coder 提案和 `apply_policy` 拒绝/计数分别 checkpoint；恢复后不清零全任务策略纠正次数，但 checkpoint 与文件写入不是事务，也不等于 CH-04B 的 Worker fencing。
 - 2026-10-19 的 CH-02B 验证策略拒绝提交后硬退出，再显式接续同一图线程及账本；旧审批由当时 Worker 恢复是历史证据。CH-03A 当前版要求冻结候选/证据，旧无绑定 checkpoint 明确拒绝，不自动补造审批；实际 Worker 重启保持同一个新审批对象。
-- 自有任务、事件、调用账本及 `candidates/test_evidence/approval_requests/approval_decisions` 走 Alembic 版本链；空库、精确旧无版本库、已版本化库用同一入口，未知结构拒绝自动 stamp。checkpoint 仍由 `AsyncPostgresSaver.setup()` 管理。
+- 自有任务、事件、调用账本、候选/证据/审批及 `candidate_generations/generation_heads` 走 Alembic 版本链；空库、精确旧无版本库、已版本化库用同一入口，未知结构拒绝自动 stamp。checkpoint 仍由 `AsyncPostgresSaver.setup()` 管理。
+- 暂存日志区分 writing/sealed/committed，Worker 启动及任务执行前核对 SQL，保留 incomplete/orphan/corrupt。恢复不自动接纳或清除文件，也不重新投递任务。数据库已提交而 checkpoint 未提交时，同一操作重放复用原代次；已被更新代次取代的操作拒绝。旧 CH-03A 有明确冻结审批绑定时可迁移原指针，无绑定的旧运行中 checkpoint 不从工作目录推断成功。
 - 审批决定、一次性请求消费、任务状态 CAS、待投递恢复意图和审计事件同事务提交；Redis 失败返回已保存的 pending 决定及重试入口。Worker 只使用数据库决定，不能由消息布尔值授权。`enqueued` 不是消费确认，尚无自动 Outbox 投递器。
 - 模型请求与数据库不是跨系统事务：预留先提交；恢复时，请求前崩溃留下的 `RESERVED` 和可能已发送的 `UNKNOWN` 都保守消耗预算，不当作免费重试。账本独立于 checkpoint，Worker 重启不清零。
 - Worker/API 的任务写入使用 expected status/version 的原子条件更新，过期 Worker 不能覆盖已变化的任务行；这只是应用状态 CAS，不是所有权 epoch，也不能撤销已经发生的工作区或外部副作用。
@@ -214,8 +215,8 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 | 缺口 | 当前表现 | 对应后续变更 |
 | --- | --- | --- |
 | 项目级权限适配 | 默认测试/构建/凭据受保护，create 关闭；特例目前由服务端 Python policy 注入，还没有版本化项目 manifest | CH-07A |
-| 预检后外部改写 / 写入中断 | 无文件锁或多文件回滚保证 | CH-05 |
-| 审批等待期间基线变化 | 测试与审批已有冻结候选/base SHA；publisher 仍读取当前分支，尚无发布意图/远端对账 | CH-03B（先完成 CH-05A） |
+| 任意外部 writer / 产物保留 | 已有私有暂存、OS 锁、完整代次 CAS 和改动检测；管理员可绕过应用边界，尚无回收/保留期策略 | CH-04B、CH-16 |
+| 审批等待期间基线变化 | 测试与审批已有冻结候选/base SHA；publisher 仍读取当前分支，尚无发布意图/远端对账 | CH-03B |
 | 队列出队后崩溃 / 锁到期 | 无自动回收或阻止过期 Worker 副作用的机制 | CH-04 |
 | 数据库与 Redis/事件/checkpoint 的交接 | 审批决定与 pending 意图已可靠保存并可显式重投；创建任务仍有交接窗口，消费无 ACK/自动找回 | CH-04A |
 | 取消与任务超时 | 对外状态和实际执行停止可能不同步 | CH-06 |
@@ -314,6 +315,10 @@ CH-01A、CH-02B、CH-03A 已于 2026-10-19 完成本地验收，仍待对应 PR/
 | 事件 | 单任务稳定顺序、持久化 ID、类型、关联尝试/候选、脱敏 payload；通知不是事实源 | CH-06B |
 
 候选存储接口由 CH-03A 定义：manifest/digest 由服务端对完整候选字节生成，候选记录绑定不可变 artifact 引用，测试和审批按该引用读取。CH-05A 实现 staging 与代次切换并复用同一接口；`current_generation` 只是当前选择指针，不改变旧审批所绑定的候选。CH-03B 必须在 CH-05A 后实现，发布只能读取获批引用，不能跟随最新指针。
+
+CH-05A 接口设计（2026-10-21，已实现、服务验收中）：新增 `candidate_generations` 追加记录和 `generation_heads` 当前指针，由 `20261021_0005` 迁移管理。`GenerationStore.commit(expected_parent, operation_id, candidate)` 在同一数据库事务内核对任务仍运行及父候选，再追加完整代次并 CAS 切换指针；相同操作只在该代次仍为当前时可重放。图状态中的 `candidate` 始终绑定完整代次，prepare 建立 generation 0，apply_policy 在私有 staging 中写入 generation N+1，test_runner 不再冻结可变工作目录。检索、测试、审批及发布前校验读取绑定 artifact；持久化测试证据、审批和最终结果时核对当前候选，拒绝旧图结果。
+
+暂存日志包含 task/operation/parent/candidate 与 writing/sealed/committed 状态；文件、manifest、目录先刷盘，再提交数据库指针。重启核对日志与数据库，将未完成、完整但未提交、已提交但日志未更新分别识别为 incomplete/orphan/committed，保留原文件，不自动接纳或删除。受支持内部 writer 使用任务级 OS 文件锁串行化；锁不是 Worker lease/epoch。检测外部改动、链接置换或摘要不一致时停止，不覆盖原工作目录，也不盲目回滚。升级仅为有 CH-03A 冻结审批绑定的任务回填指针；没有该绑定的旧运行中 checkpoint 必须重新验证。离线评测使用相同存储协议和进程内指针，不宣称数据库恢复能力。
 
 CH-03A 接口映射（2026-10-19，已实现并验收）：`ArtifactStore.freeze/materialize/read_diff` 保存 `sha256:<manifest_digest>` 引用；manifest 覆盖除根目录 `.git` 元数据以外的完整普通文件，包含原始字节摘要与文件权限，目录规范为 0755，拒绝链接与特殊文件。`candidate-v1` 绑定 base SHA、代次、能力策略和完整 Diff 摘要，`test-evidence-v1` 绑定镜像实际 ID、规范命令、运行策略、结果与时间。新增四张表由 `20261019_0004` 迁移建立；失败测试也保留候选与证据。
 
@@ -475,7 +480,7 @@ CH-03A 接口映射（2026-10-19，已实现并验收）：`ArtifactStore.freeze
 
 #### CH-05A：暂存候选与原子可见代次
 
-- **状态**：TODO。**优先级/规模**：P0 / L。**硬依赖**：CH-02A、CH-03A。
+- **状态**：IMPLEMENTED_UNVERIFIED。**优先级/规模**：P0 / L。**硬依赖**：CH-02A、CH-03A。
 - **入口**：`repository.py`、`graph/state.py`、`db.py`、`sandbox.py`。
 - **实施步骤**：
   1. 复用候选身份和 manifest，写入新的 staging 目录，不对当前已接受候选逐文件覆盖；确定目录/manifest 的完整写入与校验顺序。

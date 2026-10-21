@@ -1,4 +1,4 @@
-.PHONY: up down build logs test lint migration-test ch10-migration-test ch02b-integration ch03a-integration smoke smoke-recovery eval eval-real eval-real-reproduce eval-real-retrieval
+.PHONY: up down build logs test lint migration-test ch10-migration-test ch02b-integration ch03a-integration ch05a-integration smoke smoke-recovery eval eval-real eval-real-reproduce eval-real-retrieval
 
 up:
 	docker compose up --build -d
@@ -30,6 +30,9 @@ ch02b-integration:
 
 ch03a-integration:
 	./scripts/ch03a_integration.sh
+
+ch05a-integration:
+	./scripts/ch05a_integration.sh
 
 smoke:
 	./scripts/smoke.sh

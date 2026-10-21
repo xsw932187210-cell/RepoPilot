@@ -14,9 +14,10 @@ from pydantic import ValidationError
 
 from repopilot.approval_models import TestEvidence, evidence_identity
 from repopilot.approvals import ApprovalConflict, ApprovalStore
-from repopilot.candidates import ArtifactStore, Candidate
+from repopilot.candidates import ArtifactStore, Candidate, capture_manifest
 from repopilot.config import Settings
 from repopilot.events import EventBus, JobQueue
+from repopilot.generations import GenerationCoordinator, MemoryGenerationStore, SQLGenerationStore
 from repopilot.github import GitHubPublisher
 from repopilot.graph.state import RepoPilotState
 from repopilot.llm import AgentModel
@@ -89,6 +90,7 @@ class GraphDependencies:
     events: EventBus | None = None
     queue: JobQueue | None = None
     approvals: ApprovalStore | None = None
+    generations: SQLGenerationStore | MemoryGenerationStore | None = None
 
     async def emit(
         self,
@@ -110,20 +112,42 @@ class GraphDependencies:
                 payload=event_payload,
             )
 
-    async def ensure_active(self, state: RepoPilotState) -> None:
+    async def ensure_active(
+        self, state: RepoPilotState, *, check_generation: bool = True
+    ) -> None:
         if self.queue and await self.queue.is_cancelled(state["task_id"]):
             raise TaskCancelled("Task cancellation was requested")
+        if check_generation and self.generations and state.get("candidate"):
+            await self.generations.assert_current(Candidate.model_validate(state["candidate"]))
 
 
 def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
     artifacts = ArtifactStore(deps.settings.workspace_root / ".artifacts")
+    if deps.generations is None:
+        deps.generations = (
+            SQLGenerationStore(deps.approvals.database) if deps.approvals
+            else MemoryGenerationStore()
+        )
+    generations = GenerationCoordinator(artifacts, deps.generations, deps.workspaces)
+
+    def inspect_candidate(state: RepoPilotState, search_terms: list[str]) -> RepositoryContext:
+        candidate = Candidate.model_validate(state["candidate"])
+        with artifacts.materialize(candidate) as snapshot:
+            context = deps.workspaces.inspect(
+                snapshot, f"{state['issue_title']}\n{state['issue_body']}", search_terms,
+            )
+            if capture_manifest(snapshot, candidate.base_sha) != candidate.manifest:
+                raise SecurityError("Candidate materialization changed during inspection")
+        return context
 
     async def prepare(state: RepoPilotState) -> dict[str, Any]:
         started = time.perf_counter()
-        await deps.ensure_active(state)
+        await deps.ensure_active(state, check_generation=False)
         workspace = await deps.workspaces.prepare(
             state["task_id"], state["repository_url"], state["base_branch"]
         )
+        base_sha = await deps.workspaces.base_commit(workspace)
+        candidate = await generations.initialize(state["task_id"], workspace, base_sha)
         duration_ms = elapsed_ms(started)
         await deps.emit(
             state,
@@ -133,7 +157,8 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
         )
         return {
             "workspace": str(workspace),
-            "base_sha": await deps.workspaces.base_commit(workspace),
+            "base_sha": base_sha,
+            "candidate": candidate.model_dump(mode="json"),
             "status": "running",
             "iteration": 0,
             "node_metrics": [node_metric("prepare", duration_ms)],
@@ -160,11 +185,7 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
         started = time.perf_counter()
         await deps.ensure_active(state)
         plan = PlanOutput.model_validate(state["plan"])
-        context = deps.workspaces.inspect(
-            Path(state["workspace"]),
-            f"{state['issue_title']}\n{state['issue_body']}",
-            plan.search_terms,
-        )
+        context = inspect_candidate(state, plan.search_terms)
         retrieval = {
             "selected_files": list(context.files),
             "query_terms": context.query_terms,
@@ -213,11 +234,7 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
         context = repository_context_from_state(state, deps.settings.max_context_chars)
         plan = PlanOutput.model_validate(state["plan"])
         if state.get("iteration", 0) > 0 or state.get("policy_feedback") is not None:
-            context = deps.workspaces.inspect(
-                Path(state["workspace"]),
-                f"{state['issue_title']}\n{state['issue_body']}",
-                plan.search_terms,
-            )
+            context = inspect_candidate(state, plan.search_terms)
         model_feedback = list(state.get("reviewer_feedback", []))
         if state.get("policy_feedback") is not None:
             model_feedback.append(json.dumps(state["policy_feedback"], ensure_ascii=False))
@@ -279,15 +296,20 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
 
     async def apply_policy(state: RepoPilotState) -> dict[str, Any]:
         started = time.perf_counter()
-        await deps.ensure_active(state)
+        # A committed operation may be replayed after a checkpoint-write crash.
+        # The coordinator resolves that exact operation before checking its parent.
+        await deps.ensure_active(state, check_generation=False)
+        if not state.get("candidate"):
+            raise ApprovalConflict("legacy_approval_requires_revalidation")
+        parent = Candidate.model_validate(state["candidate"])
         context = repository_context_from_state(state, deps.settings.max_context_chars)
         changes = CodeChangeOutput.model_validate(state["pending_changes"])
         try:
             validate_modification_intent(changes, context)
-            iteration_changes = deps.workspaces.apply_edits(
-                Path(state["workspace"]),
-                changes.edits,
+            candidate = await generations.apply(
+                parent, changes.edits,
                 expected_contents=context.files,
+                base_repository=deps.workspaces.base_repository(Path(state["workspace"])),
             )
         except SecurityError as error:
             feedback = normalized_policy_feedback(error, context)
@@ -314,9 +336,12 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
             edit.path: edit for edit in map(FileEdit.model_validate, state.get("edits", []))
         }
         edits_by_path.update({edit.path: edit for edit in changes.edits})
+        iteration_changes = [
+            edit.path for edit in changes.edits if context.files.get(edit.path) != edit.content
+        ]
         changed_files = sorted(set(state.get("changed_files", [])) | set(iteration_changes))
-        diff = await deps.workspaces.diff(Path(state["workspace"]))
-        iteration = state.get("iteration", 0) + 1
+        diff = artifacts.read_diff(candidate).decode("utf-8", errors="replace")[:100_000]
+        iteration = candidate.generation
         duration_ms = elapsed_ms(started)
         await deps.emit(
             state,
@@ -332,6 +357,7 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
         )
         return {
             **context_state(context),
+            "candidate": candidate.model_dump(mode="json"),
             "edits": [edit.model_dump() for edit in edits_by_path.values()],
             "changed_files": changed_files,
             "diff": diff,
@@ -350,16 +376,10 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
     async def test_runner(state: RepoPilotState) -> dict[str, Any]:
         started = time.perf_counter()
         await deps.ensure_active(state)
-        candidate = await artifacts.freeze(
-            Path(state["workspace"]),
-            task_id=state["task_id"],
-            base_sha=state["base_sha"],
-            generation=state.get("iteration", 0),
-            policy_version=state.get("capability_policy_version", "legacy"),
-            base_repository=deps.workspaces.base_repository(Path(state["workspace"])),
-        )
+        candidate = Candidate.model_validate(state["candidate"])
         with artifacts.materialize(candidate) as snapshot:
             result = await deps.sandbox.run(snapshot, state["test_command"])
+        await deps.generations.assert_current(candidate)
         evidence = TestEvidence(
             evidence_digest="",
             candidate_id=candidate.candidate_id,

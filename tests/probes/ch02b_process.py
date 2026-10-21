@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import json
 import os
+from pathlib import Path
 
 
 async def run(args: argparse.Namespace) -> None:
@@ -26,7 +27,7 @@ async def run(args: argparse.Namespace) -> None:
         model_max_calls=2 if args.scenario == "budget" else 8,
     )
     assert make_url(settings.database_url).database in {
-        "repopilot_ch02b_test", "repopilot_ch03a_test",
+        "repopilot_ch02b_test", "repopilot_ch03a_test", "repopilot_ch05a_test",
     }
     database = Database(settings.database_url)
     redis = Redis.from_url(settings.redis_url)
@@ -104,6 +105,12 @@ async def run(args: argparse.Namespace) -> None:
             snapshot = await graph.aget_state(config)
             assert snapshot.values["policy_retry_count"] == 1
             injected.old_digest = content_sha256(snapshot.values["research_files"]["calculator.py"])
+            if args.scenario == "stale":
+                # The original checkout is no longer the read/write view. A proposal
+                # based on its external edits must not match the frozen generation.
+                injected.old_digest = content_sha256(
+                    (Path(snapshot.values["workspace"]) / "calculator.py").read_text()
+                )
             result = await graph.ainvoke(None, config=config, durability="sync")
             interrupts = result.get("__interrupt__", [])
             summary = result_summary(result)

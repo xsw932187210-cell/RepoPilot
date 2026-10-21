@@ -7,7 +7,7 @@ import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 
-from repopilot.candidates import bound_resume
+from repopilot.candidates import ArtifactStore, Candidate, bound_resume
 from repopilot.config import Settings
 from repopilot.db import Database
 from repopilot.events import JobQueue
@@ -28,7 +28,7 @@ from repopilot.models import (
 from repopilot.policy_feedback import content_sha256, normalized_policy_feedback
 from repopilot.repository import RepositoryContext, WorkspaceManager
 from repopilot.sandbox import DockerSandbox, LocalSandbox
-from repopilot.security import CapabilityAction, CapabilityError, CapabilityReason
+from repopilot.security import CapabilityAction, CapabilityError, CapabilityReason, SecurityError
 from repopilot.worker import result_summary
 
 
@@ -268,7 +268,11 @@ async def test_tool_policy_rejection_gets_one_atomic_coder_retry(tmp_path: Path)
     assert any('"reason_code": "write_denied"' in item for item in model.feedback[1])
     assert result["policy_feedback"] is None
     workspace = tmp_path / "workspaces" / "policy-retry"
-    assert "return a + b" in (workspace / "calculator.py").read_text(encoding="utf-8")
+    with ArtifactStore(workspace.parent / ".artifacts").materialize(
+        Candidate.model_validate(result["candidate"])
+    ) as snapshot:
+        assert "return a + b" in (snapshot / "calculator.py").read_text(encoding="utf-8")
+    assert "return a - b" in (workspace / "calculator.py").read_text(encoding="utf-8")
     assert "invalid test rewrite" not in (workspace / "tests" / "test_calculator.py").read_text(
         encoding="utf-8"
     )
@@ -511,19 +515,19 @@ class ExternalWriteAfterDenial(WorkspaceManager):
 
 
 @pytest.mark.asyncio
-async def test_refreshed_context_rejects_old_expected_content_digest(tmp_path: Path) -> None:
+async def test_external_write_to_context_materialization_stops_without_overwriting_source(
+    tmp_path: Path,
+) -> None:
     model = StaleAfterRefreshModel()
     deps = dependencies(tmp_path, model)
     deps.workspaces = ExternalWriteAfterDenial(deps.settings)
-    result = await build_graph(deps, InMemorySaver()).ainvoke(
-        graph_input("stale-policy-context"),
-        config={"configurable": {"thread_id": "stale-policy-context"}},
-    )
-    assert result["status"] == "failed"
-    assert result["policy_feedback"]["reason_code"] == "stale_content"
-    assert result["policy_retry_count"] == 1
+    with pytest.raises(SecurityError, match="changed during inspection"):
+        await build_graph(deps, InMemorySaver()).ainvoke(
+            graph_input("stale-policy-context"),
+            config={"configurable": {"thread_id": "stale-policy-context"}},
+        )
     source = tmp_path / "workspaces" / "stale-policy-context" / "calculator.py"
-    assert "# external writer" in source.read_text(encoding="utf-8")
+    assert "# external writer" not in source.read_text(encoding="utf-8")
     assert "return a - b" in source.read_text(encoding="utf-8")
 
 

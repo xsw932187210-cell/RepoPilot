@@ -12,6 +12,7 @@ import pytest
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from sqlalchemy.engine import make_url
 
+from repopilot.candidates import ArtifactStore, Candidate
 from repopilot.db import Database
 from repopilot.models import TaskCreate, TaskStatus
 
@@ -45,7 +46,9 @@ async def child(phase: str, scenario: str, task_id: str) -> int:
 
 
 async def database() -> Database:
-    assert make_url(POSTGRES_URL).database in {"repopilot_ch02b_test", "repopilot_ch03a_test"}, (
+    assert make_url(POSTGRES_URL).database in {
+        "repopilot_ch02b_test", "repopilot_ch03a_test", "repopilot_ch05a_test",
+    }, (
         "The CH-02B probe refuses non-dedicated databases"
     )
     db = Database(POSTGRES_URL)
@@ -141,7 +144,11 @@ async def test_postgres_policy_correction_survives_process_exit(scenario: str) -
         assert tests.read_bytes() == original_tests
         if scenario in {"once", "redaction"}:
             assert recovered.status is TaskStatus.AWAITING_APPROVAL
-            assert "return a + b" in source.read_text()
+            current_state = await snapshot(row)
+            candidate = Candidate.model_validate(current_state["candidate"])
+            with ArtifactStore(workspace.parent / ".artifacts").materialize(candidate) as tree:
+                assert "return a + b" in (tree / "calculator.py").read_text()
+            assert "return a - b" in source.read_text()
             assert recovered.result["test_result"]["exit_code"] == 0
             assert recovered.result["test_result"]["timed_out"] is False
             events = await db.list_events(row.id)

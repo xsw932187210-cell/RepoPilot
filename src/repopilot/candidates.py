@@ -2,7 +2,7 @@
 
 Only repository contents are captured (.git metadata is excluded). Reads verify both
 the manifest and every archived byte. Test runners receive disposable materializations;
-they never receive the stored artifact itself. CH-05A can reuse this interface for staging.
+they never receive the stored artifact itself. Generation commits only publish complete bundles.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ import subprocess
 import tarfile
 import tempfile
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +37,22 @@ def digest_json(value: Any) -> str:
 
 def canonical_json(value: Any) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
+
+
+def sync_directory(path: Path) -> None:
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def capture_manifest(workspace: Path, base_sha: str) -> dict[str, Any]:
+    try:
+        entries, _ = _capture(workspace)
+    except OSError as error:
+        raise SecurityError("Candidate tree changed or contains an unsafe path") from error
+    return {"schema_version": "manifest-v1", "base_sha": base_sha, "entries": entries}
 
 
 class Candidate(BaseModel):
@@ -252,6 +268,7 @@ class ArtifactStore:
         generation: int,
         policy_version: str,
         base_repository: Path | None = None,
+        staging: Path | None = None,
     ) -> Candidate:
         return await asyncio.to_thread(
             self._freeze,
@@ -261,6 +278,7 @@ class ArtifactStore:
             generation,
             policy_version,
             base_repository or workspace,
+            staging,
         )
 
     def _freeze(
@@ -271,6 +289,7 @@ class ArtifactStore:
         generation: int,
         policy_version: str,
         base_repository: Path,
+        staging: Path | None = None,
     ) -> Candidate:
         if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", base_sha):
             raise SecurityError("An actual base commit is required to freeze a candidate")
@@ -280,11 +299,17 @@ class ArtifactStore:
         self.root.mkdir(parents=True, exist_ok=True)
         if self.root.is_symlink():
             raise SecurityError("Artifact storage cannot be a symlink")
-        with tempfile.TemporaryDirectory(dir=self.root) as temporary:
+        sync_directory(self.root.parent)
+        temporary_context = (
+            nullcontext(staging) if staging is not None
+            else tempfile.TemporaryDirectory(dir=self.root)
+        )
+        with temporary_context as temporary:
             staging = Path(temporary)
+            if staging.is_symlink() or not staging.is_dir():
+                raise SecurityError("Artifact staging must be a private directory")
             bundle = staging / "bundle"
             bundle.mkdir()
-            (bundle / "manifest.json").write_bytes(canonical_json(manifest))
             with tarfile.open(bundle / "tree.tar", "w") as archive:
                 for entry in entries:
                     info = tarfile.TarInfo(entry["path"])
@@ -317,6 +342,13 @@ class ArtifactStore:
                 "tree",
             )
             (bundle / "full.diff").write_bytes(diff)
+            # Manifest is the last bundle file. Durable bytes precede the DB pointer;
+            # this is not a transaction spanning the filesystem and database.
+            (bundle / "manifest.json").write_bytes(canonical_json(manifest))
+            for name in ("tree.tar", "full.diff", "manifest.json"):
+                with (bundle / name).open("rb") as file:
+                    os.fsync(file.fileno())
+            sync_directory(bundle)
             candidate = Candidate(
                 candidate_id="",
                 task_id=task_id,
@@ -343,6 +375,10 @@ class ArtifactStore:
                     self.read_diff(candidate)
                     with self.materialize(candidate):
                         pass
+            sync_directory(self.root)
+            self.read_diff(candidate)
+            with self.materialize(candidate):
+                pass
         return candidate
 
     def _bundle(self, candidate: Candidate) -> Path:
@@ -375,15 +411,20 @@ class ArtifactStore:
 
     @contextmanager
     def materialize(self, candidate: Candidate) -> Iterator[Path]:
-        bundle = self._bundle(candidate)
         with tempfile.TemporaryDirectory(prefix="repopilot-candidate-") as directory:
             root = Path(directory)
-            try:
-                with tarfile.open(bundle / "tree.tar") as archive:
-                    _extract(archive, root, candidate.manifest["entries"])
-            except tarfile.TarError as error:
-                raise SecurityError("Artifact archive is corrupt") from error
+            self.extract_to(candidate, root)
             yield root
+
+    def extract_to(self, candidate: Candidate, root: Path) -> None:
+        bundle = self._bundle(candidate)
+        if root.is_symlink() or not root.is_dir() or any(root.iterdir()):
+            raise SecurityError("Materialization requires an empty private directory")
+        try:
+            with tarfile.open(bundle / "tree.tar") as archive:
+                _extract(archive, root, candidate.manifest["entries"])
+        except (OSError, tarfile.TarError) as error:
+            raise SecurityError("Artifact archive is corrupt") from error
 
     def validate_edits(self, candidate: Candidate, edits: list[dict]) -> None:
         with self.materialize(candidate) as root:

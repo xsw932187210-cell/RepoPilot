@@ -59,15 +59,20 @@ Every graph node is checkpointed by `AsyncPostgresSaver`. The stable `graph_thre
 the task record is the recovery cursor. Approval resumes the same thread with
 `Command(resume=...)`; it does not rebuild the workflow from scratch.
 
-Before tests, `ArtifactStore` freezes complete bytes/modes and base SHA. Tests, Reviewer context
+`prepare` freezes generation 0; `apply_policy` writes a private stage, verifies all bytes/modes
+and selects the complete artifact through database CAS. It leaves the original checkout intact.
+Tests, Reviewer context
 and the versioned human decision refer to that candidate and evidence digest. Decision, task CAS,
 audit event and pending resume intent commit together. Redis delivery failures remain visible and
 can be explicitly retried; Worker resolves the decision from SQL rather than message booleans.
 Unbound legacy approvals require a new task/retest. See [candidate and approval contracts](candidate-approvals.md).
+Worker startup and task entry classify retained stages without adopting/deleting them. Exact
+operation replay handles the generation/checkpoint commit gap; superseded operations and stale
+evidence/approval/results are rejected. See [candidate generations](candidate-generations.md).
 Automatic queue recovery and approved-base publication still belong to CH-04A/CH-03B.
 
 When deterministic validation fails, or when the reviewer reports a concrete medium/high-risk
-finding, the coder refreshes repository context from the already modified workspace before
+finding, the coder refreshes repository context from the bound complete generation before
 applying feedback. A low-risk or evidence-only reviewer concern goes directly to HITL; after one
 review-driven remediation, the next candidate is also escalated. Previous edits remain
 accumulated in state, and the configured maximum iteration count prevents an unbounded agent loop.
