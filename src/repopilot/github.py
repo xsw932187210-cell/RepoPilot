@@ -165,6 +165,10 @@ class _Publication:
             return True
         return False
 
+    async def unknown(self, reason: str, **changes: Any) -> None:
+        requested = self.receipt.cancel_requested or bool(self.cancelled and await self.cancelled())
+        await self.save(phase="unknown", reason=reason, cancel_requested=requested, **changes)
+
     async def observe_base(self) -> bool:
         data = await self.get(f"git/ref/heads/{quote(self.intent.base_branch, safe='/')}")
         if not isinstance(data, dict) or not re.fullmatch(
@@ -196,6 +200,14 @@ class _Publication:
             return False
         return await self.observe_base()
 
+    async def settle(self) -> bool:
+        # Cancellation and base movement are independent facts. Finish the read-only
+        # checks for a possibly sent request before stopping further writes.
+        base_valid = await self.observe_base()
+        if await self.stop_for_cancel():
+            return False
+        return base_valid
+
     async def step(
         self,
         name: str,
@@ -213,7 +225,7 @@ class _Publication:
                 "unknown",
                 "confirmed",
             }:
-                await self.save(phase="unknown", reason="remote_pr_outcome_unknown")
+                await self.unknown("remote_pr_outcome_unknown")
                 return False
             if self.receipt.steps.get(name) == "confirmed":
                 raise PublicationConflict("confirmed_remote_target_missing")
@@ -232,17 +244,15 @@ class _Publication:
                     remote = self.validate_pr(response.json())
                     await self.save(remote_ids={**self.receipt.remote_ids, **remote})
             except (httpx.HTTPError, ValueError):
-                await self.save(
-                    phase="unknown",
+                await self.unknown(
+                    "remote_request_outcome_unknown",
                     steps={**self.receipt.steps, name: "unknown"},
-                    reason="remote_request_outcome_unknown",
                 )
             found = await lookup()
             if found is None:
-                await self.save(
-                    phase="unknown",
+                await self.unknown(
+                    "remote_request_outcome_unknown",
                     steps={**self.receipt.steps, name: "unknown"},
-                    reason="remote_request_outcome_unknown",
                 )
                 return False
         await self.save(
@@ -250,9 +260,7 @@ class _Publication:
             remote_ids={**self.receipt.remote_ids, **found},
             reason=None,
         )
-        if await self.stop_for_cancel():
-            return False
-        return await self.observe_base()
+        return await self.settle()
 
     async def blob(self, sha: str, content: bytes) -> dict | None:
         data = await self.get(f"git/blobs/{sha}")
@@ -412,9 +420,9 @@ class _Publication:
                     )
                 elif status == "confirmed":
                     raise PublicationConflict("confirmed_remote_target_missing")
-            if await self.stop_for_cancel():
+            if not self.receipt.steps and await self.stop_for_cancel():
                 return
-            if not await self.observe_base():
+            if not await self.settle():
                 return
             if self.reconcile_only:
                 complete = all(self.receipt.steps.get(name) == "confirmed" for name in lookups)
@@ -471,11 +479,8 @@ class _Publication:
                 return
             await self.save(phase="published", step=None, reason=None)
         except RemoteUnknown as error:
-            requested = self.receipt.cancel_requested or bool(
-                self.cancelled and await self.cancelled()
-            )
-            await self.save(phase="unknown", reason=str(error), cancel_requested=requested)
+            await self.unknown(str(error))
         except PublicationConflict as error:
             await self.save(phase="blocked", reason=error.code)
         except (KeyError, TypeError, AttributeError, ValueError):
-            await self.save(phase="unknown", reason="remote_response_invalid")
+            await self.unknown("remote_response_invalid")

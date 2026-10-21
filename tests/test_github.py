@@ -323,3 +323,52 @@ async def test_successful_effect_with_lost_response_is_reconciled_in_same_run(ca
     assert lost and result.published and result.receipt.phase == "published"
     assert server.posts["blob"] == len(server.state["blobs"])
     assert all(server.posts[name] == 1 for name in ("tree", "commit", "ref", "pr"))
+
+
+@pytest.mark.parametrize("stage", ["ref", "pr"])
+async def test_simultaneous_cancel_and_base_movement_preserves_both_facts(case, stage):
+    _, _, _, intent, _, server, publisher = case
+    cancel = False
+
+    async def cancelled():
+        return cancel
+
+    async def after_write(observed):
+        nonlocal cancel
+        if observed == stage:
+            cancel = True
+            server.state["base"] = "f" * 40
+
+    server.after_write = after_write
+    result = await publisher.publish(intent_id=intent.publish_intent_id, cancelled=cancelled)
+    assert result.receipt.cancel_requested and result.receipt.requires_revalidation
+    assert result.receipt.phase == "cancelled"
+    assert "f" * 40 in result.receipt.observed_base_shas
+    assert result.published == (stage == "pr")
+    assert server.posts["pr"] == (1 if stage == "pr" else 0)
+
+
+async def test_cancel_remains_sticky_when_lost_pr_response_is_followed_by_empty_lookup(case):
+    _, settings, store, intent, _, server, _ = case
+    cancel = False
+
+    async def cancelled():
+        return cancel
+
+    async def transport(request):
+        nonlocal cancel
+        response = await server(request)
+        if request.method == "POST" and request.url.path.endswith("/pulls"):
+            cancel, server.hide_pr = True, True
+            raise httpx.ReadTimeout(
+                "Applied; response lost and lookup not yet visible", request=request
+            )
+        return response
+
+    publisher = GitHubPublisher(settings, httpx.MockTransport(transport), store=store)
+    result = await publisher.publish(intent_id=intent.publish_intent_id, cancelled=cancelled)
+    assert result.receipt.phase == "unknown" and result.receipt.cancel_requested
+    cancel, server.hide_pr = False, False
+    result = await publisher.publish(intent_id=intent.publish_intent_id, cancelled=cancelled)
+    assert result.published and result.receipt.phase == "cancelled"
+    assert server.posts["pr"] == 1
