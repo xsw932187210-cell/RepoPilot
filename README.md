@@ -137,7 +137,12 @@ Legacy boolean-only requests return 422. A committed decision whose Redis delive
 202 with `saved=true`, `dispatch_state=pending` and a decision ID. Explicitly retry that ID at
 `POST /api/v1/tasks/TASK_ID/approval/dispatch`; do not create another approval. Old unbound
 checkpoints require a new task and fresh tests. See [candidate and approval contracts](docs/candidate-approvals.md).
-Automatic outbox delivery and approved-base GitHub publication are later change cards.
+Publication uses a durable intent bound to the approved artifact, evidence, decision and base SHA.
+It creates deterministic Git objects and a unique branch, and reconciles uncertain responses before
+continuing. Ambiguous PR creation never triggers a second blind create. Base movement requires
+retesting and approval; cancellation preserves observed remote effects. Receipts remain available at
+`GET /api/v1/tasks/{task_id}/publication`. See [publication/recovery](docs/publication.md).
+Automatic outbox delivery and Worker fencing remain later change cards.
 
 GitHub writes are off by default. To enable draft-PR creation, set all of the following locally:
 
@@ -223,6 +228,11 @@ The [model-call control guide](docs/model-call-control.md) defines the provider 
 retry, and crash-window contract.
 
 ## Current scope
+
+CH-03B's [2026-10-22 verification record](docs/ch03b-verification-2026-10-22.md) covers 281
+container tests, publication transport faults, process exits, Mock regression and Worker restart.
+Run `make ch03b-integration` for the isolated suite. GitHub itself is simulated; publication uses
+the [approved-intent protocol](docs/publication.md), with no automatic merge or Worker fencing.
 
 Version 0.1 focuses on one reliable path: issue to verified change to human approval to optional
 draft PR. Slack/Linear triggers, MCP packaging, a web dashboard, multi-language sandbox images,

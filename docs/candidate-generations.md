@@ -65,8 +65,9 @@ SQL evidence insertion, opening an approval, consuming its decision and final ta
 check the current candidate while holding the same task-row serialization boundary as generation
 commits. Old graphs cannot insert evidence, open an approval or complete a task for a superseded
 candidate. Existing evidence and approval objects keep their original immutable references.
-The publisher still receives its old edits/base-branch interface; approved-base construction and
-remote publication idempotency remain CH-03B.
+The publisher accepts a persisted CH-03B intent ID. It reads the explicitly approved artifact and
+constructs a complete Git tree with the approved base as commit parent. It never follows the latest
+generation pointer for publication bytes. See [publication and remote reconciliation](publication.md).
 
 The original checkout can change after the initial capture without changing the candidate.
 Such user changes are left intact. Changes to a staging or inspection tree, including link
@@ -102,7 +103,8 @@ orphans before checking SQL/checkpoint/approval references and taking a backup.
 ## Upgrade compatibility
 
 Stop old API/Worker processes and back up both PostgreSQL and the shared artifact volume. Upgrade
-through `repopilot-migrate upgrade`; the new head is `20261021_0005`. The migration preserves the
+through `repopilot-migrate upgrade`; CH-05A's revision is `20261021_0005` (current head is
+`20261022_0006`). The generation migration preserves the
 latest explicit CH-03A approval candidate for each task as its initial head/generation record.
 It keeps that candidate's original generation number, ID, evidence, decision and checkpoint.
 This compatibility seed is not a new test run. Existing checkout edits from CH-03A are preserved.

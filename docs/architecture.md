@@ -22,7 +22,8 @@ flowchart LR
   S --> V[Reviewer]
   V -->|medium/high risk: one bounded remediation| C
   V -->|approved, low-risk, or second candidate| H[HITL interrupt]
-  H -->|approved| GH[Governed GitHub tool]
+  H -->|approved| PI[(Bound publication intent and receipt)]
+  PI --> GH[GitHub object/ref/PR reconciliation]
   G --> CP[(PostgreSQL checkpoints)]
   H --> D[(Bound decision and resume intent)]
   W --> E[(Task and event tables)]
@@ -69,7 +70,11 @@ Unbound legacy approvals require a new task/retest. See [candidate and approval 
 Worker startup and task entry classify retained stages without adopting/deleting them. Exact
 operation replay handles the generation/checkpoint commit gap; superseded operations and stale
 evidence/approval/results are rejected. See [candidate generations](candidate-generations.md).
-Automatic queue recovery and approved-base publication still belong to CH-04A/CH-03B.
+Publication reads the bound artifact and uses the approved base SHA as the commit parent. A durable
+intent fixes the full task/decision/candidate/target identity and Git object IDs. Each HTTP phase is
+saved before transport and reconciled against the same target. Conflicts, base movement and unknown
+PR outcomes stop further writes; cancellation records effects rather than deleting them. See
+[publication contracts](publication.md). Automatic queue recovery and ownership fencing remain CH-04.
 
 When deterministic validation fails, or when the reviewer reports a concrete medium/high-risk
 finding, the coder refreshes repository context from the bound complete generation before

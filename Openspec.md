@@ -1,6 +1,6 @@
 # RepoPilot 项目规范与迭代验收
 
-> 更新日期：2026-10-21；本轮起始基线：`a1e5f41`；本轮 CH-05A 已完成本地验收（待 PR/合并），尚有后续任务；最近完整真实模型评测：2026-09-09。
+> 更新日期：2026-10-22；本轮起始基线：`b7cf1c9`；CH-03B 已完成本地验收，尚未推送、创建 PR 或合并；最近完整真实模型评测：2026-09-09。
 > 本文是现有项目的规范入口，记录当前行为、证据和后续变更的验收标准。
 > 本次建立的是单文件规范，尚未接入 OpenSpec CLI，也不代表已建立其提案、归档或自动校验流程。
 > 规划版本：Roadmap v3。CH-01～CH-08、CH-21 为主题编号，具体开发选带字母的子任务；新增的上下文与历史案例探索按需启动。
@@ -94,6 +94,7 @@ reviewer → approval 中断 → 拒绝：cancelled / 同意：finalize → comp
 | GET | `/api/v1/tasks/{task_id}/events?after_id=...` | 从数据库查询带 payload schema 版本的历史事件 |
 | GET | `/api/v1/tasks/{task_id}/stream` | 先输出历史，再订阅实时通知 |
 | GET | `/api/v1/tasks/{task_id}/approval` | 审批版本、冻结候选/manifest、测试证据、风险与决定 |
+| GET | `/api/v1/tasks/{task_id}/publication` | 读取发布 receipt；终态后仍可查远端效果，不发 HTTP |
 | GET | `/api/v1/tasks/{task_id}/candidates/{candidate_id}[/diff]` | 受 API Key 保护的完整 manifest 或未截断 Diff |
 | POST | `/api/v1/tasks/{task_id}/approval` | 强制 approval-v2 绑定，CAS 保存一次决定；精确重试返回原决定，旧请求 422、冲突 409 |
 | POST | `/api/v1/tasks/{task_id}/approval/dispatch` | 显式重投已保存的 pending/enqueued 恢复意图 |
@@ -143,7 +144,7 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 - Compose 使用持久化 PostgreSQL checkpoint；审批恢复继续同一个图线程。
 - CH-02B 的 Coder 提案和 `apply_policy` 拒绝/计数分别 checkpoint；恢复后不清零全任务策略纠正次数，但 checkpoint 与文件写入不是事务，也不等于 CH-04B 的 Worker fencing。
 - 2026-10-19 的 CH-02B 验证策略拒绝提交后硬退出，再显式接续同一图线程及账本；旧审批由当时 Worker 恢复是历史证据。CH-03A 当前版要求冻结候选/证据，旧无绑定 checkpoint 明确拒绝，不自动补造审批；实际 Worker 重启保持同一个新审批对象。
-- 自有任务、事件、调用账本、候选/证据/审批及 `candidate_generations/generation_heads` 走 Alembic 版本链；空库、精确旧无版本库、已版本化库用同一入口，未知结构拒绝自动 stamp。checkpoint 仍由 `AsyncPostgresSaver.setup()` 管理。
+- 自有任务、事件、调用账本、候选/证据/审批、`candidate_generations/generation_heads` 及 `publish_intents` 走 Alembic 版本链；空库、精确旧无版本库、已版本化库用同一入口，未知结构拒绝自动 stamp。checkpoint 仍由 `AsyncPostgresSaver.setup()` 管理。
 - 暂存日志区分 writing/sealed/committed，Worker 启动及任务执行前核对 SQL，保留 incomplete/orphan/corrupt。恢复不自动接纳或清除文件，也不重新投递任务。数据库已提交而 checkpoint 未提交时，同一操作重放复用原代次；已被更新代次取代的操作拒绝。旧 CH-03A 有明确冻结审批绑定时可迁移原指针，无绑定的旧运行中 checkpoint 不从工作目录推断成功。
 - 审批决定、一次性请求消费、任务状态 CAS、待投递恢复意图和审计事件同事务提交；Redis 失败返回已保存的 pending 决定及重试入口。Worker 只使用数据库决定，不能由消息布尔值授权。`enqueued` 不是消费确认，尚无自动 Outbox 投递器。
 - 模型请求与数据库不是跨系统事务：预留先提交；恢复时，请求前崩溃留下的 `RESERVED` 和可能已发送的 `UNKNOWN` 都保守消耗预算，不当作免费重试。账本独立于 checkpoint，Worker 重启不清零。
@@ -162,9 +163,11 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 - 快照拒绝符号链接和特殊文件；标准输出/错误在返回时截断并脱敏。返回长度限制不代表生成日志过程中已有完整流量限额。
 - Worker 对 Docker socket 的访问仍是高权限边界，容器共享宿主内核。
 - 图在 `approval` 中断后才可进入 `finalize`；GitHub 写入另需显式启用、token、允许的 owner。demo 和关闭写入的任务完成时可以没有 PR。
-- 发布只创建独立分支和 Draft PR，不自动合并。测试与审批已绑定候选/实际 base SHA，`finalize` 校验 artifact 和 edits 一致；publisher 仍读取发布时分支基线，未实现获批 base 构建、持久化发布意图或远端对账，端到端发布绑定留给 CH-03B。
+- 发布只创建独立分支和 Draft PR，不自动合并。publisher 只接受持久化 intent ID，绑定 SQL 决定、候选、证据、目标及获批 base；从完整 artifact 构建 Git tree，commit parent 固定获批 SHA。完整任务/意图 ID 和固定提交元数据形成确定目标。
+- blob/tree/commit/ref/PR 请求前保存阶段，成功或超时后查询同一内容身份。分支冲突停止，绝不 force push；不明 PR 请求查询为空仍保留 unknown，不盲目再创建。基线请求前/后检查，移动永久标记需重测/重批；检查与远端移动不原子。取消在请求前阻止，在途效果先对账并保留 receipt，不撤销远端效果。
+- 只保证单意图单执行者下的受控重放；receipt CAS 不是 HTTP fencing。图遇到 unknown/冲突/需重验时 failed，取消信号返回 cancelled；receipt 不随任务终态丢失。CLI 默认只读对账，不改终态；显式继续要求原任务/审批仍有效。没有自动发布调度器；GitHub 仅以测试 transport 验证。
 
-验证入口：[test_security.py](tests/test_security.py)、[test_sandbox.py](tests/test_sandbox.py)、[test_github.py](tests/test_github.py)、[容器探针](examples/sandbox_probe/test_isolation.py)。
+验证入口：[发布契约](docs/publication.md)、[test_github.py](tests/test_github.py)、[test_publication.py](tests/test_publication.py)、[PostgreSQL 发布故障](tests/test_publication_postgres.py)、[test_security.py](tests/test_security.py)、[test_sandbox.py](tests/test_sandbox.py)、[容器探针](examples/sandbox_probe/test_isolation.py)。
 
 ### RP-07：可持续的真实评测
 
@@ -196,6 +199,7 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 | 工程验证 | 2026-09-21：135 passed、3 个专用 PostgreSQL 条件测试在全量套件中跳过，80.01% 行覆盖率；lint、PostgreSQL 16.15 CH-10 迁移 2/2、Mock eval 10/10、smoke、审批恢复 smoke 通过 | CH-10 PostgreSQL 条件测试已由独立 Compose 实例另行实跑；provider 故障使用确定性 transport，不是真实 provider 集成或计费证据 |
 | CH-03A 候选与审批 | 2026-10-19：Linux Python 3.12 全量 204 passed / 0 skipped，82.91% coverage；Mock 10/10、API smoke、实际 Worker 重启通过；14 项服务条件入口均实跑 | 仅 Mock 与隔离 PostgreSQL/Redis/Docker；审批绑定、并发一次消费、投递失败保存/显式重试成立，不代表自动队列恢复、fencing 或最终 GitHub 发布身份绑定 |
 | CH-05A 暂存与代次 | 2026-10-21：Linux 全量 229 passed / 0 skipped，83.45% coverage；20 项服务条件测试全部实跑，Mock 10/10、API smoke、实际 Worker 重启、旧审批升级及 73 文件来源核对通过；专属资源清理确认 | 受控 POSIX writer 的私有暂存和完整代次可见性；显式重放与 orphan 核对成立，不等于文件系统/DB 事务、自动队列恢复、fencing 或端到端 GitHub 发布绑定 |
+| CH-03B 发布与对账 | 2026-10-22：Linux 281 passed / 0 skipped，83.55% coverage；27 项服务测试实跑，五阶段硬退出、Mock 10/10、smoke/Worker 重启和 80 文件来源核对通过 | GitHub 使用测试 transport；单执行者意图重放及取消/移动后对账，不是实际 GitHub 集成、fencing、外部事务或自动发布恢复 |
 | CH-01A 离线诊断 | 2026-10-19：核对 40 个 case-mode，公开 12 个未通过项的观察分类与未知根因；lint、154 passed / 3 skipped、80.78% 行覆盖率 | 对 2026-09-09 v7 历史记录做离线分析；不是新真实模型实验，也不补足 CH-02B 集成验收 |
 | CH-02B 服务验收 | 2026-10-19：PostgreSQL 16.15 / Redis / Docker 下 6 项专项通过，容器内 Mock 10/10，API smoke 和实际 Worker 审批重启恢复通过，专属资源清理确认 | 中途 checkpoint 经测试入口显式恢复；未实现自动队列找回。离线套件 154 passed / 9 skipped，80.78%；6 项服务测试另行实跑，另外 3 项 PostgreSQL 条件入口未重跑 |
 | Mock 工作流回归 | 10/10 | 验证流程及确定性夹具，不代表 LLM 编码能力 |
@@ -217,7 +221,7 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 | --- | --- | --- |
 | 项目级权限适配 | 默认测试/构建/凭据受保护，create 关闭；特例目前由服务端 Python policy 注入，还没有版本化项目 manifest | CH-07A |
 | 任意外部 writer / 产物保留 | 已有私有暂存、OS 锁、完整代次 CAS 和改动检测；管理员可绕过应用边界，尚无回收/保留期策略 | CH-04B、CH-16 |
-| 审批等待期间基线变化 | 测试与审批已有冻结候选/base SHA；publisher 仍读取当前分支，尚无发布意图/远端对账 | CH-03B |
+| 发布与远端变化的原子性 | 已按获批 SHA/完整 artifact 构建并持久化意图/对账；基线检查与 GitHub 移动不原子，重验标记保留；尚无多 Worker fencing 或自动恢复调度 | CH-04B/C、CH-06A |
 | 队列出队后崩溃 / 锁到期 | 无自动回收或阻止过期 Worker 副作用的机制 | CH-04 |
 | 数据库与 Redis/事件/checkpoint 的交接 | 审批决定与 pending 意图已可靠保存并可显式重投；创建任务仍有交接窗口，消费无 ACK/自动找回 | CH-04A |
 | 取消与任务超时 | 对外状态和实际执行停止可能不同步 | CH-06 |
@@ -295,7 +299,7 @@ S/M/L 表示相对范围：S 通常是独立诊断或小接口；M 是一组紧�
 
 2026-10-19 确认的质量迭代顺序：先做 CH-01A 失败归因，再通过 CH-07A/B/C 建立跨项目开发集和冻结保留集；按证据选择 CH-13 Reviewer 校准或 CH-01B 任务路由，每次只验证一个主要策略变化。CH-14 的片段检索、CH-21 的压缩/历史案例复用由大文件、长任务或重复仓库任务的瓶颈触发；CH-12 多用户权限由明确使用需求触发，不作为本轮前置功能。
 
-CH-01A、CH-02B、CH-03A 已于 2026-10-19 完成本地验收；CH-05A 已于 2026-10-21 完成本地验收，均仍待对应 PR/合并处理。CH-02A、CH-09、CH-10 已合并。下一项 P0 建议为 **CH-03B**（发布绑定、幂等意图与远端对账）；质量数据方向可独立开展 **CH-07A**。执行顺序始终以各卡硬依赖为准。
+CH-01A、CH-02B、CH-03A 已于 2026-10-19 完成本地验收；CH-05A 于 2026-10-21、CH-03B 于 2026-10-22 完成本地验收，均仍待对应 PR/合并处理。CH-02A、CH-09、CH-10 已合并。下一张可选 **CH-06A**，其 CH-09/CH-10/CH-03B 硬依赖已有实现与证据；质量数据方向可独立开展 **CH-07A**。执行顺序始终以各卡硬依赖为准。
 
 ### 8.4 跨任务接口约定（已落实项与待实现设计）
 
@@ -310,7 +314,7 @@ CH-01A、CH-02B、CH-03A 已于 2026-10-19 完成本地验收；CH-05A 已于 20
 | 候选身份 | 已落地 `candidate_id / base_sha / artifact_digest / artifact_ref / generation / policy_version / diff_digest` | CH-03A；CH-05A 复用 |
 | 测试证据 | 已落地 `test-evidence-v1`：候选/产物摘要、实际镜像 ID、策略版本、规范命令、结果和时间；configured-tests 与独立验收分开 | CH-03A |
 | 审批凭据 | 已落地 `approval_id / request_version / decision_id / task_id / candidate_id / evidence_digest / approved / actor / decided_at`；固定单用户主体，CH-12 后再扩展 | CH-03A |
-| 发布意图 | `publish_intent_id / decision_id / target_repo / approved_base_sha / branch / phase / remote_ids` | CH-03B |
+| 发布意图 | 已落地 `publish-intent-v1 / publish-receipt-v1`：决定/候选/证据/获批 base/完整任务及意图 ID、固定 tree/commit SHA；receipt 带阶段、步骤、远端 ID、取消/重验与版本 CAS | CH-03B |
 | 可恢复任务消息 | 版本、`job_id / task_id / kind / decision_id`；不在 Redis 消息体中传凭据或大段代码 | CH-04A |
 | 调用记账 | 已落地 `model_call_budgets/model_call_attempts`；任务级上限、调用前预留、`reserved/started/succeeded/failed/unknown`、累计退避、用量完整性、provider/model/adapter/schema/fallback 身份；重启不清零，不等于 Worker fencing | CH-10 |
 | 事件 | 单任务稳定顺序、持久化 ID、类型、关联尝试/候选、脱敏 payload；通知不是事实源 | CH-06B |
@@ -326,6 +330,10 @@ CH-03A 接口映射（2026-10-19，已实现并验收）：`ArtifactStore.freeze
 无 Git 历史的真实评测导出目录由受信任 `OfflineWorkspace` 适配器提供固定 buggy commit 和源仓库 `base_repository`，只读取对应树/blob，不把 `.git` 或历史交给模型/沙箱。其实现变更进入评测指纹；不得复用历史模型记录来宣称新运行时已实测。
 
 审批 API 保留 `/api/v1/tasks/{id}/approval` 路径，但请求强制 `schema_version=approval-v2`、`approval_id/request_version/candidate_id/evidence_digest/approved`；旧布尔请求明确 422，不补齐成最新候选。GET 返回审批摘要、Reviewer 风险、manifest 与测试证据，受现有 API Key 访问控制；候选 `/candidates/{candidate_id}/diff` 返回未截断 Diff。`request_version` 为进入等待审批时的任务版本。decision 与 `awaiting_approval → queued` CAS、恢复意图及审计事件同一事务保存；Redis 失败返回 202 和 `saved=true / dispatch_state=pending / queue_delivery_failed`，可用 `/approval/dispatch` 显式重投同一 decision。`enqueued` 只代表尝试被 Redis 接受，不是消费确认；CH-04A 之前没有后台自动投递或崩溃重领。Worker 从数据库读取决定，不信任队列中的布尔值。完全相同的重试返回原决定，相反决定或旧绑定 409。缺少冻结候选的旧审批 checkpoint 不自动转换，GET 明确 409 `legacy_approval_requires_revalidation`；可取消旧任务并创建新任务重新测试。
+
+CH-03B 接口映射（2026-10-22，已实现并验收）：`PublicationStore.ensure(task_id, decision_id, candidate_id)` 从 SQL 校验运行中原任务、已消费同意决定、候选/证据及当前代次，生成不可变 `publish-intent-v1`；`GitHubPublisher.publish(intent_id=...)` 不再接受原始 edits。迁移 `20261022_0006` 新增 `publish_intents`，decision 唯一、payload 摘要和独立 receipt CAS，不补造历史发布。新版审批恢复在 SQL 决定及图状态记录 publication protocol marker；旧已越过审批而未记录意图的 checkpoint 拒绝，仍在等待的绑定审批可经新校验继续。
+
+`publish-receipt-v1` 保存 `pending/publishing/unknown/published/blocked/cancelled/revalidation_required`、每步发起/确认、远端 ID、取消及基线观测。Git 对象预先确定 ID；ref 只创建，PR 已可能发出而查询为空时不重复创建。先核对全部已发出步骤，再处理取消/基线变化，保留可能已存在的 PR。CLI 默认只读对账；没有自动调度器或多 Worker fencing。API `/publication` 只读 SQL，任务终态不抹去远端事实。详细契约见 [发布与恢复](docs/publication.md)。
 
 四个全局约束：
 
@@ -424,7 +432,7 @@ CH-03A 接口映射（2026-10-19，已实现并验收）：`ArtifactStore.freeze
 
 #### CH-03B：发布绑定、幂等意图与远端对账
 
-- **状态**：TODO。**优先级/规模**：P0 / L。**硬依赖**：CH-03A、CH-05A。
+- **状态**：VERIFIED（2026-10-22，281 passed / 0 skipped，83.55% coverage；仅测试 transport，尚未推送或合并）。**优先级/规模**：P0 / L。**硬依赖**：CH-03A、CH-05A。
 - **入口**：`github.py`、`worker.py`、`db.py`、`graph/builder.py`、`test_github.py`。
 - **实施步骤**：
   1. publisher 接收并核验已持久化的发布意图、候选与有效审批；拒绝只有原始 edits 而没有证据的调用。使用获批 base SHA 构建 commit，不重新套用未经测试的新 HEAD。
@@ -434,6 +442,7 @@ CH-03A 接口映射（2026-10-19，已实现并验收）：`ArtifactStore.freeze
   5. 定义 publisher 的取消边界和接入接口：请求发出前阻止发布；请求在途时取消不能撤销已经发生的远端效果，结果须对账并反馈，不能假报“完全未发布”。全局信号与 stopped 确认由 CH-06A 接入，本卡不另建一套任务取消状态。
 - **验收场景**：候选被篡改、审批失效、写入开关关闭均拒绝；模拟每个远端阶段成功后响应丢失，再运行可收敛到同一个 Draft PR；未知远端状态不重复创建；不自动合并。
 - **交付**：发布状态机/receipt、迁移、HTTP Mock 故障测试和单执行者保证说明；CH-04B/C 后再验证多 Worker 故障保证。
+- **本轮交付**：`2e1daa0`、`5c5d892`；[发布契约](docs/publication.md)、[验收报告](docs/ch03b-verification-2026-10-22.md)、[脱敏摘要](docs/evidence/2026-10-22-ch03b-verification.json)。`make ch03b-integration` 完整实跑 27 项服务条件测试、五阶段硬退出 92、Mock 10/10、smoke/实际 Worker 重启；CLI 默认只读对账，旧已越过审批的无意图 checkpoint 不自动再授权。
 - **范围边界**：本轮默认只用测试 transport；真实 GitHub 写入须沿用用户确认的仓库和权限。取消部分只定义接口与发布状态语义，并用受控信号验证 publisher 行为，不要求提前实现 CH-06A 的全局取消传播；完整取消验收由 CH-06A 完成。不得声称外部 HTTP 提交具有数据库事务语义。
 
 ### CH-04：可靠队列与 Worker 所有权
@@ -852,6 +861,7 @@ make ch10-migration-test
 make ch02b-integration
 make ch03a-integration
 make ch05a-integration
+make ch03b-integration
 make eval
 make smoke
 make smoke-recovery
@@ -882,6 +892,8 @@ smoke 使用已经运行的服务。若 `.env` 选择真实模型，应按 [READ
 - [CH-03A 隔离验收](docs/ch03a-verification-2026-10-19.md)：全量服务测试、并发决定、提交后硬退出、Redis 故障、Worker 重启、来源摘要及失败记录。
 - [候选代次与暂存恢复](docs/candidate-generations.md)：完整代次 CAS、写入与刷盘顺序、内部互斥、orphan 核对、旧运行中任务及审批迁移。
 - [CH-05A 隔离验收](docs/ch05a-verification-2026-10-21.md)：多文件中断、进程硬退出、精确重放、旧审批升级、来源核对与资源清理。
+- [发布意图与远端对账](docs/publication.md)：获批完整树/固定 parent、分阶段 receipt、取消与基线移动、只读 CLI 和升级边界。
+- [CH-03B 隔离验收](docs/ch03b-verification-2026-10-22.md)：五阶段 HTTP 丢响应/硬退出、SQL CAS、完整来源核对及中间失败记录。
 - [模型调用预算与 provider 故障](docs/model-call-control.md)：配置、账本状态、错误分类、重试与崩溃窗口。
 - [工作区能力策略](docs/workspace-capabilities.md)：版本化 read/write/create 权限、拒绝原因与边界。
 - [CH-02B 隔离服务验收](docs/ch02b-verification-2026-10-19.md)：策略纠正、持久化限额、硬退出后显式接续、旧审批 checkpoint 与实际 Worker 重启的验证范围。
@@ -1073,3 +1085,18 @@ smoke 使用已经运行的服务。若 `.env` 选择真实模型，应按 [READ
 - 中间记录/清理：HTTP 502、HTTPS EOF 两次构建失败；223 项中间版本完整通过；228 项通过的一轮因运行中编辑脚本导致后续证据收集失败。全部保留原始日志，不以它们代替最终验收。最终及中间专属容器/卷/网络均确认清理；镜像缓存保留，未改动主实例。原始证据仅在忽略的 `reports/` 中。
 - 规范/交付：RP-03/04/05、缺口、8.4 接口、README/架构/运行时/权限/迁移文档已更新；CH-05A 标为 VERIFIED，验收与 PR 描述见 [交付记录](docs/ch05a-verification-2026-10-21.md)，摘要见 [脱敏 JSON](docs/evidence/2026-10-21-ch05a-verification.json)。历史真实模型结果不变；本轮不新增修复率收益主张。
 - 未完成边界/下一项：暂存与 SQL 是两个提交，受控读者只看到完整 artifact；没有自动队列找回、通用崩溃调度、Worker fencing、保留期回收或获批 base 的端到端发布绑定。下一张建议 **CH-03B**；本轮交付后停止，不自动启动下一卡。
+
+### 2026-10-22 · CH-03B · 发布绑定、幂等意图与远端对账
+
+- 实现基线：干净的 `codex/ch-05a-staged-generations@b7cf1c9`；新建 `codex/ch-03b-publication-reconciliation`，保留全部本地依赖历史，没有从缺前置实现的 main 开始。
+- 已核实硬依赖：CH-03A `a5b5dab/c00b23b/9e62ce7`、CH-05A `3610e9f/c4619a8/a0df3de` 均为本地祖先，已读取对应验收与候选代次契约；没有重新声称远端合并。
+- 本轮提交：`2e1daa0` 发布协议/持久化/图/API/测试，`5c5d892` 同时取消/基线移动及未定 PR 取消保持；最终验收源码为 `5c5d892`，文档单独本地提交。未推送、创建 PR 或合并。
+- 范围：publisher 改为持久化 intent ID，核验 SQL 决定/证据/候选/任务版本/代次；完整 artifact 构建 Git tree，parent 固定获批 SHA。迁移 `20261022_0006` 新增 `publish_intents`，完整任务与意图身份、固定对象 ID、请求前阶段与 receipt CAS；ref 只创建，PR 未定空查询不重复创建。增加受保护 `/publication` 查询及默认只读的 `repopilot-publish` 对账入口。
+- 验证：lint、diff、脚本语法及链接通过；macOS Python 3.13.5 全量 254 passed / 27 skipped，82.46%；最终 Linux Python 3.12.15 全量 281 passed / 0 skipped，83.55%。27 项服务条件测试全部实跑，Mock eval 10/10、API smoke、实际 Worker 审批重启通过；调用 3→3、unknown=0，测试/finalize 各 1 次。CLI 禁网帮助入口退出 0。
+- 故障：blob/tree/commit/ref/PR 成功后分别丢响应及硬退出 92，新执行者读取 PostgreSQL 和同一测试远端状态，收敛到意图/PR 各 1 个。未知 PR 后空查询保持 unknown；分支/PR 身份冲突、旧代次、产物损坏、审批失效和旧发布授权拒绝。取消与基线移动保留各自事实及远端 ID，不 force push、不删除或合并。原 checkout 被改写不会改变获批发布字节。
+- 环境/来源：Docker 29.5.3、PostgreSQL 16.15、LangGraph 1.2.16、PG saver 3.2.0；最终专属 project `repopilot_ch03b_20261022_35230`，端口 58070。复用已验收依赖缓存、重装当前源码，80 个源码/测试文件及测试/API 各 43 个实际安装包文件逐项与 `5c5d892` 一致。GitHub 始终使用 HTTP Mock，服务真实写入关闭、模型凭据为空。
+- 中间结果：`32924` 一轮为 275 passed / 3 failed，历史专用迁移库重建漏清理新表；补齐两处固定列表后 `33203` 一轮 278 项、83.51%、Mock/smoke/恢复全部通过。随后补充 3 个并发取消回归并独立完整复跑最终版本；原日志和各轮 cleanup.json 全保留，三个项目资源清理均确认。没有以中间结果替代最终验收。
+- 证据/实验口径：[发布契约](docs/publication.md)、[验收报告与 PR 草稿](docs/ch03b-verification-2026-10-22.md)、[脱敏 JSON](docs/evidence/2026-10-22-ch03b-verification.json)；原始材料仅在忽略的 `reports/<project>/`。2026-09-09 真实报告、失败账本和 Mock 数据集逐字节不变，没有真实模型调用或新的质量收益主张。
+- 兼容/恢复：停止旧进程并备份 SQL/产物后前向迁移；等待中的绑定审批可经新版 validation 记录 publication protocol marker。旧已越过审批、可能发出无意图 HTTP 的 checkpoint 不自动再授权，需要核对远端。迁移不补造历史发布；终态仍可只读对账，不重置任务。破坏性 downgrade 拒绝，只能备份恢复或前向修复。
+- 限制：单意图单执行者，SQL/GitHub 无跨系统事务，base 检查不与分支移动原子同步；receipt CAS 不等于 Worker fencing。没有自动发布调度器、队列找回或全局 stopped 确认，真实 GitHub 集成未执行。
+- 规范：RP-01/05/06、缺口、8.4、CH-03B 及 README/架构/审批/代次/运行时/迁移文档已同步；CH-03B 为 VERIFIED，其他未完成卡保持原状态。下一张可选 CH-06A，硬依赖就绪；本轮交付后停止。

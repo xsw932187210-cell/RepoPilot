@@ -96,10 +96,12 @@ Artifact storage and SQL are not one transaction: freezing can leave an unrefere
 but approval never references a partially published bundle. CH-05A retains and reconciles staging
 journals and checks generation freshness while persisting evidence, approval and task results.
 
-`finalize` checks the artifact and that state edits match its bytes. Publisher still has its
-original edits/base-branch interface. Approved-base construction, remote reconciliation and
-publication intent idempotency belong to CH-03B after CH-05A. Tests keep GitHub writes disabled;
-this card does not establish end-to-end remote publication binding.
+`finalize` checks the artifact and that state edits match its bytes. CH-03B publishes through
+a durable intent binding the SQL decision, evidence, candidate and approved base. It verifies
+complete Git objects and reconciles uncertain responses before continuing. New approval resumes
+record the publication protocol marker; old already-finalizing checkpoints require manual
+inspection. See [publication](publication.md). The CH-03A verification below remains historical;
+CH-03B uses a test HTTP transport for GitHub.
 
 ## Reproduction
 
