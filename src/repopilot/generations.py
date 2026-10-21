@@ -271,6 +271,31 @@ def _journal(path: Path, payload: dict[str, Any]) -> None:
     sync_directory(path.parent)
 
 
+def _read_journal(path: Path) -> dict[str, Any]:
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, "rb") as file:
+        metadata = os.fstat(file.fileno())
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+            raise SecurityError("Staging journal must be a regular single-link file")
+        # Accommodates the manifest's 10,000 entries, without unbounded reads of
+        # externally corrupted metadata. Journals never contain source contents.
+        data = file.read(64 * 1024 * 1024 + 1)
+        if len(data) > 64 * 1024 * 1024:
+            raise SecurityError("Staging journal exceeds the metadata byte limit")
+    payload = json.loads(data)
+    if not isinstance(payload, dict) or payload.get("schema_version") != "staging-v1":
+        raise ValueError("Unsupported staging journal")
+    operation = payload.get("operation_id")
+    phase = payload.get("phase")
+    if (
+        not isinstance(operation, str) or len(operation) != 64
+        or any(character not in "0123456789abcdef" for character in operation)
+        or not isinstance(phase, str) or phase not in {"writing", "sealed", "committed"}
+    ):
+        raise ValueError("Invalid staging journal identity")
+    return payload
+
+
 class GenerationCoordinator:
     def __init__(
         self,
@@ -323,7 +348,7 @@ class GenerationCoordinator:
                 reports.append({"staging_id": directory.name, "state": "incomplete"})
                 continue
             try:
-                payload = json.loads(path.read_bytes())
+                payload = _read_journal(path)
                 if payload["task_id"] != task_id:
                     raise ValueError("wrong task")
                 saved = await self.store.operation(task_id, payload["operation_id"])

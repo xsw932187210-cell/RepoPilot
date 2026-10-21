@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 
 import pytest
 from generation_helpers import generation_case, pair
@@ -272,3 +273,25 @@ async def test_worker_startup_classifies_orphan_without_changing_task_or_head(tm
         assert json.loads(recovery.read_bytes())["stages"] == reports[parent.task_id]
     finally:
         await db.close()
+
+
+@pytest.mark.parametrize("corruption", ["array", "operation_type", "phase_type", "fifo"])
+async def test_corrupt_journal_types_are_retained_without_blocking_recovery(tmp_path, corruption):
+    coordinator, parent, _, _, _ = await generation_case(tmp_path / "ws")
+    stage = coordinator._task_root(parent.task_id) / "corrupt-stage"
+    stage.mkdir()
+    path = stage / "journal.json"
+    if corruption == "fifo":
+        os.mkfifo(path)
+    elif corruption == "array":
+        path.write_text("[]")
+    else:
+        path.write_text(json.dumps({
+            "schema_version": "staging-v1", "task_id": parent.task_id,
+            "operation_id": [] if corruption == "operation_type" else "f" * 64,
+            "phase": [] if corruption == "phase_type" else "writing",
+        }))
+    reports = await coordinator.recover(parent.task_id)
+    assert {item["state"] for item in reports} == {"committed", "corrupt"}
+    assert path.exists()
+    assert await coordinator.store.current(parent.task_id) == parent

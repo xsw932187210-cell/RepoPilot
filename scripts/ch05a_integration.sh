@@ -85,6 +85,7 @@ if ! compose run --rm --no-deps probe python -m pytest \
   --cov=repopilot --cov-report=term-missing --cov-fail-under=70 \
   -q -s --junitxml=/workspaces/ch05a-integration.xml >"$report_root/integration.log" 2>&1; then
   cat "$report_root/integration.log"
+  compose cp api:/workspaces/ch05a-integration.xml "$report_root/integration.xml" || true
   exit 1
 fi
 cat "$report_root/integration.log"
@@ -99,6 +100,12 @@ compose run --rm --no-deps probe python -c \
 compose run --rm --no-deps probe python -c \
   'import hashlib,json,pathlib; roots=[pathlib.Path("src"),pathlib.Path("tests")]; files=sorted(p for root in roots for p in root.rglob("*.py") if "__pycache__" not in p.parts); print(json.dumps({str(p):hashlib.sha256(p.read_bytes()).hexdigest() for p in files},sort_keys=True))' \
   >"$report_root/source-hashes.json"
+compose run --rm --no-deps probe python -c \
+  'import hashlib,json,pathlib,repopilot; root=pathlib.Path(repopilot.__file__).parent; print(json.dumps({"src/repopilot/"+str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(root.rglob("*.py"))},sort_keys=True))' \
+  >"$report_root/installed-source-hashes.json"
+compose exec -T api python -c \
+  'import hashlib,json,pathlib,repopilot; root=pathlib.Path(repopilot.__file__).parent; print(json.dumps({"src/repopilot/"+str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(root.rglob("*.py"))},sort_keys=True))' \
+  >"$report_root/api-source-hashes.json"
 docker image inspect "$project-app:local" "$project-test:local" "$project-sandbox:local" \
   --format '{{json .Id}}' >"$report_root/image-ids.jsonl"
 
