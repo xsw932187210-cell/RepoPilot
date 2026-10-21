@@ -1,6 +1,6 @@
 # RepoPilot 项目规范与迭代验收
 
-> 更新日期：2026-10-22；本轮起始基线：`b7cf1c9`；CH-03B 已完成本地验收，尚未推送、创建 PR 或合并；最近完整真实模型评测：2026-09-09。
+> 更新日期：2026-10-22；本轮起始基线：`b7cf1c9`；CH-03B 已验收并推送分支，尚未创建 PR 或合并；最近完整真实模型评测：2026-09-09。
 > 本文是现有项目的规范入口，记录当前行为、证据和后续变更的验收标准。
 > 本次建立的是单文件规范，尚未接入 OpenSpec CLI，也不代表已建立其提案、归档或自动校验流程。
 > 规划版本：Roadmap v3。CH-01～CH-08、CH-21 为主题编号，具体开发选带字母的子任务；新增的上下文与历史案例探索按需启动。
@@ -432,7 +432,7 @@ CH-03B 接口映射（2026-10-22，已实现并验收）：`PublicationStore.ens
 
 #### CH-03B：发布绑定、幂等意图与远端对账
 
-- **状态**：VERIFIED（2026-10-22，281 passed / 0 skipped，83.55% coverage；仅测试 transport，尚未推送或合并）。**优先级/规模**：P0 / L。**硬依赖**：CH-03A、CH-05A。
+- **状态**：VERIFIED（2026-10-22，281 passed / 0 skipped，83.55% coverage；仅测试 transport；分支已推送，未创建 PR 或合并）。**优先级/规模**：P0 / L。**硬依赖**：CH-03A、CH-05A。
 - **入口**：`github.py`、`worker.py`、`db.py`、`graph/builder.py`、`test_github.py`。
 - **实施步骤**：
   1. publisher 接收并核验已持久化的发布意图、候选与有效审批；拒绝只有原始 edits 而没有证据的调用。使用获批 base SHA 构建 commit，不重新套用未经测试的新 HEAD。
@@ -1100,3 +1100,8 @@ smoke 使用已经运行的服务。若 `.env` 选择真实模型，应按 [READ
 - 兼容/恢复：停止旧进程并备份 SQL/产物后前向迁移；等待中的绑定审批可经新版 validation 记录 publication protocol marker。旧已越过审批、可能发出无意图 HTTP 的 checkpoint 不自动再授权，需要核对远端。迁移不补造历史发布；终态仍可只读对账，不重置任务。破坏性 downgrade 拒绝，只能备份恢复或前向修复。
 - 限制：单意图单执行者，SQL/GitHub 无跨系统事务，base 检查不与分支移动原子同步；receipt CAS 不等于 Worker fencing。没有自动发布调度器、队列找回或全局 stopped 确认，真实 GitHub 集成未执行。
 - 规范：RP-01/05/06、缺口、8.4、CH-03B 及 README/架构/审批/代次/运行时/迁移文档已同步；CH-03B 为 VERIFIED，其他未完成卡保持原状态。下一张可选 CH-06A，硬依赖就绪；本轮交付后停止。
+
+#### 同日验收后 · GitHub 分支同步
+
+- 用户随后要求推送；已推送 [codex/ch-03b-publication-reconciliation](https://github.com/xsw932187210-cell/RepoPilot/tree/codex/ch-03b-publication-reconciliation)，首次推送包含 `b1ce1bd` 及全部本地依赖历史，并设置 origin tracking。
+- 上述“未推送”是验收完成时的历史状态；当前为分支已推送、未创建 PR、未合并。CH-03B 保持 VERIFIED。此次仅同步分支与交付元数据，没有改动实现或重写历史评测结果。

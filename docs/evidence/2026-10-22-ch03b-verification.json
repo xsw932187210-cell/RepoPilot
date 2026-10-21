@@ -131,9 +131,13 @@
     "source-hashes.json": "ce85cd3c9c5dd3ec3bcf521f2f455a34bf34d873a3cda8a9a7ee8a711ec8fe2e"
   },
   "remote": {
+    "branch_url": "https://github.com/xsw932187210-cell/RepoPilot/tree/codex/ch-03b-publication-reconciliation",
+    "first_pushed_commit": "b1ce1bd",
     "publisher_transport": "httpx.MockTransport",
     "pull_request_created": false,
-    "pushed": false,
+    "push_update_date": "2026-10-22",
+    "pushed": true,
+    "pushed_at_verification": false,
     "real_github_requests": false,
     "real_model_calls": false
   },
