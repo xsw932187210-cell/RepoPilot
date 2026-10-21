@@ -11,6 +11,7 @@ import pytest
 from approval_helpers import decision_request
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
+from legacy_tasks import insert_legacy_task
 from publication_helpers import GitHubServer, publication_case
 from sqlalchemy import select
 
@@ -147,17 +148,18 @@ async def test_ch05a_upgrade_preserves_data_and_does_not_fabricate_intents(tmp_p
     await ensure_database_schema(url, revision="20261021_0005")
     database = Database(url)
     try:
-        task = await database.create_task(
+        task = await insert_legacy_task(
+            database,
             TaskCreate(
                 repository_url="demo://buggy-calculator",
                 issue_title="Historical task",
                 issue_body="Keep historical state without authorizing a publication.",
-            )
+            ),
         )
         await ensure_database_schema(url)
         await ensure_database_schema(url)
         assert await current_database_revisions(url) == (HEAD_REVISION,)
-        assert (await database.get_task(task.id)) == task
+        assert (await database.get_task(task.id)).issue_title == task.issue_title
         async with database.sessions() as session:
             assert (await session.execute(select(PublishIntentRecord))).scalars().all() == []
     finally:

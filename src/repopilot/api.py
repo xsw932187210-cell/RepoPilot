@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hmac
 import json
+import logging
 from collections import Counter, defaultdict
 from collections.abc import Mapping
 from contextlib import asynccontextmanager
@@ -152,7 +153,20 @@ async def health(request: Request) -> dict[str, str]:
 
 @app.post("/api/v1/tasks", response_model=TaskView, status_code=status.HTTP_202_ACCEPTED)
 async def create_task(data: TaskCreate, request: Request, _: Protected) -> TaskView:
-    _, database, events, queue, _ = resources(request)
+    settings, database, events, queue, _ = resources(request)
+    data = data.model_copy(
+        update={
+            "execution_timeout_seconds": data.execution_timeout_seconds
+            if data.execution_timeout_seconds is not None
+            else settings.task_timeout_seconds,
+            "deadline_includes_queue": data.deadline_includes_queue
+            if data.deadline_includes_queue is not None
+            else settings.deadline_includes_queue,
+            "deadline_includes_approval": data.deadline_includes_approval
+            if data.deadline_includes_approval is not None
+            else settings.deadline_includes_approval,
+        }
+    )
     try:
         validate_repository_url(data.repository_url)
         validate_branch(data.base_branch)
@@ -199,7 +213,8 @@ async def get_publication(task_id: str, request: Request, _: Protected) -> list[
     if await database.get_task(task_id) is None:
         raise HTTPException(status_code=404, detail="Task not found")
     return await PublicationStore(
-        database, ArtifactStore(settings.workspace_root / ".artifacts"),
+        database,
+        ArtifactStore(settings.workspace_root / ".artifacts"),
     ).receipts(task_id)
 
 
@@ -383,31 +398,26 @@ async def retry_approval_dispatch(
     return await approval_receipt(task_id, saved, database, response)
 
 
-@app.post("/api/v1/tasks/{task_id}/cancel", response_model=TaskView)
-async def cancel_task(task_id: str, request: Request, _: Protected) -> TaskView:
+@app.post(
+    "/api/v1/tasks/{task_id}/cancel",
+    response_model=TaskView,
+    responses={202: {"model": TaskView, "description": "Stop requested; cleanup pending"}},
+)
+async def cancel_task(task_id: str, request: Request, response: Response, _: Protected) -> TaskView:
     _, database, events, queue, _ = resources(request)
-    task = await database.get_task(task_id)
-    if task is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
-    if task.status in {TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED}:
-        return task
     try:
-        cancelled = await database.transition_task(
-            task_id,
-            expected_status=task.status,
-            expected_version=task.state_version,
-            status=TaskStatus.CANCELLED,
-        )
-    except TaskStateConflict as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(exc),
-        ) from exc
-    await queue.request_cancel(task_id)
-    await events.publish(
-        task_id,
-        kind="cancellation_requested",
-        node="api",
-        message="Cancellation will be enforced at the next graph boundary",
-    )
-    return cancelled
+        stopped = await database.request_stop(task_id)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail="Task not found") from error
+    except TaskStateConflict as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    # SQL has committed the request and audit event. Redis only accelerates delivery.
+    try:
+        await queue.request_cancel(task_id)
+    except Exception as error:
+        logging.getLogger(__name__).info("Cancellation hint unavailable: %s", type(error).__name__)
+    if events:
+        await events.notify_control(task_id)
+    if stopped.status is TaskStatus.CANCELLING:
+        response.status_code = 202
+    return stopped

@@ -269,7 +269,9 @@ async def test_worker_startup_classifies_orphan_without_changing_task_or_head(tm
         worker = Worker(coordinator.workspaces.settings, db, None, None)
         reports = await worker.reconcile_staging()
         assert sorted(item["state"] for item in reports[parent.task_id]) == ["committed", "orphan"]
-        assert await db.get_task(parent.task_id) == before
+        assert (await db.get_task(parent.task_id)).model_dump(
+            exclude={"remaining_seconds", "deadline_at"}
+        ) == before.model_dump(exclude={"remaining_seconds", "deadline_at"})
         assert await SQLGenerationStore(db).current(parent.task_id) == parent
         recovery = coordinator._task_root(parent.task_id) / "recovery.json"
         assert json.loads(recovery.read_bytes())["stages"] == reports[parent.task_id]
@@ -288,11 +290,16 @@ async def test_corrupt_journal_types_are_retained_without_blocking_recovery(tmp_
     elif corruption == "array":
         path.write_text("[]")
     else:
-        path.write_text(json.dumps({
-            "schema_version": "staging-v1", "task_id": parent.task_id,
-            "operation_id": [] if corruption == "operation_type" else "f" * 64,
-            "phase": [] if corruption == "phase_type" else "writing",
-        }))
+        path.write_text(
+            json.dumps(
+                {
+                    "schema_version": "staging-v1",
+                    "task_id": parent.task_id,
+                    "operation_id": [] if corruption == "operation_type" else "f" * 64,
+                    "phase": [] if corruption == "phase_type" else "writing",
+                }
+            )
+        )
     reports = await coordinator.recover(parent.task_id)
     assert {item["state"] for item in reports} == {"committed", "corrupt"}
     assert path.exists()
@@ -303,8 +310,10 @@ async def test_crlf_context_hash_and_next_generation_preserve_exact_bytes(tmp_pa
     coordinator, parent, workspace, context, _ = await generation_case(tmp_path / "ws")
     crlf = context["calculator.py"].replace("\n", "\r\n")
     first = await coordinator.apply(
-        parent, [FileEdit(path="calculator.py", content=crlf)],
-        expected_contents=context, base_repository=workspace,
+        parent,
+        [FileEdit(path="calculator.py", content=crlf)],
+        expected_contents=context,
+        base_repository=workspace,
     )
     with coordinator.artifacts.materialize(first) as snapshot:
         refreshed = coordinator.workspaces.inspect(snapshot, "calculator add", ["add"])
@@ -313,8 +322,10 @@ async def test_crlf_context_hash_and_next_generation_preserve_exact_bytes(tmp_pa
         assert content_sha256(crlf) == hashlib.sha256(raw).hexdigest()
     fixed = crlf.replace("return a - b", "return a + b")
     second = await coordinator.apply(
-        first, [FileEdit(path="calculator.py", content=fixed)],
-        expected_contents=refreshed.files, base_repository=workspace,
+        first,
+        [FileEdit(path="calculator.py", content=fixed)],
+        expected_contents=refreshed.files,
+        base_repository=workspace,
     )
     with coordinator.artifacts.materialize(second) as snapshot:
         assert (snapshot / "calculator.py").read_bytes() == fixed.encode("utf-8")

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -52,6 +53,16 @@ class EventBus:
             await pubsub.unsubscribe(self.channel(task_id))
             await pubsub.aclose()
 
+    async def notify_control(self, task_id: str) -> None:
+        """Notify already-committed stop events without creating duplicate audit rows."""
+        try:
+            for event in await self.database.stop_events(task_id):
+                await self.redis.publish(self.channel(task_id), event.model_dump_json())
+        except Exception as error:
+            logging.getLogger(__name__).info(
+                "Stop notification unavailable: %s", type(error).__name__
+            )
+
 
 class JobQueue:
     def __init__(self, redis: Redis, name: str):
@@ -78,9 +89,7 @@ class JobQueue:
         return bool(await self.redis.exists(f"repopilot:cancel:{task_id}"))
 
     async def acquire(self, task_id: str, token: str, ttl: int = 900) -> bool:
-        return bool(
-            await self.redis.set(f"repopilot:lock:{task_id}", token, ex=ttl, nx=True)
-        )
+        return bool(await self.redis.set(f"repopilot:lock:{task_id}", token, ex=ttl, nx=True))
 
     async def release(self, task_id: str, token: str) -> None:
         script = """

@@ -7,6 +7,7 @@ import uuid
 import pytest
 import sqlalchemy as sa
 from alembic import command
+from legacy_tasks import insert_legacy_task
 from sqlalchemy import inspect
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import DBAPIError
@@ -115,7 +116,7 @@ async def test_postgres_ch10_empty_install_ch09_upgrade_idempotency_and_failure_
     await reset_owned_tables()
     await asyncio.to_thread(command.upgrade, alembic_config(POSTGRES_URL), "20260921_0002")
     ch09 = Database(POSTGRES_URL)
-    retained = await ch09.create_task(task_data("Retained CH-09 task"))
+    retained = await insert_legacy_task(ch09, task_data("Retained CH-09 task"))
     await ch09.add_event(
         retained.id,
         kind="ch09_event",

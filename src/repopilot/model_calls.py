@@ -11,6 +11,8 @@ from email.utils import parsedate_to_datetime
 from enum import StrEnum
 from typing import Any, Protocol, TypeVar
 
+from repopilot.execution import ExecutionStopped, controlled, current_control
+
 CALL_CONTROL_VERSION = "provider-call-control-v1"
 EVALUATION_BUDGET_VERSION = "evaluation-call-budget-v2"
 DEFAULT_ADAPTER_VERSION = "generic-async-v1"
@@ -737,6 +739,9 @@ class ControlledModelCaller:
         transient_retries = 0
         retry_index = 0
         while True:
+            control = current_control()
+            if control:
+                control.check()
             reservation = await self.ledger.reserve(
                 logical_call_id=logical_call_id,
                 role=call_role,
@@ -745,14 +750,23 @@ class ControlledModelCaller:
             )
             # This commit precedes the transport call. A crash after it is conservatively
             # reconciled to UNKNOWN even if the process died just before bytes were sent.
+            if control:
+                control.check()
             await self.ledger.mark_started(reservation.attempt_id)
             try:
-                response = await asyncio.wait_for(
+                if control:
+                    control.check()
+                response = await controlled(
                     invocation(*args, **kwargs),
-                    timeout=self.policy.request_timeout_seconds,
+                    limit_seconds=self.policy.request_timeout_seconds,
                 )
                 if response_validator is not None:
                     response_validator(response)
+            except (ExecutionStopped, asyncio.CancelledError):
+                await self.ledger.mark_failed(
+                    reservation.attempt_id, "model_request_interrupted", unknown=True
+                )
+                raise
             except Exception as error:
                 normalized = classify_provider_error(error)
                 await self.ledger.mark_failed(
@@ -789,7 +803,11 @@ class ControlledModelCaller:
                 else:
                     transient_retries += 1
                 retry_index += 1
-                await self.sleeper(delay)
+                if control:
+                    await control.run(self.sleeper(delay))
+                    control.check()
+                else:
+                    await self.sleeper(delay)
                 continue
             usage_values = usage_extractor(response)
             usage = CallUsage(*usage_values) if usage_values is not None else None

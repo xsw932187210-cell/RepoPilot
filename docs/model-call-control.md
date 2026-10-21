@@ -144,3 +144,11 @@ make smoke-recovery
 volume; it refuses a non-dedicated database name and removes only its own resources. The provider
 fault suite uses deterministic transports. It proves control-layer behavior, not live-provider
 integration or billing accuracy.
+
+## Task stop and deadline scope
+
+Online Worker calls also share [CH-06A execution control](execution-control.md). The effective
+wait limit is at most the remaining task budget. Expiry/cancellation interrupts provider wait
+and backoff, prevents a fresh reservation/transport, and retains STARTED calls as UNKNOWN.
+Closing a local request cannot prove provider computation or billing stopped. Offline evaluator
+call-budget identities and historical real-model reports are unchanged.

@@ -1,6 +1,6 @@
 # RepoPilot 项目规范与迭代验收
 
-> 更新日期：2026-10-22；本轮起始基线：`b7cf1c9`；CH-03B 已验收并推送分支，尚未创建 PR 或合并；最近完整真实模型评测：2026-09-09。
+> 更新日期：2026-10-22；本轮起始基线：`18ed369`；CH-03B 已创建草稿 PR #8、未合并；CH-06A 开发验收中；最近完整真实模型评测：2026-09-09。
 > 本文是现有项目的规范入口，记录当前行为、证据和后续变更的验收标准。
 > 本次建立的是单文件规范，尚未接入 OpenSpec CLI，也不代表已建立其提案、归档或自动校验流程。
 > 规划版本：Roadmap v3。CH-01～CH-08、CH-21 为主题编号，具体开发选带字母的子任务；新增的上下文与历史案例探索按需启动。
@@ -98,9 +98,9 @@ reviewer → approval 中断 → 拒绝：cancelled / 同意：finalize → comp
 | GET | `/api/v1/tasks/{task_id}/candidates/{candidate_id}[/diff]` | 受 API Key 保护的完整 manifest 或未截断 Diff |
 | POST | `/api/v1/tasks/{task_id}/approval` | 强制 approval-v2 绑定，CAS 保存一次决定；精确重试返回原决定，旧请求 422、冲突 409 |
 | POST | `/api/v1/tasks/{task_id}/approval/dispatch` | 显式重投已保存的 pending/enqueued 恢复意图 |
-| POST | `/api/v1/tasks/{task_id}/cancel` | 写取消标记并更新对外状态 |
+| POST | `/api/v1/tasks/{task_id}/cancel` | SQL 持久化停止请求；运行中返回 202/cancelling，清理确认后才终态 |
 
-SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub 订阅之间存在消息空窗；不能保证实时流无丢失。取消接口返回 `cancelled` 也不代表当前外部调用或容器已立即停止。
+SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub 订阅之间存在消息空窗；不能保证实时流无丢失。新版运行中取消先返回 `cancelling`；只有 `stopped_at` 才代表受控本地执行已停止，旧迁移的 `cancelled` 无法补造确认。远端效果及 provider 计费仍须分别看 receipt/unknown 账本。
 
 ### RP-02：有界且可解释的上下文检索
 
@@ -152,7 +152,7 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 - Redis 锁使用 `SET NX EX 900`；释放时比较 token，防止旧持有者删除新锁。
 - 当前无锁续期、fencing token、消费 ACK 或 pending reclaim；长任务超过锁 TTL 时可能出现两个 Worker 同时执行，出队后崩溃可能丢失该次投递。
 - 任务表、checkpoint、工作区和发布操作没有统一事务；当前不能承诺任意节点崩溃后自动恢复或恰好执行一次。
-- 取消检查主要发生在执行节点入口，没有贯穿所有外部 I/O，也没有统一任务截止时间。
+- 取消请求存入 SQL，运行中先进入 `cancelling`；统一执行 scope 中断模型/进程组/容器等待，清理后 CAS 确认停止。新任务保存总执行预算及排队/审批计时策略；节点/模型等待不超过剩余期限，截止后不再发新模型请求。清理失败保留 ID/诊断；发布在途先对账，旧 Worker 重启不补造停止确认。
 
 验证入口：[数据库迁移说明](docs/database-migrations.md)、[test_migrations.py](tests/test_migrations.py)、[PostgreSQL 账本测试](tests/test_model_calls_postgres.py)、[recovery_smoke.sh](scripts/recovery_smoke.sh)、[运行时边界说明](docs/runtime-correctness.md)。恢复 smoke 适用于审批 checkpoint 及其调用计数；不等于队列找回、Worker fencing 或故障全覆盖。
 
@@ -224,7 +224,7 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 | 发布与远端变化的原子性 | 已按获批 SHA/完整 artifact 构建并持久化意图/对账；基线检查与 GitHub 移动不原子，重验标记保留；尚无多 Worker fencing 或自动恢复调度 | CH-04B/C、CH-06A |
 | 队列出队后崩溃 / 锁到期 | 无自动回收或阻止过期 Worker 副作用的机制 | CH-04 |
 | 数据库与 Redis/事件/checkpoint 的交接 | 审批决定与 pending 意图已可靠保存并可显式重投；创建任务仍有交接窗口，消费无 ACK/自动找回 | CH-04A |
-| 取消与任务超时 | 对外状态和实际执行停止可能不同步 | CH-06 |
+| 取消后服务不可达 / Worker 硬退出 | 保留 cancelling、资源 ID 和清理证据，不自动杀历史 PID 或补造停止确认；需人工检查或后续恢复调度 | CH-04B/C |
 | 历史事件切换实时订阅 | SSE 可能漏掉切换窗口事件 | CH-06 |
 | 在线日志 / 状态脱敏范围 | 评测 sanitizer 不覆盖所有在线错误、payload 和 checkpoint | CH-06 |
 | 外部模型调用原子性与计费 | 已有持久化预留、未定响应和有界重试；数据库/provider 无跨系统事务，缺 usage/特殊计费时不能承诺精确金额，也尚无 Worker fencing | CH-04B（所有权）；CH-10 记账已完成 |
@@ -334,6 +334,8 @@ CH-03A 接口映射（2026-10-19，已实现并验收）：`ArtifactStore.freeze
 CH-03B 接口映射（2026-10-22，已实现并验收）：`PublicationStore.ensure(task_id, decision_id, candidate_id)` 从 SQL 校验运行中原任务、已消费同意决定、候选/证据及当前代次，生成不可变 `publish-intent-v1`；`GitHubPublisher.publish(intent_id=...)` 不再接受原始 edits。迁移 `20261022_0006` 新增 `publish_intents`，decision 唯一、payload 摘要和独立 receipt CAS，不补造历史发布。新版审批恢复在 SQL 决定及图状态记录 publication protocol marker；旧已越过审批而未记录意图的 checkpoint 拒绝，仍在等待的绑定审批可经新校验继续。
 
 `publish-receipt-v1` 保存 `pending/publishing/unknown/published/blocked/cancelled/revalidation_required`、每步发起/确认、远端 ID、取消及基线观测。Git 对象预先确定 ID；ref 只创建，PR 已可能发出而查询为空时不重复创建。先核对全部已发出步骤，再处理取消/基线变化，保留可能已存在的 PR。CLI 默认只读对账；没有自动调度器或多 Worker fencing。API `/publication` 只读 SQL，任务终态不抹去远端事实。详细契约见 [发布与恢复](docs/publication.md)。
+
+CH-06A 接口映射（2026-10-22，已实现、验收中）：复用任务状态版本 CAS，运行中取消进入 `cancelling`，清理完成才进入 `cancelled`；停止失败保留资源 ID/清理证据，不补造确认。新任务默认 900 秒累计执行预算，排队/审批分别计时，是否计入由持久化策略显式配置；旧任务不回填期限或停止确认。统一 `ExecutionControl` 支持任务停止和仅 attempt 的 abort，后者不能把任务标为 cancelled。发布使用原 CH-03B 取消/对账，停止后允许有界只读对账。
 
 四个全局约束：
 
@@ -518,7 +520,7 @@ CH-03B 接口映射（2026-10-22，已实现并验收）：`PublicationStore.ens
 
 #### CH-06A：可确认取消与全局截止时间
 
-- **状态**：TODO。**优先级/规模**：P1 / L。**硬依赖**：CH-09、CH-10、CH-03B。
+- **状态**：IMPLEMENTED_UNVERIFIED。**优先级/规模**：P1 / L。**硬依赖**：CH-09、CH-10、CH-03B。
 - **入口**：`api.py`、`models.py`、`worker.py`、`llm.py`、`sandbox.py`、`repository.py`、发布模块。
 - **实施步骤**：
   1. 区分 cancel requested 与 confirmed stopped；采用字段或新状态时给出迁移与兼容说明，终态更新使用 CAS 防止旧 Worker 覆盖取消。
@@ -862,6 +864,7 @@ make ch02b-integration
 make ch03a-integration
 make ch05a-integration
 make ch03b-integration
+make ch06a-integration
 make eval
 make smoke
 make smoke-recovery
@@ -894,6 +897,7 @@ smoke 使用已经运行的服务。若 `.env` 选择真实模型，应按 [READ
 - [CH-05A 隔离验收](docs/ch05a-verification-2026-10-21.md)：多文件中断、进程硬退出、精确重放、旧审批升级、来源核对与资源清理。
 - [发布意图与远端对账](docs/publication.md)：获批完整树/固定 parent、分阶段 receipt、取消与基线移动、只读 CLI 和升级边界。
 - [CH-03B 隔离验收](docs/ch03b-verification-2026-10-22.md)：五阶段 HTTP 丢响应/硬退出、SQL CAS、完整来源核对及中间失败记录。
+- [可确认取消与截止时间](docs/execution-control.md)：API 状态、时间口径、清理证据、发布及重启边界。
 - [模型调用预算与 provider 故障](docs/model-call-control.md)：配置、账本状态、错误分类、重试与崩溃窗口。
 - [工作区能力策略](docs/workspace-capabilities.md)：版本化 read/write/create 权限、拒绝原因与边界。
 - [CH-02B 隔离服务验收](docs/ch02b-verification-2026-10-19.md)：策略纠正、持久化限额、硬退出后显式接续、旧审批 checkpoint 与实际 Worker 重启的验证范围。

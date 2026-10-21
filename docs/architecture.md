@@ -137,3 +137,11 @@ counts, per-node duration, iteration count, sandbox time, and separate model-cal
 started, succeeded, failed, unknown, pending, retry, fallback, backoff, and trusted-usage fields.
 Node-update events carry the
 corresponding duration so the API, SSE stream, and post-run metrics describe the same execution.
+
+## Execution stop and deadline scope
+
+[CH-06A](execution-control.md) binds one execution control scope to graph nodes and their I/O.
+SQL stores cancellation requests, phase timing, exact owned resource IDs and cleanup evidence.
+Only cleanup completion permits a stopped timestamp. Queue/approval expiry runs independently
+of active execution; publication uses the existing receipt reconciliation boundary.
+Attempt abort is a local stop interface for future ownership loss, not Worker fencing.

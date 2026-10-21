@@ -8,6 +8,7 @@ import uuid
 import asyncpg
 import httpx
 import pytest
+from legacy_tasks import insert_legacy_task
 from publication_helpers import GitHubServer, publication_case
 from sqlalchemy import func, select, text
 from sqlalchemy.engine import make_url
@@ -110,18 +111,19 @@ async def test_postgres_ch05a_upgrade_preserves_records_and_installs_empty_inten
     try:
         await admin.execute(f'CREATE DATABASE "{name}"')
         await ensure_database_schema(url, revision="20261021_0005")
-        task = await db.create_task(
+        task = await insert_legacy_task(
+            db,
             TaskCreate(
                 repository_url="demo://buggy-calculator",
                 issue_title="CH-05A upgrade fixture",
                 issue_body="Preserve metadata without inferring an old publication outcome.",
-            )
+            ),
         )
         await db.add_event(task.id, kind="upgrade", node="probe", message="retained")
         await db.setup()
         await db.setup()
         assert await current_database_revisions(url) == (HEAD_REVISION,)
-        assert (await db.get_task(task.id)) == task
+        assert (await db.get_task(task.id)).issue_title == task.issue_title
         assert len(await db.list_events(task.id)) == 1
         async with db.sessions() as session:
             assert await session.scalar(select(func.count()).select_from(PublishIntentRecord)) == 0

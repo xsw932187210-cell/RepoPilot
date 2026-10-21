@@ -23,8 +23,16 @@ from repopilot.approval_models import (
     evidence_identity,
 )
 from repopilot.candidates import Candidate, candidate_identity
-from repopilot.db import Base, EventRecord, TaskRecord, TaskStateConflict, utcnow
+from repopilot.db import (
+    Base,
+    EventRecord,
+    TaskRecord,
+    TaskStateConflict,
+    phase_transition_values,
+    utcnow,
+)
 from repopilot.models import TASK_RESULT_SCHEMA_VERSION, TaskStatus, TaskView
+from repopilot.task_timing import remaining_seconds
 
 if TYPE_CHECKING:
     from repopilot.db import Database
@@ -173,6 +181,7 @@ class ApprovalStore:
             from repopilot.generations import require_current
 
             await require_current(session, task_id, candidate.candidate_id)
+            task = await session.get(TaskRecord, task_id)
             result = await session.execute(
                 update(TaskRecord)
                 .where(
@@ -186,6 +195,7 @@ class ApprovalStore:
                     result=summary,
                     result_schema_version=TASK_RESULT_SCHEMA_VERSION,
                     updated_at=utcnow(),
+                    **phase_transition_values(task, utcnow()),
                 )
             )
             if result.rowcount != 1:
@@ -337,6 +347,8 @@ class ApprovalStore:
                 raise ApprovalConflict("task_not_awaiting_approval")
             if task.state_version != request.request_version:
                 raise ApprovalConflict("stale_approval_version")
+            if remaining_seconds(task, utcnow()) == 0:
+                raise ApprovalConflict("task_deadline_exceeded")
             from repopilot.generations import require_current
 
             await require_current(session, task_id, row.candidate_id)
@@ -365,6 +377,7 @@ class ApprovalStore:
                     state_version=request.request_version + 1,
                     result={**(task.result or {}), "approval_decision_id": decision.decision_id},
                     updated_at=utcnow(),
+                    **phase_transition_values(task, utcnow()),
                 )
             )
             if result.rowcount != 1:

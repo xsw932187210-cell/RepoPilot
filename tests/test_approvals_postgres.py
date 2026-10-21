@@ -9,6 +9,7 @@ import asyncpg
 import httpx
 import pytest
 from approval_helpers import approval_case, decision_request
+from legacy_tasks import insert_legacy_task
 from redis.asyncio import Redis
 from sqlalchemy import inspect, select, text
 from sqlalchemy.engine import make_url
@@ -42,12 +43,13 @@ async def test_postgres_previous_head_upgrade_preserves_tasks_and_events():
     try:
         await admin.execute(f'CREATE DATABASE "{name}"')
         await ensure_database_schema(url, revision="20260921_0003")
-        task = await before.create_task(
+        task = await insert_legacy_task(
+            before,
             TaskCreate(
                 repository_url="demo://buggy-calculator",
                 issue_title="Previous revision fixture",
                 issue_body="Keep the task and its event while installing approval tables.",
-            )
+            ),
         )
         await before.add_event(task.id, kind="upgrade_fixture", node="probe", message="preserve")
         await before.setup()

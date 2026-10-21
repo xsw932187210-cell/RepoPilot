@@ -7,7 +7,6 @@ they never receive the stored artifact itself. Generation commits only publish c
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import io
 import json
@@ -24,6 +23,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
+from repopilot.execution import drain_thread
 from repopilot.security import SecurityError, normalize_workspace_path
 
 MAX_ARTIFACT_BYTES = 100 * 1024 * 1024
@@ -270,7 +270,7 @@ class ArtifactStore:
         base_repository: Path | None = None,
         staging: Path | None = None,
     ) -> Candidate:
-        return await asyncio.to_thread(
+        return await drain_thread(
             self._freeze,
             workspace,
             task_id,
@@ -301,7 +301,8 @@ class ArtifactStore:
             raise SecurityError("Artifact storage cannot be a symlink")
         sync_directory(self.root.parent)
         temporary_context = (
-            nullcontext(staging) if staging is not None
+            nullcontext(staging)
+            if staging is not None
             else tempfile.TemporaryDirectory(dir=self.root)
         )
         with temporary_context as temporary:

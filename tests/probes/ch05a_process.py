@@ -30,6 +30,12 @@ async def run(args):
             await db.setup()
             async with checkpointer_context(settings) as saver:
                 await Worker(settings, db, redis, saver).handle({"task_id": args.task_id})
+            from repopilot.approvals import ApprovalStore
+
+            original = await ApprovalStore(db).current(args.task_id)
+            (settings.workspace_root / f"{args.task_id}-legacy-approval.json").write_text(
+                original.model_dump_json()
+            )
             return
 
         from repopilot.approval_models import TestEvidence
