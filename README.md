@@ -24,6 +24,10 @@ known limitations, and acceptance criteria for the next iterations (Chinese).
 - Explainable BM25 + Python AST symbol retrieval with source/test dependency expansion and a
   bounded context budget.
 - Durable PostgreSQL checkpoints and `Command(resume=...)` human approval.
+- Frozen complete candidates, image/command-bound test evidence, versioned one-time approval
+  decisions and durable retryable resume intents.
+- Private staged proposals, complete artifact generations selected by database CAS, retained
+  orphan journals and exact-operation replay after a generation/checkpoint handoff interruption.
 - Versioned application-schema migrations, optimistic task-state updates, and explicit result/event
   JSON versions.
 - Durable per-task model-call reservations, bounded provider retries/timeouts, conservative
@@ -117,14 +121,28 @@ curl -X POST http://localhost:8000/api/v1/tasks \
   }'
 ```
 
-When the task reaches `awaiting_approval`, inspect its result and events, then resume the durable
-LangGraph thread:
+When the task reaches `awaiting_approval`, inspect `GET /api/v1/tasks/TASK_ID/approval` for the
+frozen candidate, complete manifest, test evidence and Reviewer risk. Fetch the full Diff from
+`/api/v1/tasks/TASK_ID/candidates/CANDIDATE_ID/diff`. Then resume the durable thread using the exact
+bindings from that view (the helper builds the required `approval-v2` body):
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/tasks/TASK_ID/approval \
-  -H 'Content-Type: application/json' \
-  -d '{"approved": true, "feedback": "Reviewed diff and test evidence"}'
+curl -fsS http://localhost:8000/api/v1/tasks/TASK_ID/approval \
+  | python3 scripts/approval_payload.py 'Reviewed full diff and test evidence' \
+  | curl -fsS -X POST http://localhost:8000/api/v1/tasks/TASK_ID/approval \
+      -H 'Content-Type: application/json' --data-binary @-
 ```
+
+Legacy boolean-only requests return 422. A committed decision whose Redis delivery fails returns
+202 with `saved=true`, `dispatch_state=pending` and a decision ID. Explicitly retry that ID at
+`POST /api/v1/tasks/TASK_ID/approval/dispatch`; do not create another approval. Old unbound
+checkpoints require a new task and fresh tests. See [candidate and approval contracts](docs/candidate-approvals.md).
+Publication uses a durable intent bound to the approved artifact, evidence, decision and base SHA.
+It creates deterministic Git objects and a unique branch, and reconciles uncertain responses before
+continuing. Ambiguous PR creation never triggers a second blind create. Base movement requires
+retesting and approval; cancellation preserves observed remote effects. Receipts remain available at
+`GET /api/v1/tasks/{task_id}/publication`. See [publication/recovery](docs/publication.md).
+Automatic outbox delivery and Worker fencing remain later change cards.
 
 GitHub writes are off by default. To enable draft-PR creation, set all of the following locally:
 
@@ -152,6 +170,23 @@ The report includes completion, test pass, exact change scope, HITL, iteration, 
 latency evidence, plus retrieval Recall@3, Recall@5, and mean reciprocal rank. CI stores the JSON
 report as a workflow artifact and fails if any deterministic case regresses. This mock result
 measures workflow and retrieval reliability, not LLM coding ability.
+
+Run `make ch02b-integration` for the isolated PostgreSQL/Redis/Docker policy-correction probe,
+explicit legacy-checkpoint refusal, API smoke and actual Worker restart. It uses a dedicated
+Compose project, fixed Mock configuration and automatic project-scoped cleanup. See the
+[CH-02B verification record](docs/ch02b-verification-2026-10-19.md) for results and recovery limits.
+
+Run `make ch03a-integration` to additionally verify bound approvals, previous-head migration,
+opposite-decision concurrency, commit/process-exit recovery, real Redis connection failure and
+artifact corruption refusal. It also reruns policy probes, mock evaluation and restart smoke.
+
+Run `make ch05a-integration` for staged multi-file failure, retained orphan reconciliation,
+generation CAS/replay, and a pinned CH-03A approval upgrade, plus the same full regression and
+smoke checks. The dedicated test Compose file pins the previously verified Python base digest;
+`CH05A_PYTHON_IMAGE` can select another base explicitly. Source and tests are rebuilt and hashed.
+See [generation storage and recovery](docs/candidate-generations.md) for compatibility and limits.
+The [2026-10-21 verification record](docs/ch05a-verification-2026-10-21.md) documents the full
+229-test service run, source checks, faults and cleanup, including intermediate failures.
 
 After configuring an OpenAI-compatible model in the ignored `.env`, run `make eval-real` for a
 separately labelled model-quality report. See [docs/evaluation.md](docs/evaluation.md) for the
@@ -193,6 +228,11 @@ The [model-call control guide](docs/model-call-control.md) defines the provider 
 retry, and crash-window contract.
 
 ## Current scope
+
+CH-03B's [2026-10-22 verification record](docs/ch03b-verification-2026-10-22.md) covers 281
+container tests, publication transport faults, process exits, Mock regression and Worker restart.
+Run `make ch03b-integration` for the isolated suite. GitHub itself is simulated; publication uses
+the [approved-intent protocol](docs/publication.md), with no automatic merge or Worker fencing.
 
 Version 0.1 focuses on one reliable path: issue to verified change to human approval to optional
 draft PR. Slack/Linear triggers, MCP packaging, a web dashboard, multi-language sandbox images,

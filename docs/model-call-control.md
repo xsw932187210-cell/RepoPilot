@@ -30,6 +30,12 @@ threshold before later calls are stopped. Missing usage disables that exact toke
 task; the call cap and provider output cap continue to bound requests. RepoPilot does not estimate
 tokens, provider-specific billing units, or monetary cost.
 
+CH-02B's `apply_policy` checkpoint records the one task-wide correction allowance before the next
+Coder request. It does not create a second call budget: a correction is another `coder` role call
+on this ledger, and `model_call_budget_exhausted` stops the graph without another transport
+attempt. Coder requests now identify their schema as `CodeChangeOutput-v2`; Planner/Reviewer remain
+at v1. Existing call rows retain their original request-schema identity and are not rewritten.
+
 ## Durable ledger and state transitions
 
 Alembic revision `20260921_0003` adds only the two CH-10 structures:

@@ -58,4 +58,6 @@ async def test_readable_context_and_edit_capabilities_are_distinct() -> None:
     )
     assert capability_line.endswith('["src/rule.py"]')
     assert "tests/test_rule.py" not in capability_line
+    assert "Current SHA-256 by editable path" in user_content
+    assert "expected_content_sha256" in messages[0]["content"]
     assert "--- tests/test_rule.py ---" in user_content

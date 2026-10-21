@@ -588,3 +588,9 @@ async def test_planner_coder_policy_correction_and_reviewer_share_one_task_budge
         "coder",
         "reviewer",
     ]
+    assert [attempt["request_schema_version"] for attempt in attempts] == [
+        "PlanOutput-v1",
+        "CodeChangeOutput-v2",
+        "CodeChangeOutput-v2",
+        "ReviewOutput-v1",
+    ]

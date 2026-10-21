@@ -1,4 +1,4 @@
-.PHONY: up down build logs test lint migration-test ch10-migration-test smoke smoke-recovery eval eval-real eval-real-reproduce eval-real-retrieval
+.PHONY: up down build logs test lint migration-test ch10-migration-test ch02b-integration ch03a-integration ch05a-integration ch03b-integration smoke smoke-recovery eval eval-real eval-real-reproduce eval-real-retrieval
 
 up:
 	docker compose up --build -d
@@ -13,8 +13,8 @@ logs:
 	docker compose logs -f api worker
 
 test:
-	docker build -f Dockerfile --target runtime -t repopilot:test .
-	docker run --rm -v "$$(pwd)/tests:/app/tests:ro" repopilot:test sh -c 'pip install -q ".[dev]" && python -m pytest --cov=repopilot --cov-report=term-missing --cov-fail-under=70 -q'
+	docker build -f Dockerfile --target integration-test -t repopilot:test .
+	docker run --rm repopilot:test python -m pytest --cov=repopilot --cov-report=term-missing --cov-fail-under=70 -q
 
 lint:
 	docker run --rm -v "$$(pwd):/workspace" -w /workspace repopilot-sandbox:local ruff check .
@@ -24,6 +24,18 @@ migration-test:
 
 ch10-migration-test:
 	./scripts/ch10_migration_integration.sh
+
+ch02b-integration:
+	./scripts/ch02b_integration.sh
+
+ch03a-integration:
+	./scripts/ch03a_integration.sh
+
+ch05a-integration:
+	./scripts/ch05a_integration.sh
+
+ch03b-integration:
+	./scripts/ch03b_integration.sh
 
 smoke:
 	./scripts/smoke.sh

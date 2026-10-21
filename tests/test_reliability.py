@@ -7,13 +7,15 @@ import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 
+from repopilot.candidates import ArtifactStore, Candidate, bound_resume
 from repopilot.config import Settings
 from repopilot.db import Database
 from repopilot.events import JobQueue
 from repopilot.github import GitHubPublisher
 from repopilot.graph import GraphDependencies, build_graph
 from repopilot.graph.builder import TaskCancelled
-from repopilot.llm import MockAgentModel
+from repopilot.llm import BudgetedAgentModel, MockAgentModel
+from repopilot.model_calls import ModelCallBudget
 from repopilot.models import (
     CodeChangeOutput,
     FileEdit,
@@ -23,8 +25,11 @@ from repopilot.models import (
     TaskCreate,
     TaskStatus,
 )
+from repopilot.policy_feedback import content_sha256, normalized_policy_feedback
 from repopilot.repository import RepositoryContext, WorkspaceManager
 from repopilot.sandbox import DockerSandbox, LocalSandbox
+from repopilot.security import CapabilityAction, CapabilityError, CapabilityReason, SecurityError
+from repopilot.worker import result_summary
 
 
 def graph_input(task_id: str) -> dict[str, Any]:
@@ -71,11 +76,53 @@ async def test_checkpoint_can_resume_after_graph_rebuild(tmp_path: Path) -> None
 
     rebuilt_graph = build_graph(deps, saver)
     completed = await rebuilt_graph.ainvoke(
-        Command(resume={"approved": True, "feedback": "resume after rebuild"}),
+        Command(resume=bound_resume(interrupted, approved=True, feedback="resume after rebuild")),
         config=config,
     )
     assert completed["status"] == "completed"
     assert any(metric["node"] == "approval" for metric in completed["node_metrics"])
+
+
+@pytest.mark.parametrize("decision", [{"approved": True}, True, {"approved": "true"}])
+async def test_graph_cannot_resume_from_an_unbound_approval(tmp_path: Path, decision) -> None:
+    from repopilot.approvals import ApprovalConflict
+
+    deps = dependencies(tmp_path)
+    config = {"configurable": {"thread_id": "unbound-approval"}}
+    graph = build_graph(deps, InMemorySaver())
+    await graph.ainvoke(graph_input("unbound-approval"), config=config)
+    with pytest.raises(ApprovalConflict, match="stale_approval_binding"):
+        await graph.ainvoke(Command(resume=decision), config=config)
+
+
+async def test_waiting_approval_uses_original_artifact_after_workspace_changes(
+    tmp_path: Path,
+) -> None:
+    deps = dependencies(tmp_path)
+    config = {"configurable": {"thread_id": "frozen-approval"}}
+    graph = build_graph(deps, InMemorySaver())
+    result = await graph.ainvoke(graph_input("frozen-approval"), config=config)
+    (Path(result["workspace"]) / "calculator.py").write_text("# later workspace bytes\n")
+    completed = await graph.ainvoke(
+        Command(resume=bound_resume(result, approved=True)),
+        config=config,
+    )
+    assert completed["status"] == "completed"
+    assert completed["candidate"] == result["candidate"]
+    assert completed["test_evidence"] == result["test_evidence"]
+
+
+async def test_approved_graph_state_cannot_publish_different_edit_bytes(tmp_path: Path) -> None:
+    from repopilot.security import SecurityError
+
+    deps = dependencies(tmp_path)
+    config = {"configurable": {"thread_id": "modified-publish-intent"}}
+    graph = build_graph(deps, InMemorySaver())
+    result = await graph.ainvoke(graph_input("modified-publish-intent"), config=config)
+    altered = [{**edit, "content": "# different bytes\n"} for edit in result["edits"]]
+    await graph.aupdate_state(config, {"edits": altered})
+    with pytest.raises(SecurityError, match="differs from the approved artifact"):
+        await graph.ainvoke(Command(resume=bound_resume(result, approved=True)), config=config)
 
 
 class RejectOnceModel(MockAgentModel):
@@ -218,12 +265,331 @@ async def test_tool_policy_rejection_gets_one_atomic_coder_retry(tmp_path: Path)
     assert result["iteration"] == 1
     assert result["policy_retry_count"] == 1
     assert model.propose_calls == 2
-    assert any("Tool policy rejected" in item for item in model.feedback[1])
+    assert any('"reason_code": "write_denied"' in item for item in model.feedback[1])
+    assert result["policy_feedback"] is None
     workspace = tmp_path / "workspaces" / "policy-retry"
-    assert "return a + b" in (workspace / "calculator.py").read_text(encoding="utf-8")
-    assert "invalid test rewrite" not in (
-        workspace / "tests" / "test_calculator.py"
-    ).read_text(encoding="utf-8")
+    with ArtifactStore(workspace.parent / ".artifacts").materialize(
+        Candidate.model_validate(result["candidate"])
+    ) as snapshot:
+        assert "return a + b" in (snapshot / "calculator.py").read_text(encoding="utf-8")
+    assert "return a - b" in (workspace / "calculator.py").read_text(encoding="utf-8")
+    assert "invalid test rewrite" not in (workspace / "tests" / "test_calculator.py").read_text(
+        encoding="utf-8"
+    )
+
+
+class AlwaysViolatesPolicy(MockAgentModel):
+    def __init__(self) -> None:
+        self.propose_calls = 0
+
+    async def propose_changes(
+        self,
+        issue_title: str,
+        issue_body: str,
+        plan: PlanOutput,
+        context: RepositoryContext,
+        reviewer_feedback: list[str],
+    ) -> CodeChangeOutput:
+        self.propose_calls += 1
+        changes = await super().propose_changes(
+            issue_title, issue_body, plan, context, reviewer_feedback
+        )
+        readonly_test = next(path for path in context.files if path.startswith("tests/"))
+        changes.edits.insert(
+            0,
+            FileEdit(
+                path=readonly_test,
+                content=context.files[readonly_test] + "\n# forbidden\n",
+                expected_content_sha256=content_sha256(context.files[readonly_test]),
+            ),
+        )
+        return changes
+
+
+@pytest.mark.asyncio
+async def test_consecutive_policy_violations_stop_without_partial_write(tmp_path: Path) -> None:
+    model = AlwaysViolatesPolicy()
+    result = await build_graph(dependencies(tmp_path, model), InMemorySaver()).ainvoke(
+        graph_input("repeated-policy-denial"),
+        config={"configurable": {"thread_id": "repeated-policy-denial"}},
+    )
+    assert result["status"] == "failed"
+    assert result["error"] == "policy_retry_exhausted"
+    assert result["policy_retry_count"] == 1
+    assert result["iteration"] == 0
+    assert model.propose_calls == 2
+    workspace = tmp_path / "workspaces" / "repeated-policy-denial"
+    assert "return a - b" in (workspace / "calculator.py").read_text(encoding="utf-8")
+    assert "# forbidden" not in (workspace / "tests" / "test_calculator.py").read_text(
+        encoding="utf-8"
+    )
+
+
+class ViolationAfterReviewModel(MockAgentModel):
+    def __init__(self) -> None:
+        self.propose_calls = 0
+
+    async def propose_changes(
+        self,
+        issue_title: str,
+        issue_body: str,
+        plan: PlanOutput,
+        context: RepositoryContext,
+        reviewer_feedback: list[str],
+    ) -> CodeChangeOutput:
+        self.propose_calls += 1
+        changes = await super().propose_changes(
+            issue_title, issue_body, plan, context, reviewer_feedback
+        )
+        if self.propose_calls in {1, 3}:
+            readonly_test = next(path for path in context.files if path.startswith("tests/"))
+            changes.edits.append(
+                FileEdit(
+                    path=readonly_test,
+                    content=context.files[readonly_test] + "\n# forbidden\n",
+                    expected_content_sha256=content_sha256(context.files[readonly_test]),
+                )
+            )
+        return changes
+
+    async def review(self, issue_title: str, diff: str, test_result: SandboxResult) -> ReviewOutput:
+        del issue_title, diff, test_result
+        return ReviewOutput(
+            approved=False,
+            summary="Concrete defect requires remediation.",
+            feedback=["Inspect the scoped source change again."],
+            risk_level="medium",
+        )
+
+
+@pytest.mark.asyncio
+async def test_policy_correction_cap_spans_reviewer_iterations(tmp_path: Path) -> None:
+    model = ViolationAfterReviewModel()
+    result = await build_graph(dependencies(tmp_path, model), InMemorySaver()).ainvoke(
+        graph_input("policy-across-iterations"),
+        config={"configurable": {"thread_id": "policy-across-iterations"}},
+    )
+    assert result["status"] == "failed"
+    assert result["error"] == "policy_retry_exhausted"
+    assert result["iteration"] == 1
+    assert result["policy_retry_count"] == 1
+    assert model.propose_calls == 3
+
+
+class MissingDigestModel(MockAgentModel):
+    async def propose_changes(
+        self,
+        issue_title: str,
+        issue_body: str,
+        plan: PlanOutput,
+        context: RepositoryContext,
+        reviewer_feedback: list[str],
+    ) -> CodeChangeOutput:
+        changes = await super().propose_changes(
+            issue_title, issue_body, plan, context, reviewer_feedback
+        )
+        changes.edits[0].expected_content_sha256 = None
+        return changes
+
+
+@pytest.mark.asyncio
+async def test_missing_intent_precondition_rejected_before_write(tmp_path: Path) -> None:
+    graph = build_graph(dependencies(tmp_path, MissingDigestModel()), InMemorySaver())
+    result = await graph.ainvoke(
+        graph_input("missing-intent-digest"),
+        config={"configurable": {"thread_id": "missing-intent-digest"}},
+    )
+    assert result["status"] == "failed"
+    assert result["policy_feedback"]["reason_code"] == "expected_content_required"
+    source = tmp_path / "workspaces" / "missing-intent-digest" / "calculator.py"
+    assert "return a - b" in source.read_text(encoding="utf-8")
+
+
+class MalformedIntentModel(MockAgentModel):
+    async def propose_changes(
+        self,
+        issue_title: str,
+        issue_body: str,
+        plan: PlanOutput,
+        context: RepositoryContext,
+        reviewer_feedback: list[str],
+    ) -> CodeChangeOutput:
+        del issue_title, issue_body, plan, context, reviewer_feedback
+        return {"summary": "invalid", "edits": [{"path": "calculator.py", "action": "delete"}]}  # type: ignore[return-value]
+
+
+@pytest.mark.asyncio
+async def test_malformed_intent_stops_with_stable_error(tmp_path: Path) -> None:
+    graph = build_graph(dependencies(tmp_path, MalformedIntentModel()), InMemorySaver())
+    result = await graph.ainvoke(
+        graph_input("malformed-intent"),
+        config={"configurable": {"thread_id": "malformed-intent"}},
+    )
+    assert result["status"] == "failed"
+    assert result["error"] == "invalid_modification_intent"
+    assert result["iteration"] == 0
+    source = tmp_path / "workspaces" / "malformed-intent" / "calculator.py"
+    assert "return a - b" in source.read_text(encoding="utf-8")
+
+
+@pytest.mark.asyncio
+async def test_policy_retry_uses_existing_model_call_budget(tmp_path: Path) -> None:
+    model = AlwaysViolatesPolicy()
+    budget = ModelCallBudget(2)
+    deps = dependencies(tmp_path)
+    deps.model = BudgetedAgentModel(model, budget)
+    result = await build_graph(deps, InMemorySaver()).ainvoke(
+        graph_input("policy-budget"),
+        config={"configurable": {"thread_id": "policy-budget"}},
+    )
+    assert result["status"] == "failed"
+    assert result["error"] == "model_call_budget_exhausted"
+    assert result["policy_retry_count"] == 1
+    assert model.propose_calls == 1
+    assert budget.snapshot()["reserved_calls"] == 2  # planner + first coder
+
+
+@pytest.mark.asyncio
+async def test_policy_retry_count_survives_graph_rebuild(tmp_path: Path) -> None:
+    model = AlwaysViolatesPolicy()
+    saver = InMemorySaver()
+    deps = dependencies(tmp_path, model)
+    config = {"configurable": {"thread_id": "policy-checkpoint"}}
+    graph = build_graph(deps, saver)
+    async for update in graph.astream(
+        graph_input("policy-checkpoint"), config=config, stream_mode="updates"
+    ):
+        if "apply_policy" in update:
+            break
+    checkpoint = await graph.aget_state(config)
+    assert checkpoint.values["policy_retry_count"] == 1
+    assert checkpoint.values["policy_feedback"]["reason_code"] == "write_denied"
+    assert model.propose_calls == 1
+
+    recovered = await build_graph(deps, saver).ainvoke(None, config=config)
+    assert recovered["status"] == "failed"
+    assert recovered["policy_retry_count"] == 1
+    assert model.propose_calls == 2
+
+
+class StaleAfterRefreshModel(AlwaysViolatesPolicy):
+    def __init__(self) -> None:
+        super().__init__()
+        self.first_digest: str | None = None
+
+    async def propose_changes(
+        self,
+        issue_title: str,
+        issue_body: str,
+        plan: PlanOutput,
+        context: RepositoryContext,
+        reviewer_feedback: list[str],
+    ) -> CodeChangeOutput:
+        if self.propose_calls == 0:
+            self.first_digest = content_sha256(context.files["calculator.py"])
+            return await super().propose_changes(
+                issue_title, issue_body, plan, context, reviewer_feedback
+            )
+        self.propose_calls += 1
+        changes = await MockAgentModel.propose_changes(
+            self, issue_title, issue_body, plan, context, reviewer_feedback
+        )
+        assert self.first_digest is not None
+        changes.edits[0].expected_content_sha256 = self.first_digest
+        return changes
+
+
+class ExternalWriteAfterDenial(WorkspaceManager):
+    def __init__(self, settings: Settings) -> None:
+        super().__init__(settings)
+        self.inspections = 0
+
+    def inspect(
+        self, workspace: Path, issue_text: str, search_terms: list[str]
+    ) -> RepositoryContext:
+        self.inspections += 1
+        if self.inspections == 2:
+            source = workspace / "calculator.py"
+            source.write_text(source.read_text(encoding="utf-8") + "\n# external writer\n")
+        return super().inspect(workspace, issue_text, search_terms)
+
+
+@pytest.mark.asyncio
+async def test_external_write_to_context_materialization_stops_without_overwriting_source(
+    tmp_path: Path,
+) -> None:
+    model = StaleAfterRefreshModel()
+    deps = dependencies(tmp_path, model)
+    deps.workspaces = ExternalWriteAfterDenial(deps.settings)
+    with pytest.raises(SecurityError, match="changed during inspection"):
+        await build_graph(deps, InMemorySaver()).ainvoke(
+            graph_input("stale-policy-context"),
+            config={"configurable": {"thread_id": "stale-policy-context"}},
+        )
+    source = tmp_path / "workspaces" / "stale-policy-context" / "calculator.py"
+    assert "# external writer" not in source.read_text(encoding="utf-8")
+    assert "return a - b" in source.read_text(encoding="utf-8")
+
+
+def test_policy_feedback_never_exposes_untrusted_error_path_or_message() -> None:
+    context = RepositoryContext(
+        tree=["calculator.py"],
+        files={"calculator.py": "return a - b\n"},
+        editable_paths=("calculator.py",),
+        capability_policy_version="workspace-capabilities-v1",
+    )
+    marker = "sk-abcdefghijklmnopqrstuvwxyz1234567890"
+    error = CapabilityError(
+        CapabilityReason.INVALID_PATH,
+        CapabilityAction.WRITE,
+        f"/Users/person/{marker}/calculator.py",
+        f"denied at /Users/person/{marker}/calculator.py",
+        policy_version="workspace-capabilities-v1",
+    )
+    feedback = normalized_policy_feedback(error, context)
+    assert feedback.reason_code == "invalid_path"
+    assert feedback.target_path is None
+    assert feedback.allowed_actions == ["write"]
+    assert feedback.allowed_paths == ["calculator.py"]
+    assert marker not in feedback.model_dump_json()
+    assert "/Users/person" not in feedback.model_dump_json()
+
+
+class HostPathIntentModel(MockAgentModel):
+    async def propose_changes(
+        self,
+        issue_title: str,
+        issue_body: str,
+        plan: PlanOutput,
+        context: RepositoryContext,
+        reviewer_feedback: list[str],
+    ) -> CodeChangeOutput:
+        del issue_title, issue_body, plan, context, reviewer_feedback
+        return CodeChangeOutput(
+            summary="out-of-scope path",
+            edits=[
+                FileEdit(
+                    path="/Users/person/sk-abcdefghijklmnopqrstuvwxyz1234567890/source.py",
+                    content="unsafe\n",
+                )
+            ],
+        )
+
+
+@pytest.mark.asyncio
+async def test_policy_failure_result_summary_excludes_host_path(tmp_path: Path) -> None:
+    graph = build_graph(dependencies(tmp_path, HostPathIntentModel()), InMemorySaver())
+    result = await graph.ainvoke(
+        graph_input("host-path-intent"),
+        config={"configurable": {"thread_id": "host-path-intent"}},
+    )
+    summary = result_summary(result)
+    assert summary["status"] == "failed"
+    assert summary["policy_feedback"]["reason_code"] == "outside_context"
+    assert summary["policy_feedback"]["target_path"] is None
+    assert summary["error"] == "policy_retry_exhausted"
+    assert "/Users/person" not in str(summary)
+    assert "sk-abcdefghijklmnopqrstuvwxyz1234567890" not in str(summary)
 
 
 class MemoryRedis:
@@ -362,6 +728,12 @@ class FakeContainers:
 class FakeDockerClient:
     def __init__(self) -> None:
         self.containers = FakeContainers()
+        self.images = self
+
+    def get(self, name: str):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(id="sha256:" + "1" * 64)
 
     def close(self) -> None:
         pass

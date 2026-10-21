@@ -15,12 +15,17 @@ flowchart LR
   P --> T[Test analyst]
   R --> C[Coder]
   T --> C
-  C --> S[Docker test runner]
+  C --> AP[Apply policy: single writer]
+  AP -->|valid batch| A[Freeze complete candidate]
+  A --> S[Docker tests on frozen artifact]
+  AP -->|one task-wide correction| C
   S --> V[Reviewer]
   V -->|medium/high risk: one bounded remediation| C
   V -->|approved, low-risk, or second candidate| H[HITL interrupt]
-  H -->|approved| GH[Governed GitHub tool]
+  H -->|approved| PI[(Bound publication intent and receipt)]
+  PI --> GH[GitHub object/ref/PR reconciliation]
   G --> CP[(PostgreSQL checkpoints)]
+  H --> D[(Bound decision and resume intent)]
   W --> E[(Task and event tables)]
   M[Versioned app migration] --> E
   M --> L
@@ -37,11 +42,11 @@ flowchart LR
    `.git`, case aliases, symbolic links, hard links, and special files are rejected. See
    [workspace capability policy](workspace-capabilities.md).
 3. Test commands are parsed to argument arrays; shell operators and arbitrary executables are rejected.
-4. Tests execute from a disposable snapshot of the current task workspace, without inheriting the
+4. Tests execute from a disposable materialization of a content-addressed candidate, without inheriting the
    worker's mounts, network access, Linux capabilities, or privilege escalation. Symlinks and
    special files are rejected when the snapshot is built.
 5. GitHub writes require a non-empty diff, passing tests, an allowlisted owner, runtime enablement,
-   a token, reviewer approval, and a LangGraph human interrupt. Deterministic checks override an
+   a token, reviewer evidence, and a LangGraph human approval interrupt. Deterministic checks override an
    incorrect model approval and feed their evidence into the bounded retry loop.
 6. Tokens and credential-bearing URLs are never placed in graph state or task events.
 
@@ -55,15 +60,39 @@ Every graph node is checkpointed by `AsyncPostgresSaver`. The stable `graph_thre
 the task record is the recovery cursor. Approval resumes the same thread with
 `Command(resume=...)`; it does not rebuild the workflow from scratch.
 
+`prepare` freezes generation 0; `apply_policy` writes a private stage, verifies all bytes/modes
+and selects the complete artifact through database CAS. It leaves the original checkout intact.
+Tests, Reviewer context
+and the versioned human decision refer to that candidate and evidence digest. Decision, task CAS,
+audit event and pending resume intent commit together. Redis delivery failures remain visible and
+can be explicitly retried; Worker resolves the decision from SQL rather than message booleans.
+Unbound legacy approvals require a new task/retest. See [candidate and approval contracts](candidate-approvals.md).
+Worker startup and task entry classify retained stages without adopting/deleting them. Exact
+operation replay handles the generation/checkpoint commit gap; superseded operations and stale
+evidence/approval/results are rejected. See [candidate generations](candidate-generations.md).
+Publication reads the bound artifact and uses the approved base SHA as the commit parent. A durable
+intent fixes the full task/decision/candidate/target identity and Git object IDs. Each HTTP phase is
+saved before transport and reconciled against the same target. Conflicts, base movement and unknown
+PR outcomes stop further writes; cancellation records effects rather than deleting them. See
+[publication contracts](publication.md). Automatic queue recovery and ownership fencing remain CH-04.
+
 When deterministic validation fails, or when the reviewer reports a concrete medium/high-risk
-finding, the coder refreshes repository context from the already modified workspace before
+finding, the coder refreshes repository context from the bound complete generation before
 applying feedback. A low-risk or evidence-only reviewer concern goes directly to HITL; after one
 review-driven remediation, the next candidate is also escalated. Previous edits remain
 accumulated in state, and the configured maximum iteration count prevents an unbounded agent loop.
 
+Coder checkpoints a `CodeChangeOutput-v2` proposal before the separate `apply_policy` writer
+node checks the exact-path/action/content-digest intent and calls `apply_edits()`. A denied whole
+batch yields `policy-feedback-v1` with a stable reason and only context-approved paths. Its one
+task-wide correction is checkpointed before another Coder request; refreshing context cannot reuse
+an earlier content digest. This count is independent of Coder iterations and CH-10 transport
+attempts, while every new model request still consumes the same durable call ledger. See
+[structured Coder correction](workspace-capabilities.md#structured-coder-correction).
+
 Redis is intentionally not the source of truth. It owns dispatch, short-lived locks,
 cancellation flags, and live event fan-out. PostgreSQL owns task history, events, the model-call
-ledger, and graph state. RepoPilot's Alembic revisions own task/event/call-ledger application
+ledger, candidate/evidence/approval records, and graph state. RepoPilot's Alembic revisions own these application
 tables; LangGraph checkpoint tables stay behind `AsyncPostgresSaver.setup()` and are never modified
 by guessed application migrations. The application migration service must complete before API or
 Worker starts. Existing

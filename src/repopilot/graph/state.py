@@ -13,6 +13,11 @@ class RepoPilotState(TypedDict, total=False):
     test_command: str
     max_iterations: int
     workspace: str
+    base_sha: str
+    candidate: dict[str, Any]
+    test_evidence: dict[str, Any]
+    approval_decision_id: str
+    publication_protocol_version: str
 
     plan: dict[str, Any]
     research_tree: list[str]
@@ -35,10 +40,15 @@ class RepoPilotState(TypedDict, total=False):
     review: dict[str, Any]
     iteration: int
     policy_retry_count: int
+    policy_feedback: dict[str, Any] | None
+    policy_error_code: str | None
+    pending_changes: dict[str, Any] | None
     node_metrics: Annotated[list[dict[str, Any]], operator.add]
 
     human_approved: bool
     human_feedback: str
     pull_request_url: str | None
+    publish_receipt: dict[str, Any] | None
+    publish_reason: str | None
     status: str
     error: str

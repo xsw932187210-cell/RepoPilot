@@ -1,20 +1,30 @@
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
+from pydantic import ValidationError
 
+from repopilot.approval_models import TestEvidence, evidence_identity
+from repopilot.approvals import ApprovalConflict, ApprovalStore
+from repopilot.candidates import ArtifactStore, Candidate, capture_manifest
 from repopilot.config import Settings
 from repopilot.events import EventBus, JobQueue
-from repopilot.github import GitHubPublisher
+from repopilot.generations import GenerationCoordinator, MemoryGenerationStore, SQLGenerationStore
+from repopilot.github import GitHubPublisher, PublishResult
 from repopilot.graph.state import RepoPilotState
 from repopilot.llm import AgentModel
-from repopilot.models import FileEdit, PlanOutput, ReviewOutput, SandboxResult
+from repopilot.model_calls import ModelCallControlError
+from repopilot.models import CodeChangeOutput, FileEdit, PlanOutput, ReviewOutput, SandboxResult
+from repopilot.policy_feedback import normalized_policy_feedback, validate_modification_intent
+from repopilot.publication import PublicationStore
 from repopilot.repository import RepositoryContext, WorkspaceManager
 from repopilot.sandbox import DockerSandbox, LocalSandbox
 from repopilot.security import SecurityError
@@ -51,6 +61,26 @@ def context_state(context: RepositoryContext) -> dict[str, Any]:
     }
 
 
+def repository_context_from_state(state: RepoPilotState, max_chars: int) -> RepositoryContext:
+    return RepositoryContext(
+        tree=state.get("research_tree", []),
+        files=state.get("research_files", {}),
+        editable_paths=(
+            tuple(state["research_editable_paths"])
+            if state.get("research_editable_paths") is not None
+            else None
+        ),
+        evidence=state.get("research_evidence", []),
+        query_terms=state.get("retrieval_query_terms", []),
+        strategy=state.get("retrieval_strategy", "legacy"),
+        candidate_count=state.get("retrieval_candidate_count", 0),
+        selected_chars=state.get("retrieval_selected_chars", 0),
+        skipped_for_budget=state.get("retrieval_skipped_for_budget", 0),
+        max_chars=max_chars,
+        capability_policy_version=state.get("capability_policy_version", "legacy"),
+    )
+
+
 @dataclass(slots=True)
 class GraphDependencies:
     settings: Settings
@@ -60,6 +90,8 @@ class GraphDependencies:
     publisher: GitHubPublisher
     events: EventBus | None = None
     queue: JobQueue | None = None
+    approvals: ApprovalStore | None = None
+    generations: SQLGenerationStore | MemoryGenerationStore | None = None
 
     async def emit(
         self,
@@ -81,18 +113,42 @@ class GraphDependencies:
                 payload=event_payload,
             )
 
-    async def ensure_active(self, state: RepoPilotState) -> None:
+    async def ensure_active(
+        self, state: RepoPilotState, *, check_generation: bool = True
+    ) -> None:
         if self.queue and await self.queue.is_cancelled(state["task_id"]):
             raise TaskCancelled("Task cancellation was requested")
+        if check_generation and self.generations and state.get("candidate"):
+            await self.generations.assert_current(Candidate.model_validate(state["candidate"]))
 
 
 def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
+    artifacts = ArtifactStore(deps.settings.workspace_root / ".artifacts")
+    if deps.generations is None:
+        deps.generations = (
+            SQLGenerationStore(deps.approvals.database) if deps.approvals
+            else MemoryGenerationStore()
+        )
+    generations = GenerationCoordinator(artifacts, deps.generations, deps.workspaces)
+
+    def inspect_candidate(state: RepoPilotState, search_terms: list[str]) -> RepositoryContext:
+        candidate = Candidate.model_validate(state["candidate"])
+        with artifacts.materialize(candidate) as snapshot:
+            context = deps.workspaces.inspect(
+                snapshot, f"{state['issue_title']}\n{state['issue_body']}", search_terms,
+            )
+            if capture_manifest(snapshot, candidate.base_sha) != candidate.manifest:
+                raise SecurityError("Candidate materialization changed during inspection")
+        return context
+
     async def prepare(state: RepoPilotState) -> dict[str, Any]:
         started = time.perf_counter()
-        await deps.ensure_active(state)
+        await deps.ensure_active(state, check_generation=False)
         workspace = await deps.workspaces.prepare(
             state["task_id"], state["repository_url"], state["base_branch"]
         )
+        base_sha = await deps.workspaces.base_commit(workspace)
+        candidate = await generations.initialize(state["task_id"], workspace, base_sha)
         duration_ms = elapsed_ms(started)
         await deps.emit(
             state,
@@ -102,6 +158,8 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
         )
         return {
             "workspace": str(workspace),
+            "base_sha": base_sha,
+            "candidate": candidate.model_dump(mode="json"),
             "status": "running",
             "iteration": 0,
             "node_metrics": [node_metric("prepare", duration_ms)],
@@ -128,11 +186,7 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
         started = time.perf_counter()
         await deps.ensure_active(state)
         plan = PlanOutput.model_validate(state["plan"])
-        context = deps.workspaces.inspect(
-            Path(state["workspace"]),
-            f"{state['issue_title']}\n{state['issue_body']}",
-            plan.search_terms,
-        )
+        context = inspect_candidate(state, plan.search_terms)
         retrieval = {
             "selected_files": list(context.files),
             "query_terms": context.query_terms,
@@ -178,104 +232,184 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
     async def coder(state: RepoPilotState) -> dict[str, Any]:
         started = time.perf_counter()
         await deps.ensure_active(state)
-        context = RepositoryContext(
-            tree=state.get("research_tree", []),
-            files=state.get("research_files", {}),
-            editable_paths=(
-                tuple(state["research_editable_paths"])
-                if state.get("research_editable_paths") is not None
-                else None
-            ),
-            evidence=state.get("research_evidence", []),
-            query_terms=state.get("retrieval_query_terms", []),
-            strategy=state.get("retrieval_strategy", "legacy"),
-            candidate_count=state.get("retrieval_candidate_count", 0),
-            selected_chars=state.get("retrieval_selected_chars", 0),
-            skipped_for_budget=state.get("retrieval_skipped_for_budget", 0),
-            max_chars=deps.settings.max_context_chars,
-            capability_policy_version=state.get("capability_policy_version", "legacy"),
-        )
+        context = repository_context_from_state(state, deps.settings.max_context_chars)
         plan = PlanOutput.model_validate(state["plan"])
-        if state.get("iteration", 0) > 0:
-            context = deps.workspaces.inspect(
-                Path(state["workspace"]),
-                f"{state['issue_title']}\n{state['issue_body']}",
-                plan.search_terms,
-            )
+        if state.get("iteration", 0) > 0 or state.get("policy_feedback") is not None:
+            context = inspect_candidate(state, plan.search_terms)
         model_feedback = list(state.get("reviewer_feedback", []))
-        policy_retries = 0
-        while True:
-            changes = await deps.model.propose_changes(
-                state["issue_title"],
-                state["issue_body"],
-                plan,
-                context,
-                model_feedback,
+        if state.get("policy_feedback") is not None:
+            model_feedback.append(json.dumps(state["policy_feedback"], ensure_ascii=False))
+        try:
+            changes = CodeChangeOutput.model_validate(
+                await deps.model.propose_changes(
+                    state["issue_title"],
+                    state["issue_body"],
+                    plan,
+                    context,
+                    model_feedback[-10:],
+                )
             )
-            try:
-                iteration_changes = deps.workspaces.apply_edits(
-                    Path(state["workspace"]),
-                    changes.edits,
-                    expected_contents=context.files,
-                )
-                break
-            except SecurityError as error:
-                if policy_retries >= MAX_POLICY_RETRIES:
-                    raise
-                policy_retries += 1
-                model_feedback = [
-                    *model_feedback,
-                    (
-                        f"Tool policy rejected the complete proposal: {error}. "
-                        "No edits were applied. Retry using only exact allowed paths and "
-                        "the latest supplied file contents."
-                    ),
-                ][-10:]
-                context = deps.workspaces.inspect(
-                    Path(state["workspace"]),
-                    f"{state['issue_title']}\n{state['issue_body']}",
-                    plan.search_terms,
-                )
-        edits_by_path = {
-            edit.path: edit for edit in map(FileEdit.model_validate, state.get("edits", []))
-        }
-        edits_by_path.update({edit.path: edit for edit in changes.edits})
-        changed_files = sorted(set(state.get("changed_files", [])) | set(iteration_changes))
-        diff = await deps.workspaces.diff(Path(state["workspace"]))
-        iteration = state.get("iteration", 0) + 1
+        except ModelCallControlError as error:
+            duration_ms = elapsed_ms(started)
+            await deps.emit(
+                state,
+                "coder",
+                "Coder stopped at the controlled model-call boundary",
+                {"error_code": error.code},
+                duration_ms,
+            )
+            return {
+                "pending_changes": None,
+                "policy_error_code": error.code,
+                "node_metrics": [node_metric("coder", duration_ms, state.get("iteration", 0))],
+            }
+        except ValidationError:
+            duration_ms = elapsed_ms(started)
+            await deps.emit(
+                state,
+                "coder",
+                "Coder returned an invalid modification schema",
+                {"error_code": "invalid_modification_intent"},
+                duration_ms,
+            )
+            return {
+                "pending_changes": None,
+                "policy_error_code": "invalid_modification_intent",
+                "node_metrics": [node_metric("coder", duration_ms, state.get("iteration", 0))],
+            }
         duration_ms = elapsed_ms(started)
         await deps.emit(
             state,
             "coder",
+            "Coder submitted a structured modification intent",
+            {"edit_count": len(changes.edits)},
+            duration_ms,
+        )
+        return {
+            **context_state(context),
+            "pending_changes": changes.model_dump(),
+            "policy_error_code": None,
+            "node_metrics": [node_metric("coder", duration_ms, state.get("iteration", 0))],
+        }
+
+    def after_coder(state: RepoPilotState) -> str:
+        return "failed" if state.get("policy_error_code") else "apply_policy"
+
+    async def apply_policy(state: RepoPilotState) -> dict[str, Any]:
+        started = time.perf_counter()
+        # A committed operation may be replayed after a checkpoint-write crash.
+        # The coordinator resolves that exact operation before checking its parent.
+        await deps.ensure_active(state, check_generation=False)
+        if not state.get("candidate"):
+            raise ApprovalConflict("legacy_approval_requires_revalidation")
+        parent = Candidate.model_validate(state["candidate"])
+        context = repository_context_from_state(state, deps.settings.max_context_chars)
+        changes = CodeChangeOutput.model_validate(state["pending_changes"])
+        try:
+            validate_modification_intent(changes, context)
+            candidate = await generations.apply(
+                parent, changes.edits,
+                expected_contents=context.files,
+                base_repository=deps.workspaces.base_repository(Path(state["workspace"])),
+            )
+        except SecurityError as error:
+            feedback = normalized_policy_feedback(error, context)
+            used = state.get("policy_retry_count", 0)
+            can_retry = used < MAX_POLICY_RETRIES
+            duration_ms = elapsed_ms(started)
+            await deps.emit(
+                state,
+                "apply_policy",
+                "Complete modification intent rejected by workspace policy",
+                {"feedback": feedback.model_dump(), "retry_available": can_retry},
+                duration_ms,
+            )
+            return {
+                "pending_changes": None,
+                "policy_feedback": feedback.model_dump(),
+                "policy_retry_count": used + int(can_retry),
+                "policy_error_code": None if can_retry else "policy_retry_exhausted",
+                "node_metrics": [
+                    node_metric("apply_policy", duration_ms, state.get("iteration", 0))
+                ],
+            }
+        edits_by_path = {
+            edit.path: edit for edit in map(FileEdit.model_validate, state.get("edits", []))
+        }
+        edits_by_path.update({edit.path: edit for edit in changes.edits})
+        iteration_changes = [
+            edit.path for edit in changes.edits if context.files.get(edit.path) != edit.content
+        ]
+        changed_files = sorted(set(state.get("changed_files", [])) | set(iteration_changes))
+        diff = artifacts.read_diff(candidate).decode("utf-8", errors="replace")[:100_000]
+        iteration = candidate.generation
+        duration_ms = elapsed_ms(started)
+        await deps.emit(
+            state,
+            "apply_policy",
             f"Coder completed iteration {iteration} with {len(iteration_changes)} new file edits",
             {
                 "changed_files": changed_files,
                 "iteration_changes": iteration_changes,
                 "summary": changes.summary,
-                "policy_retries": policy_retries,
+                "policy_retry_count": state.get("policy_retry_count", 0),
             },
             duration_ms,
         )
         return {
             **context_state(context),
+            "candidate": candidate.model_dump(mode="json"),
             "edits": [edit.model_dump() for edit in edits_by_path.values()],
             "changed_files": changed_files,
             "diff": diff,
             "iteration": iteration,
-            "policy_retry_count": state.get("policy_retry_count", 0) + policy_retries,
-            "node_metrics": [node_metric("coder", duration_ms, iteration)],
+            "pending_changes": None,
+            "policy_feedback": None,
+            "policy_error_code": None,
+            "node_metrics": [node_metric("apply_policy", duration_ms, iteration)],
         }
+
+    def after_apply_policy(state: RepoPilotState) -> str:
+        if state.get("policy_error_code"):
+            return "failed"
+        return "coder" if state.get("policy_feedback") is not None else "test_runner"
 
     async def test_runner(state: RepoPilotState) -> dict[str, Any]:
         started = time.perf_counter()
         await deps.ensure_active(state)
-        result = await deps.sandbox.run(Path(state["workspace"]), state["test_command"])
+        candidate = Candidate.model_validate(state["candidate"])
+        with artifacts.materialize(candidate) as snapshot:
+            result = await deps.sandbox.run(snapshot, state["test_command"])
+        await deps.generations.assert_current(candidate)
+        evidence = TestEvidence(
+            evidence_digest="",
+            candidate_id=candidate.candidate_id,
+            artifact_digest=candidate.artifact_digest,
+            image_id=result.image_id,
+            command=result.command,
+            policy={
+                "sandbox_version": result.policy_version,
+                "command_version": "test-command-v1",
+                "backend": deps.settings.sandbox_backend,
+                "timeout_seconds": deps.settings.sandbox_timeout_seconds,
+                "memory": deps.settings.sandbox_memory,
+                "network_disabled": deps.settings.sandbox_backend == "docker",
+                "workspace_policy_version": candidate.policy_version,
+            },
+            result=result,
+            observed_at=datetime.now(UTC),
+        )
+        evidence = evidence.model_copy(update={"evidence_digest": evidence_identity(evidence)})
+        if deps.approvals:
+            await deps.approvals.record_evidence(state["task_id"], candidate, evidence)
         duration_ms = elapsed_ms(started)
         await deps.emit(
             state,
             "test_runner",
             "Sandbox tests passed" if result.passed else "Sandbox tests failed",
             {
+                "candidate_id": candidate.candidate_id,
+                "evidence_digest": evidence.evidence_digest,
                 "exit_code": result.exit_code,
                 "duration_ms": result.duration_ms,
                 "timed_out": result.timed_out,
@@ -283,6 +417,9 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
             duration_ms,
         )
         return {
+            "candidate": candidate.model_dump(mode="json"),
+            "test_evidence": evidence.model_dump(mode="json"),
+            "diff": artifacts.read_diff(candidate).decode("utf-8", errors="replace")[:100_000],
             "test_result": result.model_dump(),
             "node_metrics": [node_metric("test_runner", duration_ms, state.get("iteration", 0))],
         }
@@ -360,10 +497,30 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
             return "coder"
         return "failed"
 
-    def approval(state: RepoPilotState) -> dict[str, Any]:
+    async def approval(state: RepoPilotState) -> dict[str, Any]:
         started = time.perf_counter()
+        await deps.ensure_active(state)
+        if "candidate" not in state or "test_evidence" not in state:
+            raise ApprovalConflict("legacy_approval_requires_revalidation")
+        candidate = Candidate.model_validate(state["candidate"])
+        evidence = TestEvidence.model_validate(state["test_evidence"])
+        if (
+            evidence_identity(evidence) != evidence.evidence_digest
+            or evidence.candidate_id != candidate.candidate_id
+            or evidence.artifact_digest != candidate.artifact_digest
+            or not evidence.result.passed
+        ):
+            raise ApprovalConflict("invalid_candidate_evidence_binding")
         decision = interrupt(
             {
+                "schema_version": "approval-v2",
+                "candidate_id": candidate.candidate_id,
+                "artifact_digest": candidate.artifact_digest,
+                "base_sha": candidate.base_sha,
+                "evidence_digest": evidence.evidence_digest,
+                "candidate_url": (
+                    f"/api/v1/tasks/{state['task_id']}/candidates/{candidate.candidate_id}"
+                ),
                 "question": (
                     "Approve the verified change and allow the configured GitHub write tool?"
                 ),
@@ -373,12 +530,27 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
                 "diff_preview": state.get("diff", "")[:8_000],
             }
         )
-        approved = bool(decision.get("approved")) if isinstance(decision, dict) else bool(decision)
-        feedback = str(decision.get("feedback", "")) if isinstance(decision, dict) else ""
+        if (
+            not isinstance(decision, dict)
+            or decision.get("schema_version") != "approval-v2"
+            or decision.get("candidate_id") != candidate.candidate_id
+            or decision.get("evidence_digest") != evidence.evidence_digest
+            or type(decision.get("approved")) is not bool
+        ):
+            raise ApprovalConflict("stale_approval_binding")
+        if deps.approvals:
+            saved = await deps.approvals.validate_resume(state["task_id"], decision)
+            approved, feedback = saved.approved, saved.feedback
+        else:
+            if deps.settings.github_write_enabled:
+                raise ApprovalConflict("persistent_approval_required_for_publication")
+            approved, feedback = decision["approved"], str(decision.get("feedback", ""))
         duration_ms = elapsed_ms(started)
         return {
             "human_approved": approved,
             "human_feedback": feedback,
+            "approval_decision_id": str(decision.get("decision_id", "offline-evaluation")),
+            "publication_protocol_version": "publish-intent-v1",
             "status": "approved" if approved else "cancelled",
             "node_metrics": [node_metric("approval", duration_ms, state.get("iteration", 0))],
         }
@@ -388,29 +560,63 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
 
     async def finalize(state: RepoPilotState) -> dict[str, Any]:
         started = time.perf_counter()
-        edits = [FileEdit.model_validate(item) for item in state.get("edits", [])]
-        result = await deps.publisher.publish(
-            task_id=state["task_id"],
-            repository_url=state["repository_url"],
-            base_branch=state["base_branch"],
-            issue_title=state["issue_title"],
-            edits=edits,
+        await deps.ensure_active(state)
+        artifacts.read_diff(Candidate.model_validate(state["candidate"]))
+        artifacts.validate_edits(
+            Candidate.model_validate(state["candidate"]), state.get("edits", [])
         )
+        reason = deps.publisher.disabled_reason(state["repository_url"])
+        if reason:
+            result = PublishResult(published=False, reason=reason)
+            if deps.approvals:
+                store = PublicationStore(deps.approvals.database, artifacts)
+                existing = await store.for_decision(
+                    state["task_id"], state.get("approval_decision_id", ""),
+                )
+                if existing:
+                    deps.publisher.store = store
+                    result = await deps.publisher.publish(intent_id=existing)
+        else:
+            if not deps.approvals:
+                raise ApprovalConflict("persistent_approval_required_for_publication")
+            if state.get("publication_protocol_version") != "publish-intent-v1":
+                raise ApprovalConflict("legacy_publication_requires_reconciliation")
+            store = PublicationStore(deps.approvals.database, artifacts)
+            intent = await store.ensure(
+                state["task_id"], state["approval_decision_id"],
+                state["candidate"]["candidate_id"],
+            )
+            deps.publisher.store = store
+
+            async def cancelled() -> bool:
+                return bool(deps.queue and await deps.queue.is_cancelled(state["task_id"]))
+
+            result = await deps.publisher.publish(
+                intent_id=intent.publish_intent_id, cancelled=cancelled,
+            )
+        receipt = result.receipt.model_dump(mode="json") if result.receipt else None
+        status = "completed"
+        if result.receipt and result.receipt.phase != "published":
+            status = "cancelled" if result.receipt.cancel_requested else "failed"
         duration_ms = elapsed_ms(started)
         await deps.emit(
             state,
             "finalize",
-            "Draft pull request created" if result.published else "Verified artifact is ready",
+            "Publication reconciled" if receipt else "Verified artifact is ready",
             {
                 "pull_request_url": result.pull_request_url,
                 "branch": result.branch,
                 "publish_reason": result.reason,
+                "publish_receipt": receipt,
             },
             duration_ms,
         )
         return {
-            "status": "completed",
+            "status": status,
             "pull_request_url": result.pull_request_url,
+            "publish_receipt": receipt,
+            "publish_reason": result.reason,
+            **({"error": result.reason} if status == "failed" else {}),
             "node_metrics": [node_metric("finalize", duration_ms, state.get("iteration", 0))],
         }
 
@@ -420,18 +626,25 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
         await deps.emit(
             state,
             "failed",
-            "Task stopped after the bounded retry budget",
-            {
-                "iteration": state.get("iteration", 0),
-                "feedback": state.get("reviewer_feedback", []),
-            },
+            "Task stopped at a bounded failure condition",
+            (
+                {
+                    "iteration": state.get("iteration", 0),
+                    "policy_feedback": state.get("policy_feedback"),
+                    "error_code": state["policy_error_code"],
+                }
+                if state.get("policy_error_code")
+                else {
+                    "iteration": state.get("iteration", 0),
+                    "feedback": state.get("reviewer_feedback", []),
+                }
+            ),
             duration_ms,
         )
         return {
             "status": "failed",
-            "error": (
-                "Candidate failed deterministic or reviewer validation within the retry budget"
-            ),
+            "error": state.get("policy_error_code")
+            or "Candidate failed deterministic or reviewer validation within the retry budget",
             "node_metrics": [node_metric("failed", duration_ms, state.get("iteration", 0))],
         }
 
@@ -456,6 +669,7 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
     graph.add_node("researcher", researcher)
     graph.add_node("test_analyst", test_analyst)
     graph.add_node("coder", coder)
+    graph.add_node("apply_policy", apply_policy)
     graph.add_node("test_runner", test_runner)
     graph.add_node("reviewer", reviewer)
     graph.add_node("approval", approval)
@@ -468,7 +682,14 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
     graph.add_edge("planner", "researcher")
     graph.add_edge("planner", "test_analyst")
     graph.add_edge(["researcher", "test_analyst"], "coder")
-    graph.add_edge("coder", "test_runner")
+    graph.add_conditional_edges(
+        "coder", after_coder, {"apply_policy": "apply_policy", "failed": "failed"}
+    )
+    graph.add_conditional_edges(
+        "apply_policy",
+        after_apply_policy,
+        {"coder": "coder", "test_runner": "test_runner", "failed": "failed"},
+    )
     graph.add_edge("test_runner", "reviewer")
     graph.add_conditional_edges(
         "reviewer",

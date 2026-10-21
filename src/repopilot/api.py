@@ -8,15 +8,23 @@ from collections.abc import Mapping
 from contextlib import asynccontextmanager
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, status
 from fastapi.responses import ORJSONResponse, StreamingResponse
 from redis.asyncio import Redis
 
+from repopilot.approval_models import (
+    ApprovalDecision,
+    ApprovalReceipt,
+    ApprovalRequest,
+    ApprovalView,
+    DispatchRequest,
+)
+from repopilot.approvals import ApprovalConflict, ApprovalStore
+from repopilot.candidates import ArtifactStore, Candidate
 from repopilot.config import Settings, get_settings
 from repopilot.db import Database, TaskStateConflict
 from repopilot.events import EventBus, JobQueue
 from repopilot.models import (
-    ApprovalRequest,
     EventView,
     NodeMetric,
     TaskCreate,
@@ -24,6 +32,7 @@ from repopilot.models import (
     TaskStatus,
     TaskView,
 )
+from repopilot.publication import PublicationStore, PublishReceipt
 from repopilot.security import (
     SecurityError,
     parse_test_command,
@@ -85,8 +94,7 @@ def summarize_task_metrics(
     model_calls: Mapping[str, int | float | bool | str | None] | None = None,
 ) -> TaskMetrics:
     metrics = [
-        NodeMetric.model_validate(metric)
-        for metric in (task.result or {}).get("node_metrics", [])
+        NodeMetric.model_validate(metric) for metric in (task.result or {}).get("node_metrics", [])
     ]
     runs: Counter[str] = Counter()
     durations: defaultdict[str, int] = defaultdict(int)
@@ -94,9 +102,7 @@ def summarize_task_metrics(
         runs[metric.node] += 1
         durations[metric.node] += metric.duration_ms
     wall_time_ms = max(0, int((task.updated_at - task.created_at).total_seconds() * 1_000))
-    sandbox_time_ms = sum(
-        metric.duration_ms for metric in metrics if metric.node == "test_runner"
-    )
+    sandbox_time_ms = sum(metric.duration_ms for metric in metrics if metric.node == "test_runner")
     retrieval = (task.result or {}).get("retrieval", {})
     selected_files = retrieval.get("selected_files", [])
     call_metrics = model_calls or {}
@@ -187,6 +193,16 @@ async def get_task_metrics(task_id: str, request: Request, _: Protected) -> Task
     return summarize_task_metrics(task, model_calls)
 
 
+@app.get("/api/v1/tasks/{task_id}/publication", response_model=list[PublishReceipt])
+async def get_publication(task_id: str, request: Request, _: Protected) -> list[PublishReceipt]:
+    settings, database, _, _, _ = resources(request)
+    if await database.get_task(task_id) is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return await PublicationStore(
+        database, ArtifactStore(settings.workspace_root / ".artifacts"),
+    ).receipts(task_id)
+
+
 @app.get("/api/v1/tasks/{task_id}/events", response_model=list[EventView])
 async def get_events(
     task_id: str,
@@ -229,43 +245,142 @@ async def stream_events(task_id: str, request: Request, _: Protected) -> Streami
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 
-@app.post("/api/v1/tasks/{task_id}/approval", response_model=TaskView)
+def approval_error(error: KeyError | ApprovalConflict) -> HTTPException:
+    return HTTPException(
+        status_code=404 if isinstance(error, KeyError) else 409,
+        detail="Task or candidate not found" if isinstance(error, KeyError) else error.code,
+    )
+
+
+@app.get("/api/v1/tasks/{task_id}/approval", response_model=ApprovalView)
+async def get_approval(task_id: str, request: Request, _: Protected) -> ApprovalView:
+    _, database, _, _, _ = resources(request)
+    try:
+        return await ApprovalStore(database).current(task_id)
+    except (KeyError, ApprovalConflict) as error:
+        raise approval_error(error) from error
+
+
+@app.get("/api/v1/tasks/{task_id}/candidates/{candidate_id}", response_model=Candidate)
+async def get_candidate(
+    task_id: str,
+    candidate_id: str,
+    request: Request,
+    _: Protected,
+) -> Candidate:
+    _, database, _, _, _ = resources(request)
+    try:
+        return await ApprovalStore(database).candidate(task_id, candidate_id)
+    except KeyError as error:
+        raise approval_error(error) from error
+
+
+@app.get("/api/v1/tasks/{task_id}/candidates/{candidate_id}/diff")
+async def get_candidate_diff(
+    task_id: str,
+    candidate_id: str,
+    request: Request,
+    _: Protected,
+) -> Response:
+    settings, database, _, _, _ = resources(request)
+    try:
+        candidate = await ApprovalStore(database).candidate(task_id, candidate_id)
+        diff = await asyncio.to_thread(
+            ArtifactStore(settings.workspace_root / ".artifacts").read_diff, candidate
+        )
+    except KeyError as error:
+        raise approval_error(error) from error
+    except (SecurityError, OSError) as error:
+        raise HTTPException(status_code=503, detail="approval_artifact_unavailable") from error
+    return Response(diff, media_type="text/plain", headers={"ETag": f'"{candidate.diff_digest}"'})
+
+
+async def deliver_approval(
+    task_id: str,
+    decision: ApprovalDecision,
+    store: ApprovalStore,
+    queue: JobQueue,
+) -> ApprovalDecision:
+    if decision.dispatch_state not in {"pending", "enqueued"}:
+        return decision
+    try:
+        decision = await store.dispatchable(task_id, decision.decision_id)
+    except ApprovalConflict:
+        # An identical request can race with Worker consumption or cancellation.
+        return await store.decision(task_id, decision.decision_id)
+    try:
+        await queue.enqueue(task_id, resume=decision.resume_payload())
+    except Exception:
+        # The decision is committed. A delivery error must be visible and retryable,
+        # including an unknown enqueue outcome after a transport disconnection.
+        await store.delivery_attempt(decision.decision_id, succeeded=False)
+    else:
+        await store.delivery_attempt(decision.decision_id, succeeded=True)
+    return await store.decision(task_id, decision.decision_id)
+
+
+async def approval_receipt(
+    task_id: str,
+    decision: ApprovalDecision,
+    database: Database,
+    response: Response,
+) -> ApprovalReceipt:
+    task = await database.get_task(task_id)
+    assert task is not None
+    if decision.dispatch_state == "pending":
+        response.status_code = 202
+    return ApprovalReceipt(task_id=task_id, task_status=task.status, decision=decision)
+
+
+@app.post("/api/v1/tasks/{task_id}/approval", response_model=ApprovalReceipt)
 async def approve_task(
     task_id: str,
     decision: ApprovalRequest,
     request: Request,
+    response: Response,
     _: Protected,
-) -> TaskView:
-    _, database, events, queue, _ = resources(request)
-    task = await database.get_task(task_id)
-    if task is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
-    if task.status != TaskStatus.AWAITING_APPROVAL:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Task is not awaiting approval",
-        )
+) -> ApprovalReceipt:
+    settings, database, _, queue, _ = resources(request)
+    store = ApprovalStore(database)
     try:
-        queued = await database.transition_task(
+        candidate = await store.candidate(task_id, decision.candidate_id)
+        artifacts = ArtifactStore(settings.workspace_root / ".artifacts")
+
+        def verify_artifact() -> None:
+            artifacts.read_diff(candidate)
+            with artifacts.materialize(candidate):
+                pass
+
+        await asyncio.to_thread(verify_artifact)
+        saved = await store.decide(
             task_id,
-            expected_status=TaskStatus.AWAITING_APPROVAL,
-            expected_version=task.state_version,
-            status=TaskStatus.QUEUED,
+            decision,
+            actor="api-key-operator" if settings.api_key else "local-operator",
         )
-    except TaskStateConflict as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(exc),
-        ) from exc
-    await events.publish(
-        task_id,
-        kind="human_decision",
-        node="api",
-        message="Human approved the action" if decision.approved else "Human rejected the action",
-        payload={"approved": decision.approved, "feedback": decision.feedback},
-    )
-    await queue.enqueue(task_id, resume=decision.model_dump())
-    return queued
+    except (KeyError, ApprovalConflict) as error:
+        raise approval_error(error) from error
+    except (SecurityError, OSError) as error:
+        raise HTTPException(status_code=503, detail="approval_artifact_unavailable") from error
+    saved = await deliver_approval(task_id, saved, store, queue)
+    return await approval_receipt(task_id, saved, database, response)
+
+
+@app.post("/api/v1/tasks/{task_id}/approval/dispatch", response_model=ApprovalReceipt)
+async def retry_approval_dispatch(
+    task_id: str,
+    data: DispatchRequest,
+    request: Request,
+    response: Response,
+    _: Protected,
+) -> ApprovalReceipt:
+    _, database, _, queue, _ = resources(request)
+    store = ApprovalStore(database)
+    try:
+        decision = await store.dispatchable(task_id, str(data.decision_id))
+    except (KeyError, ApprovalConflict) as error:
+        raise approval_error(error) from error
+    saved = await deliver_approval(task_id, decision, store, queue)
+    return await approval_receipt(task_id, saved, database, response)
 
 
 @app.post("/api/v1/tasks/{task_id}/cancel", response_model=TaskView)

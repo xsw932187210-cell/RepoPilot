@@ -35,15 +35,20 @@ before_metrics=$(curl -fsS "$api_url/api/v1/tasks/$task_id/metrics")
 before_calls=$(printf '%s' "$before_metrics" | python3 -c 'import json,sys; data=json.load(sys.stdin); assert data["model_calls_reserved"] >= 3; assert data["model_calls_pending_reservation"] == data["model_calls_pending_response"] == 0; print(data["model_calls_reserved"])')
 
 printf 'Restarting the worker at the durable approval checkpoint\n'
+before_approval=$(curl -fsS "$api_url/api/v1/tasks/$task_id/approval")
 if [ -n "$compose_project" ]; then
   docker compose -p "$compose_project" -f "$compose_file" restart worker >/dev/null
 else
   docker compose -f "$compose_file" restart worker >/dev/null
 fi
 
+after_approval=$(curl -fsS "$api_url/api/v1/tasks/$task_id/approval")
+[ "$before_approval" = "$after_approval" ] || { printf 'Approval binding changed after restart\n' >&2; exit 1; }
+approval_payload=$(printf '%s' "$after_approval" | python3 scripts/approval_payload.py 'worker restart approval')
+printf 'Approval object, complete manifest and test evidence unchanged after restart\n'
 curl -fsS -X POST "$api_url/api/v1/tasks/$task_id/approval" \
   -H 'Content-Type: application/json' \
-  -d '{"approved":true,"feedback":"recovery smoke approval after worker restart"}' >/dev/null
+  -d "$approval_payload" >/dev/null
 
 attempt=0
 while [ "$attempt" -lt 60 ]; do

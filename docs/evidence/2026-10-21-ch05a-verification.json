@@ -1,0 +1,225 @@
+{
+  "schema_version": "ch05a-verification-v1",
+  "date": "2026-10-21",
+  "status": "VERIFIED",
+  "baseline": "a1e5f41",
+  "source_ref": "a0df3de",
+  "branch": "codex/ch-05a-staged-generations",
+  "implementation_commits": [
+    "3610e9f",
+    "c4619a8",
+    "a0df3de"
+  ],
+  "dependencies": {
+    "CH-02A": "a2cb1d5 (verified local ancestry; historical merge)",
+    "CH-03A": "a5b5dab and fixes through a1e5f41 (verified local ancestry; local only)"
+  },
+  "host": {
+    "platform": "macOS",
+    "python": "3.13.5",
+    "tests": 229,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 20,
+    "passed": 209,
+    "coverage_percent": 82.26
+  },
+  "service": {
+    "platform": "Linux",
+    "tests": 229,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "passed": 229,
+    "coverage_percent": 83.45,
+    "conditional_tests_executed": {
+      "test_generations_postgres": 6,
+      "test_approvals_postgres": 5,
+      "test_policy_recovery_postgres": 6,
+      "test_migrations_postgres": 1,
+      "test_model_calls_postgres": 2
+    }
+  },
+  "runtime": {
+    "checkpoint_postgres": "3.2.0",
+    "langgraph": "1.2.16",
+    "pytest": "8.4.2",
+    "python": "3.12.15",
+    "postgres": "16.15",
+    "docker_engine": "29.5.3",
+    "redis_image": "redis:7.4-alpine"
+  },
+  "images": {
+    "app": "sha256:d1d579f042eacd50cb0a6d3fb6ffa7a229bc3c6efcb75f3408264a8be4e2c4c9",
+    "test": "sha256:b448f62d9bc51ac0661e2cb7d4a666ca26b6be2baf74683ef6dd754cd586f7a1",
+    "sandbox": "sha256:fc7ed0280bc9077e10c28a5acb8f2e7f0e3a6d0620fcdfc559cc67367fb1918d"
+  },
+  "build": {
+    "python_base_digest": "sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1",
+    "mode": "reinstall-current-source-on-existing-tested-dependencies",
+    "dependency_image": "repopilot_ch05a_20261021_19202-test:local",
+    "dependency_image_id": "sha256:073ea9def001a3fc37922dd3019cd0f9733a8d26b17b7e045a3f6430a00133f5",
+    "configuration_sha256": {
+      "Dockerfile": "9b8168c6fef0c66de3c06a0677222bd2907a266ed199641d37c5a4ac5bfcbb01",
+      "Dockerfile.sandbox": "f911b22d912abc32ab679e0d04876f3fdb1fcca3c78156dac01862915c9c2019",
+      "Dockerfile.ch05a-cached": "3bcc41a118d47c373dd5d0178fc4704cea01ac1441bf29e2744590a277884194",
+      "docker-compose.ch05a-test.yml": "e7ccf5b02ca836074793a4270af87b722b996176c0f4b097cb48437416829d0e",
+      "scripts/ch05a_integration.sh": "d82dde1a4ea9003df879df72b231265a54b41f398ba1654d47d256126828b29c",
+      "tests/coverage.ch05a.ini": "2d5a503645ab51dd1ab0e3f70a03cae2aa839ba456278a7daf5e7e39714a266b",
+      "pyproject.toml": "4841a48c13e3059853b929d46c9ac9b874231f648b54873b5deec98f95bc006c"
+    }
+  },
+  "source": {
+    "python_files": 73,
+    "package_files": 40,
+    "workspace_equals_test_image": true,
+    "workspace_equals_test_installed_package": true,
+    "workspace_equals_api_installed_package": true,
+    "canonical_source_map_sha256": "664a7c69abc69a3a27359066fa083f7aa280765f1e8903912a5dc4520307c514",
+    "raw_source_hashes_sha256": "9e2e895dc810dfa8e3377d5ff4ea5fb174fde60eccee65fa3e865baa6cbf1f2d"
+  },
+  "faults": [
+    {
+      "hard_exit": 88,
+      "phase": "second file before write",
+      "reconciled": "incomplete",
+      "visible_generation": 0
+    },
+    {
+      "hard_exit": 89,
+      "phase": "sealed before SQL commit",
+      "reconciled": "orphan",
+      "visible_generation": 0
+    },
+    {
+      "hard_exit": 90,
+      "phase": "SQL committed before journal update",
+      "reconciled": "committed",
+      "visible_generation": 1
+    },
+    {
+      "hard_exit": 91,
+      "phase": "generation commit before graph checkpoint",
+      "checkpoint_generation": 0,
+      "visible_generation": 1,
+      "model_calls_before": 2,
+      "model_calls_after": 3,
+      "test_runner_runs": 1
+    }
+  ],
+  "cas_competition": {
+    "winners": 1,
+    "stale_parent_rejected": true
+  },
+  "legacy_approval_upgrade": {
+    "pinned_source": "a1e5f41",
+    "from_revision": "20261019_0004",
+    "to_revision": "20261021_0005",
+    "candidate_evidence_and_diff_equal": true,
+    "original_task_completed": true,
+    "model_calls_before": 3,
+    "model_calls_after": 3,
+    "test_runner_runs": 1
+  },
+  "regressions": {
+    "second_file_io_failure_preserves_head": true,
+    "escape_and_readonly_batch_has_no_model_writes": true,
+    "link_swap_cannot_write_outside_stage": true,
+    "external_bytes_retained_without_rollback": true,
+    "stale_evidence_approval_and_final_result_rejected": true,
+    "corrupt_json_types_and_fifo_retained": true,
+    "crlf_context_digest_matches_raw_bytes": true
+  },
+  "mock": {
+    "count": 10,
+    "successful": 10,
+    "task_completion_rate": 1.0,
+    "test_pass_rate": 1.0,
+    "scope_match_rate": 1.0,
+    "hitl_rate": 1.0
+  },
+  "smoke": {
+    "status": "completed",
+    "model_calls_reserved": 3,
+    "model_calls_unknown": 0,
+    "node_runs": {
+      "prepare": 1,
+      "planner": 1,
+      "researcher": 1,
+      "test_analyst": 1,
+      "coder": 1,
+      "apply_policy": 1,
+      "test_runner": 1,
+      "reviewer": 1,
+      "approval": 1,
+      "finalize": 1
+    }
+  },
+  "worker_restart": {
+    "approval_manifest_evidence_unchanged": true,
+    "status": "completed",
+    "model_calls_reserved": 3,
+    "model_calls_unknown": 0,
+    "node_runs": {
+      "prepare": 1,
+      "planner": 1,
+      "researcher": 1,
+      "test_analyst": 1,
+      "coder": 1,
+      "apply_policy": 1,
+      "test_runner": 1,
+      "reviewer": 1,
+      "approval": 1,
+      "finalize": 1
+    }
+  },
+  "cleanup": {
+    "project": "repopilot_ch05a_20261021_21666",
+    "resources_removed": true,
+    "images_and_build_cache_retained": true
+  },
+  "evidence": {
+    "private_root": "reports/repopilot_ch05a_20261021_21666",
+    "integration_junit_sha256": "d5eca554a96873312799f50f7ef4b230599bbd28644cbdc6ba1e85abffcfbf96",
+    "integration_log_sha256": "4aee53bdd2de0c8cca2f0ff9a0493ba63dacecf81a238ec395dce90b54982f04",
+    "host_junit_sha256": "5519711f63a1aa3dab538d4b5c3169495949177cb39e6bdb38be8f28ae72d98e",
+    "host_log_sha256": "a1f2aba99b45494c953d1757192845f3cfb383c15eb650d1d924500700280f4f"
+  },
+  "intermediate_runs": [
+    {
+      "project": "repopilot_ch05a_20261021_15104",
+      "outcome": "build failed: Debian HTTP 502; tests not run",
+      "resources_removed": true
+    },
+    {
+      "project": "repopilot_ch05a_20261021_15936",
+      "outcome": "build failed: Debian HTTPS TLS EOF; tests not run",
+      "resources_removed": true
+    },
+    {
+      "project": "repopilot_ch05a_20261021_16105",
+      "outcome": "223 passed, 83.42%; mock and smokes passed; earlier source only",
+      "resources_removed": true
+    },
+    {
+      "project": "repopilot_ch05a_20261021_19202",
+      "outcome": "228 passed, 83.45%; running script edited, evidence collection failed; not a complete smoke/recovery run",
+      "resources_removed": true
+    }
+  ],
+  "scope_limits": [
+    "process hard exits, not host power-loss testing",
+    "no filesystem/SQL distributed transaction",
+    "no automatic queue reclaim or general checkpoint dispatcher",
+    "no Worker ownership epoch/fencing",
+    "no end-to-end GitHub publication binding (CH-03B pending)",
+    "no artifact retention/garbage collection",
+    "POSIX shared-volume supported writers; administrators can bypass advisory locks"
+  ],
+  "remote_actions": {
+    "real_model_calls": false,
+    "github_writes_enabled": false,
+    "git_push": false,
+    "pull_request_created": false
+  }
+}

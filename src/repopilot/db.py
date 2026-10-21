@@ -312,6 +312,7 @@ class Database:
         status: TaskStatus,
         result: dict[str, Any] | None | object = _UNCHANGED,
         error: str | None | object = _UNCHANGED,
+        expected_candidate_id: str | None = None,
     ) -> TaskView:
         if status not in ALLOWED_TASK_TRANSITIONS[expected_status]:
             raise InvalidTaskTransition(expected_status, status)
@@ -328,6 +329,10 @@ class Database:
             values["error"] = error
 
         async with self.sessions() as session:
+            if expected_candidate_id is not None:
+                from repopilot.generations import require_current
+
+                await require_current(session, task_id, expected_candidate_id)
             outcome = await session.execute(
                 update(TaskRecord)
                 .where(
@@ -348,6 +353,25 @@ class Database:
                     expected_version=expected_version,
                     current_status=TaskStatus(current.status),
                     current_version=current.state_version,
+                )
+            if status in {TaskStatus.CANCELLED, TaskStatus.FAILED}:
+                from repopilot.approvals import ApprovalRecord, DecisionRecord
+
+                await session.execute(
+                    update(ApprovalRecord)
+                    .where(
+                        ApprovalRecord.task_id == task_id,
+                        ApprovalRecord.status == "waiting",
+                    )
+                    .values(status="cancelled")
+                )
+                await session.execute(
+                    update(DecisionRecord)
+                    .where(
+                        DecisionRecord.task_id == task_id,
+                        DecisionRecord.dispatch_state.in_(["pending", "enqueued"]),
+                    )
+                    .values(dispatch_state="blocked", dispatch_error="task_stopped")
                 )
             await session.commit()
             record = await session.get(TaskRecord, task_id)

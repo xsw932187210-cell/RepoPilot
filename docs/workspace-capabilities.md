@@ -48,13 +48,49 @@ read/write/create denial, unsupported actions, invalid or aliased paths, duplica
 links, hard links, special files, size violations, stale/out-of-context content, and failed
 expected-absent conditions.
 
-The Coder may refresh context and retry once after a rejected batch. No legal edit from the rejected
-batch is retained. This is recovery from a policy denial, not a filesystem transaction: an external
-writer can still race after preflight, and an I/O failure during the sequential write phase can
-leave a partial result. Candidate staging and atomic visible generations remain CH-05A work.
+## Structured Coder correction
+
+The online Coder returns one `CodeChangeOutput-v2` modification intent in its normal model call.
+Each existing-file edit names `action=write`, an exact editable path, complete replacement content,
+and `expected_content_sha256` for the bytes it read. The graph checks the intent against its latest
+retrieval snapshot before `apply_edits()` performs the complete trusted-policy and filesystem
+preflight. The optional digest field in `FileEdit` keeps direct tool callers and older serialized
+artifacts readable; it is mandatory at the graph proposal boundary. The graph currently exposes no
+create intent, even when a trusted tool policy could authorize creation. No extra planning model
+call is made for these checks. A malformed proposal schema stops with the stable
+`invalid_modification_intent` error before any write.
+
+A denial produces `policy-feedback-v1`: a stable `reason_code`, a target path only if it exactly
+matches a non-sensitive path in the readable context, `allowed_actions=["write"]`, a bounded list
+of exact editable paths, and fixed guidance. The exception message and rejected arbitrary path
+are never copied to the model, node event, or task error summary. A rejected batch is discarded in
+full; legal edits in that batch are not applied. The graph re-inspects its bound generation before
+the next proposal; a digest that differs from that generation fails as `stale_content`.
+
+`policy_retry_count` allows one correction for the entire task, not one per Coder iteration. It
+is checkpointed by the separate `apply_policy` node before the next `coder` call. A second denial
+ends as `policy_retry_exhausted`; a missing digest yields structured
+`expected_content_required` feedback under the same bounded allowance. All model attempts,
+including the correction, use the existing CH-10 task-wide call ledger. If that budget is empty,
+the controlled caller makes no transport request and the graph stops with
+`model_call_budget_exhausted`. The count is distinct from Coder iterations and provider retries.
+
+The low-level writer is still not a filesystem transaction. The online graph now writes private
+stages through [CH-05A generation storage](candidate-generations.md), so a later file failure
+cannot change the selected candidate. Exact committed-operation replay handles the graph
+checkpoint gap, while superseded parents/results are refused. External byte/link changes are
+detected and retained without blind rollback. Worker ownership fencing remains CH-04B.
 
 ## Verification
 
 Focused coverage lives in `tests/test_capabilities.py`, `tests/test_runtime_boundaries.py`,
 `tests/test_reliability.py`, and `tests/test_real_evaluation.py`. The deterministic evaluator also
 checks that readable tests remain available for diagnosis while only expected source files change.
+
+`make ch02b-integration` runs the isolated PostgreSQL/Redis/API/Worker and Docker probe. It
+hard-exits an execution process after the persisted policy denial, explicitly resumes the same
+thread in a new process, and checks correction limits, durable calls, actual files and terminal
+states. It also checks a pinned pre-CH-02B approval checkpoint and a real Worker-service restart.
+See the [2026-10-19 verification record](ch02b-verification-2026-10-19.md) for the six passing
+scenarios, environment and cleanup. Mid-task continuation is test-driven; automatic queue reclaim
+and Worker ownership fencing remain separate work.

@@ -16,6 +16,7 @@ from repopilot.model_calls import (
     ModelCallBudget,
 )
 from repopilot.models import CodeChangeOutput, FileEdit, PlanOutput, ReviewOutput, SandboxResult
+from repopilot.policy_feedback import CODER_INTENT_SCHEMA_VERSION, content_sha256
 from repopilot.repository import RepositoryContext
 
 _StructuredOutput = TypeVar("_StructuredOutput", PlanOutput, CodeChangeOutput, ReviewOutput)
@@ -205,6 +206,7 @@ class MockAgentModel:
                         path=path,
                         content=fixed,
                         reason=rule.reason,
+                        expected_content_sha256=content_sha256(content),
                     )
                 )
                 break
@@ -310,7 +312,11 @@ class OpenAICompatibleAgentModel:
             provider=self.identity.provider,
             model=self.identity.model,
             adapter_version=self.identity.adapter_version,
-            request_schema_version=f"{schema.__name__}-v1",
+            request_schema_version=(
+                CODER_INTENT_SCHEMA_VERSION
+                if schema is CodeChangeOutput
+                else f"{schema.__name__}-v1"
+            ),
         )
         envelope = await self.call_control.call(
             structured.ainvoke,
@@ -346,10 +352,16 @@ class OpenAICompatibleAgentModel:
         context: RepositoryContext,
         reviewer_feedback: list[str],
     ) -> CodeChangeOutput:
-        editable_paths = (
-            tuple(context.files) if context.editable_paths is None else context.editable_paths
-        )
+        editable_paths = context.editable_paths or ()
         allowed_paths = json.dumps(list(editable_paths), ensure_ascii=False)
+        allowed_digests = json.dumps(
+            {
+                path: content_sha256(context.files[path])
+                for path in editable_paths
+                if path in context.files
+            },
+            ensure_ascii=False,
+        )
         return await self._structured_invoke(
             CodeChangeOutput,
             [
@@ -362,6 +374,9 @@ class OpenAICompatibleAgentModel:
                         "paths in the user message; do not invent, prefix, or normalize paths. "
                         "Other readable files may appear in context but remain read-only and "
                         "must not appear in edits. If no allowed edit is safe, return no edits. "
+                        "For each edit, set action=write and expected_content_sha256 to the "
+                        "exact digest supplied for that path. Never reuse a digest from an "
+                        "earlier context. Creation is not available in this workflow. "
                         "Make the smallest change that solves the issue and preserves tests."
                     ),
                 },
@@ -370,6 +385,7 @@ class OpenAICompatibleAgentModel:
                     "content": (
                         f"Issue: {issue_title}\n{issue_body}\n\n"
                         f"Allowed edit paths (exact JSON array): {allowed_paths}\n"
+                        f"Current SHA-256 by editable path: {allowed_digests}\n"
                         f"Plan: {plan.model_dump_json()}\n"
                         f"Reviewer feedback: {reviewer_feedback}\n\n{context.render()}"
                     ),
@@ -432,7 +448,11 @@ class BudgetedAgentModel:
             provider=self.provider,
             model=self.model_name,
             adapter_version=self.adapter_version,
-            request_schema_version=f"{schema.__name__}-v1",
+            request_schema_version=(
+                CODER_INTENT_SCHEMA_VERSION
+                if schema is CodeChangeOutput
+                else f"{schema.__name__}-v1"
+            ),
         )
 
     async def plan(self, issue_title: str, issue_body: str) -> PlanOutput:

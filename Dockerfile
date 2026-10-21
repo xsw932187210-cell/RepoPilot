@@ -1,4 +1,5 @@
-FROM python:3.12-slim AS runtime
+ARG PYTHON_IMAGE=python:3.12-slim
+FROM ${PYTHON_IMAGE} AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -22,3 +23,12 @@ RUN useradd --create-home --uid 10001 repopilot \
 USER repopilot
 EXPOSE 8000
 CMD ["uvicorn", "repopilot.api:app", "--host", "0.0.0.0", "--port", "8000"]
+
+FROM runtime AS integration-test
+USER root
+COPY tests ./tests
+COPY docs/evidence/2026-09-09-failure-ledger.json ./docs/evidence/2026-09-09-failure-ledger.json
+RUN pip install ".[dev]"
+USER repopilot
+
+FROM runtime AS production

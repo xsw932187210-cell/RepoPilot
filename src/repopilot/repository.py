@@ -145,6 +145,16 @@ class WorkspaceManager:
             max_file_bytes=settings.max_file_bytes
         )
 
+    async def base_commit(self, workspace: Path) -> str:
+        code, stdout, _ = await run_process("git", "rev-parse", "--verify", "HEAD", cwd=workspace)
+        if code != 0:
+            raise SecurityError("Could not resolve the prepared repository base commit")
+        return stdout.strip()
+
+    def base_repository(self, workspace: Path) -> Path:
+        """Trusted commit source; exported evaluation workspaces override this."""
+        return workspace
+
     async def prepare(
         self,
         task_id: str,
@@ -232,7 +242,10 @@ class WorkspaceManager:
         contents: dict[str, str] = {}
         for relative, absolute in sorted(all_files):
             try:
-                content = absolute.read_text(encoding="utf-8")
+                # Intent hashes and descriptor writes compare exact UTF-8 bytes;
+                # universal newline translation would make CRLF context stale.
+                with absolute.open(encoding="utf-8", newline="") as source:
+                    content = source.read()
             except (OSError, UnicodeDecodeError):
                 continue
             contents[relative] = content
@@ -440,7 +453,8 @@ class WorkspaceManager:
                     "expected-absent target already exists",
                     policy_version=self.capability_policy.version,
                 )
-            previous = target.read_text(encoding="utf-8")
+            with target.open(encoding="utf-8", newline="") as source:
+                previous = source.read()
             if expected_contents is not None:
                 expected = expected_by_identity.get(normalized.identity)
                 if expected is None:
@@ -470,25 +484,74 @@ class WorkspaceManager:
                     )
             prepared.append((edit, normalized.value, target, previous, False))
         changed: list[str] = []
-        for edit, normalized_path, target, previous, is_create in prepared:
-            target.parent.mkdir(parents=True, exist_ok=True)
+        for edit, normalized_path, _target, previous, is_create in prepared:
             if previous != edit.content:
-                if is_create:
-                    try:
-                        with target.open("x", encoding="utf-8") as file:
-                            file.write(edit.content)
-                    except FileExistsError as error:
-                        raise CapabilityError(
-                            CapabilityReason.TARGET_EXISTS,
-                            CapabilityAction.CREATE,
-                            normalized_path,
-                            "target appeared after the expected-absent preflight",
-                            policy_version=self.capability_policy.version,
-                        ) from error
-                else:
-                    target.write_text(edit.content, encoding="utf-8")
+                self._write_prepared_file(
+                    workspace, normalized_path, edit.content, previous, is_create
+                )
                 changed.append(normalized_path)
         return changed
+
+    def _write_prepared_file(
+        self, workspace: Path, path: str, content: str, previous: str | None, is_create: bool
+    ) -> None:
+        """Descriptor-relative staging writer; never follows a replaced path link.
+
+        The generation coordinator supplies a private tree and serializes internal
+        writers. This method also remains usable by trusted one-shot evaluators.
+        It does not promise a transaction for arbitrary external filesystem writers.
+        """
+        normalized = normalize_workspace_path(path)
+        action = CapabilityAction.CREATE if is_create else CapabilityAction.WRITE
+        flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+        directory_fd = os.open(workspace, flags)
+        try:
+            parts = normalized.value.split("/")
+            for part in parts[:-1]:
+                try:
+                    child_fd = os.open(part, flags, dir_fd=directory_fd)
+                except FileNotFoundError:
+                    if not is_create:
+                        raise
+                    os.mkdir(part, mode=0o755, dir_fd=directory_fd)
+                    child_fd = os.open(part, flags, dir_fd=directory_fd)
+                os.close(directory_fd)
+                directory_fd = child_fd
+            file_flags = os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK
+            if is_create:
+                file_flags |= os.O_CREAT | os.O_EXCL
+            try:
+                fd = os.open(parts[-1], file_flags, 0o644, dir_fd=directory_fd)
+            except FileExistsError as error:
+                raise CapabilityError(
+                    CapabilityReason.TARGET_EXISTS, action, path,
+                    "target appeared after the expected-absent preflight",
+                    policy_version=self.capability_policy.version,
+                ) from error
+            with os.fdopen(fd, "r+b") as file:
+                opened = os.fstat(file.fileno())
+                if not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1:
+                    raise SecurityError("Staging target changed type or acquired a hard link")
+                if not is_create:
+                    data = file.read(self.settings.max_file_bytes + 1)
+                    if data != (previous or "").encode("utf-8"):
+                        raise CapabilityError(
+                            CapabilityReason.STALE_CONTENT, action, path,
+                            "workspace changed after modification preflight",
+                            policy_version=self.capability_policy.version,
+                        )
+                file.seek(0)
+                file.write(content.encode("utf-8"))
+                file.truncate()
+                file.flush()
+                os.fsync(file.fileno())
+                current = os.stat(parts[-1], dir_fd=directory_fd, follow_symlinks=False)
+                if (current.st_dev, current.st_ino, current.st_nlink) != (
+                    opened.st_dev, opened.st_ino, 1
+                ):
+                    raise SecurityError("Staging target was replaced during modification")
+        finally:
+            os.close(directory_fd)
 
     async def diff(self, workspace: Path) -> str:
         code, stdout, stderr = await run_process(

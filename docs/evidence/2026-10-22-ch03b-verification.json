@@ -1,0 +1,173 @@
+{
+  "baseline": "b7cf1c9",
+  "branch": "codex/ch-03b-publication-reconciliation",
+  "cleanup": {
+    "repopilot_ch03b_20261022_32924": true,
+    "repopilot_ch03b_20261022_33203": true,
+    "repopilot_ch03b_20261022_35230": true
+  },
+  "code_commits": [
+    "2e1daa0",
+    "5c5d892"
+  ],
+  "configuration_sha256": {
+    "Dockerfile.ch03b-cached": "ea500897721a5fff7970874eb9ff9344895e404f15a4baf33302f5c0733e1743",
+    "docker-compose.ch03b-test.yml": "8800c94d330543115a82c7d03f2f211fa1e0fba7172351fe4f2545727442dc71",
+    "pyproject.toml": "6c630b1af5ae8fe8b93bdffce11294b9ce5f7e35442b4fb4a8aaf05447c07b6a",
+    "scripts/ch03b_integration.sh": "0877ace3047a6a4a4f9094a739320b7a8a1677ba98e99b06bcdb2f234f0e8ebb",
+    "tests/coverage.ch03b.ini": "2d5a503645ab51dd1ab0e3f70a03cae2aa839ba456278a7daf5e7e39714a266b"
+  },
+  "container": {
+    "api_port": 58070,
+    "coverage_percent": 83.55,
+    "docker_engine": "29.5.3",
+    "failed": 0,
+    "passed": 281,
+    "postgres": "16.15",
+    "project": "repopilot_ch03b_20261022_35230",
+    "runtime": {
+      "checkpoint_postgres": "3.2.0",
+      "langgraph": "1.2.16",
+      "pytest": "8.4.2",
+      "python": "3.12.15"
+    },
+    "skipped": 0
+  },
+  "date": "2026-10-22",
+  "dependencies": {
+    "CH-03A": [
+      "a5b5dab",
+      "c00b23b",
+      "9e62ce7"
+    ],
+    "CH-05A": [
+      "3610e9f",
+      "c4619a8",
+      "a0df3de"
+    ]
+  },
+  "fault_probes": {
+    "ambiguous_pr_empty_lookup": "unknown_without_second_create",
+    "cancel_and_base_movement": "both_facts_retained",
+    "conflicting_ref": "stopped_without_update",
+    "converged_draft_prs_per_case": 1,
+    "converged_intents_per_case": 1,
+    "hard_exit_after_stages": [
+      "blob",
+      "tree",
+      "commit",
+      "ref",
+      "pr"
+    ],
+    "hard_exit_code": 92,
+    "lost_pr_cancel": "sticky_across_empty_lookup",
+    "same_parent_verified": true
+  },
+  "historical_real_evaluation_unchanged": {
+    "ledger_sha256": "564d6b89ebb37040fe678e0e3267fe49820b61905c827201d8ee9ba405b7d0c0",
+    "report_sha256": "38e2d49551a8e90249360641582cef353893a5299677c18297864efff0c6b3bb"
+  },
+  "host": {
+    "coverage_percent": 82.46,
+    "failed": 0,
+    "log": "reports/ch03b-host-20261022-release.log",
+    "passed": 254,
+    "python": "3.13.5",
+    "skipped": 27
+  },
+  "images": {
+    "dependency": "sha256:b448f62d9bc51ac0661e2cb7d4a666ca26b6be2baf74683ef6dd754cd586f7a1",
+    "runtime": "sha256:93dcfb41c2455dc9ffdbf88d9bea93cf0fdd873d190244091347145e4a5e309e",
+    "sandbox": "sha256:cb7b81ce26884158614ed175d2b152a6dcfffa743f5002f99c71acbd5d6cdfd1",
+    "test": "sha256:a70e94b7c07da611fe8c2a6813ca8ccef05ebb1860c0dbf78a35ade0e6699843"
+  },
+  "intermediate_runs": [
+    {
+      "failed": 3,
+      "passed": 275,
+      "project": "repopilot_ch03b_20261022_32924",
+      "reason": "historical dedicated-database reset fixtures omitted publish_intents; fixed both reset lists"
+    },
+    {
+      "all_smokes_passed": true,
+      "coverage_percent": 83.51,
+      "failed": 0,
+      "passed": 278,
+      "project": "repopilot_ch03b_20261022_33203",
+      "source": "2e1daa0; later cancellation patch not included"
+    }
+  ],
+  "limitations": [
+    "single executor per intent; no Worker fencing",
+    "SQL and GitHub are not one transaction",
+    "no background publication retry dispatcher",
+    "global stopped confirmation remains CH-06A",
+    "real GitHub integration not executed"
+  ],
+  "migration": {
+    "from": "20261021_0005",
+    "head": "20261022_0006",
+    "historical_intents_fabricated": 0
+  },
+  "mock": {
+    "count": 10,
+    "dataset_sha256": "6e5c1012e81c11d9a4cda4d2d5f761313398f5383bb0a3a71960e6569b25bdf7",
+    "model": "deterministic-mock-v1",
+    "provider": "mock",
+    "successful": 10
+  },
+  "raw_evidence_sha256": {
+    "api-source-hashes.json": "2e2623a0be0c2998378b40733bcb6fde9731814d7aa993fc18903865522caa3a",
+    "cleanup.json": "c6fac2a8ba1d4cf1a75575f87a9f56dd2b83b0358d0cfdccb51c48642f028f38",
+    "dependency-image-id.json": "4a268c8b9fb5174e4a361659208d45ff13b50f0b89bc1d83cc30111e3167de9e",
+    "image-ids.jsonl": "f41e9af4a8d008b65410faf4523547c4526e6e4ccb779978696dd7d6ac4961cd",
+    "installed-source-hashes.json": "2e2623a0be0c2998378b40733bcb6fde9731814d7aa993fc18903865522caa3a",
+    "integration.log": "308331537c295680ea9217e0f90d7cdda4ab1afb9aed14b480b945c34a3b6b0a",
+    "integration.xml": "ec5c55fc5b7b9cd7427e1d5756d28461d419302f7d1d1f8d28a205a946526fa9",
+    "mock-evaluation.json": "1134114b72abfa725ac6c4cab3c5abf396f0bc2e3f2965c3fbdb89a971c713b2",
+    "recovery.jsonl": "c71e86ae87832733d70492f2d3ef8bf4bce7c44a89cbdc789e01aed53048302d",
+    "runtime-versions.json": "4765201d9905955cbae9f995efd4ace4a312b2f46230ab9b42ff203d5a321829",
+    "smoke.jsonl": "a1bfe0c7f545530dfc6b56bae177d2dd946d03528becda9e6b511bb215122acd",
+    "source-hashes.json": "ce85cd3c9c5dd3ec3bcf521f2f455a34bf34d873a3cda8a9a7ee8a711ec8fe2e"
+  },
+  "remote": {
+    "branch_url": "https://github.com/xsw932187210-cell/RepoPilot/tree/codex/ch-03b-publication-reconciliation",
+    "first_pushed_commit": "b1ce1bd",
+    "merged": false,
+    "publisher_transport": "httpx.MockTransport",
+    "pull_request_created": true,
+    "pull_request_creation_date": "2026-10-22",
+    "pull_request_state": "draft_open",
+    "pull_request_url": "https://github.com/xsw932187210-cell/RepoPilot/pull/8",
+    "push_update_date": "2026-10-22",
+    "pushed": true,
+    "pushed_at_verification": false,
+    "real_github_requests": false,
+    "real_model_calls": false
+  },
+  "schema_version": "ch03b-verification-v1",
+  "service_tests": {
+    "CH-02B": 6,
+    "CH-03A": 5,
+    "CH-03B": 7,
+    "CH-05A": 6,
+    "CH-09": 1,
+    "CH-10": 2
+  },
+  "source_verification": {
+    "api_installed_files": 43,
+    "installed_files": 43,
+    "python_files": 80,
+    "workspace_and_commit_match": true
+  },
+  "status": "VERIFIED",
+  "verified_source_commit": "5c5d892",
+  "worker_restart": {
+    "approval_object_unchanged": true,
+    "calls_after": 3,
+    "calls_before": 3,
+    "finalize_runs": 1,
+    "test_runner_runs": 1,
+    "unknown_calls": 0
+  }
+}

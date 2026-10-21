@@ -15,6 +15,7 @@ from typing import Any
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 
+from repopilot.candidates import bound_resume
 from repopilot.config import Settings
 from repopilot.github import GitHubPublisher
 from repopilot.graph import GraphDependencies, build_graph
@@ -116,7 +117,7 @@ async def evaluate_case(
         interrupted = bool(result.get("__interrupt__"))
         if interrupted:
             result = await graph.ainvoke(
-                Command(resume={"approved": True, "feedback": "evaluation approval"}),
+                Command(resume=bound_resume(result, approved=True, feedback="evaluation approval")),
                 config=config,
             )
 

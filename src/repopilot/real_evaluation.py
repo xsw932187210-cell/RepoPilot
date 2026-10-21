@@ -14,6 +14,7 @@ import json
 import shlex
 import tempfile
 import time
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +26,7 @@ from repopilot.acceptance import (
     AcceptanceRunner,
     compare_acceptance,
 )
+from repopilot.candidates import ArtifactStore, Candidate
 from repopilot.capabilities import real_evaluation_policy
 from repopilot.config import Settings
 from repopilot.eval_report import build_eval_report, render_markdown
@@ -112,6 +114,14 @@ class OfflineWorkspace(WorkspaceManager):
             for path in (self.destination / "thefuck").rglob("*.py")
         }
         return self.destination
+
+    async def base_commit(self, workspace: Path) -> str:
+        return self.task.source.buggy_commit
+
+    def base_repository(self, workspace: Path) -> Path:
+        # Keep Git history/metadata outside the model/test workspace. ArtifactStore
+        # reads only this pinned commit's tree/blobs from the trusted source checkout.
+        return self.source
 
     def inspect(self, workspace: Path, issue_text: str, search_terms: list[str]):
         del search_terms
@@ -282,7 +292,10 @@ async def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
         issue_body = task.issue.body
         started = time.perf_counter()
         model = build_agent_model(settings, budget=budget)
-        with tempfile.TemporaryDirectory(prefix="repopilot-real-") as temporary:
+        with (
+            tempfile.TemporaryDirectory(prefix="repopilot-real-") as temporary,
+            ExitStack() as snapshots,
+        ):
             root = Path(temporary)
             manager = OfflineWorkspace(settings, task, args.source, root / "agent")
             visible_command = shlex.join(task.test.visible_argv)
@@ -323,12 +336,21 @@ async def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
                     task.issue.title, task.issue.body, plan, context, []
                 )
                 manager.apply_edits(workspace, changes.edits, expected_contents=context.files)
-            diff = await manager.diff(manager.destination)
+            candidate_workspace = manager.destination
+            if mode == "workflow":
+                artifact_store = ArtifactStore(settings.workspace_root / ".artifacts")
+                candidate = Candidate.model_validate(state["candidate"])
+                candidate_workspace = snapshots.enter_context(artifact_store.materialize(candidate))
+                diff = artifact_store.read_diff(candidate).decode(
+                    "utf-8", errors="replace"
+                )[:100_000]
+            else:
+                diff = await manager.diff(candidate_workspace)
             # Replay only allowed source changes into a pristine tree, then add hidden tests.
             evaluation = export_git_tree(args.source, task.source.buggy_commit, root / "acceptance")
             changed_files = []
             for path, before in manager.original.items():
-                after = (manager.destination / path).read_text(encoding="utf-8")
+                after = (candidate_workspace / path).read_text(encoding="utf-8")
                 if before != after:
                     (evaluation / path).write_text(after, encoding="utf-8")
                     changed_files.append(path)
