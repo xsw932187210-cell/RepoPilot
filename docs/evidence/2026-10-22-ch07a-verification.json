@@ -62,9 +62,18 @@
     "reports/repopilot_ch07a_20261022_82289/source-hashes.json": "bc5217a8cfd0db39b5aff7ebe89824488e931d455188206fe451199d42307be4"
   },
   "git_delivery": {
+    "base_branch": "codex/ch-06c-data-boundaries",
+    "base_sha": "f6b4c3cf5a9cad420cb5f8876a57d7f2c792f157",
+    "ci_at_creation": "in_progress",
+    "created_at": "2026-10-22T14:56:37Z",
+    "draft": true,
+    "first_pushed_commit": "4d768533d798c669b5afa8995b1bfc1979050232",
+    "head_at_creation": "4d768533d798c669b5afa8995b1bfc1979050232",
     "merged": false,
-    "pr_created": false,
-    "pushed": false
+    "pr_created": true,
+    "pr_number": 10,
+    "pr_url": "https://github.com/xsw932187210-cell/RepoPilot/pull/10",
+    "pushed": true
   },
   "host": {
     "coverage_percent": 85.66,

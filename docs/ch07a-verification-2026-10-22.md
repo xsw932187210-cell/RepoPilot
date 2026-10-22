@@ -83,3 +83,5 @@ MODEL_PROVIDER=mock python -m repopilot.real_evaluation \
 本卡不采集新的真实缺陷，不划分 development/holdout，不实现重复统计或自适应路由。下一张 CH-07B 依赖本卡已有实现和验收，需单独完成真实多项目 pilot 与冻结记录；CH-07C、CH-01B/C 仍为 TODO。
 
 CH-06C 未合并的依赖历史保留；创建 PR 时应使用该分支为基线，或先确认其合并后再选择 main。当前验收不等于远端合并或发布。镜像配方 hash 不证明所有 OS/传递依赖可重建；新镜像/配置须更新 manifest 和实验目录。Docker 仍共享内核。
+
+2026-10-22 已推送 `codex/ch-07a-project-adapters@4d76853`，并创建草稿 [PR #10](https://github.com/xsw932187210-cell/RepoPilot/pull/10)：base `codex/ch-06c-data-boundaries@f6b4c3c`，head `4d76853`，2 个提交、39 个文件，仅含 CH-07A。尚未合并，依赖合入后再核对/调整 main 基线。GitHub 连接器写入返回 403，改用已登录浏览器提交；API 已核实 Draft/Open 和两个分支身份。后续仅回填交付元数据，固定验收源码仍为 `81dae39`。

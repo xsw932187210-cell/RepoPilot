@@ -1180,3 +1180,4 @@ smoke 使用已经运行的服务。若 `.env` 选择真实模型，应按 [READ
 - 环境与来源：project repopilot_ch07a_20261022_82289，端口 58100；Python 3.12.15、PostgreSQL 16.15、LangGraph 1.2.16、saver 3.2.0、LangSmith 0.14.11。复用已验收依赖后重装当前代码，91 份源码/测试、测试/API 各 48 份安装包和 37 份 eval 资产与工作区及固定提交一致。专属容器/卷/网络清理确认，镜像保留。
 - 证据见 docs/ch07a-verification-2026-10-22.md、docs/project-adapters.md 和 docs/evidence/2026-10-22-ch07a-verification.json。最初默认 Python 无 pytest/仓库无 venv、组合镜像查询失败与宿主中间版 346/42/84.73% 均保留说明，最终完整重跑不复用中间结果。原始日志仅在忽略的 reports/。
 - 历史与限制：2026-09-09 真实报告、失败分析/账本、Mock 数据集与 b7cf1c9 逐字节相同；没有新真实模型结果、跨项目保留集、重复统计、路由或修复率收益。配方 hash 不是构建证明，Docker 仍共享内核。本卡为 VERIFIED，CH-07B/07C/01B/01C 保持 TODO；下一卡 CH-07B 硬依赖已有实现和验收。
+- 远端交付：已推送 4d76853 并创建草稿 [PR #10](https://github.com/xsw932187210-cell/RepoPilot/pull/10)，base codex/ch-06c-data-boundaries@f6b4c3c、head codex/ch-07a-project-adapters@4d76853，2 提交/39 文件，仅评审本卡；未合并。连接器写入 403 后经已登录浏览器创建，API 已核实 Draft/Open；依赖合入后再核对 main 基线。
