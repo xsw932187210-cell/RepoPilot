@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "dataset_id": "python-pilot-v1",
+  "frozen_at": "2026-10-22T18:15:23.766325+00:00",
+  "test_scope": "focused",
+  "manifest": "manifest-pilot-v1.json",
+  "reproduction": "reproduction/pilot-v1.json",
+  "provenance": "provenance/pilot-v1.json",
+  "exclusions": "exclusions-pilot-v1.json",
+  "contamination_ledger": "contamination-pilot-v1.json",
+  "groups": [
+    {
+      "id": "thefuck",
+      "project": "thefuck",
+      "partition": "development",
+      "task_ids": [
+        "thefuck-001",
+        "thefuck-002",
+        "thefuck-005",
+        "thefuck-006",
+        "thefuck-007",
+        "thefuck-009",
+        "thefuck-010",
+        "thefuck-011",
+        "thefuck-012",
+        "thefuck-013",
+        "thefuck-015",
+        "thefuck-018",
+        "thefuck-019",
+        "thefuck-021",
+        "thefuck-022",
+        "thefuck-025",
+        "thefuck-026",
+        "thefuck-027",
+        "thefuck-031",
+        "thefuck-032"
+      ],
+      "reason": "All historical 20 cases and failures were already analyzed; retain only for development/regression."
+    },
+    {
+      "id": "tqdm",
+      "project": "tqdm",
+      "partition": "holdout",
+      "task_ids": [
+        "tqdm-003"
+      ],
+      "reason": "Entire new project held out; bool near-duplicate case 5 excluded. Curator QA only, no model repair or tuning."
+    },
+    {
+      "id": "cookiecutter",
+      "project": "cookiecutter",
+      "partition": "holdout",
+      "task_ids": [
+        "cookiecutter-003",
+        "cookiecutter-004"
+      ],
+      "reason": "Entire new project held out; two distinct prompt/hook behaviors. Curator QA only, no model repair or tuning."
+    }
+  ],
+  "assets": {
+    "exclusions-pilot-v1.json": "5de94d5fd39fe67e4d685ea75ea91a7d0b6f6e97b76b35619e92ecbf1f0560fa",
+    "licenses/cookiecutter-003.txt": "7cc392465cc129046da7e088d618be67238e0c1a440e207f494333979f1e60dc",
+    "licenses/cookiecutter-004.txt": "31f691f875aa4ccfbd491b1dc3bf0f2f44e48c53ec573c4eaae79a9afedae7cf",
+    "licenses/thefuck.txt": "7d3488ddac804320f8f5ee437bc5530dd2e698fb0d481b11e8da504f19229707",
+    "licenses/tqdm-003.txt": "1bbf12d09d437844527b3cdaba01d379dac651b5cbb5ebb0d764274684d2680b",
+    "manifest-pilot-v1.json": "90f1d29cc67e4fa40a5f817c94254c7c9887e0f429d4d3f43693972425150f33",
+    "provenance/pilot-v1.json": "5ac852b4deacd98aabbf3a79366dc2ac38033e0bf6c2100d3be7e2ab59b0d5f8",
+    "reproduction-checks/cookiecutter-003.py": "403a932ec780625252f5a816fa1f584ec130ca6c6c7213b6a34954332f9d5378",
+    "reproduction-checks/cookiecutter-004.py": "d53c5f1f9e5ea45476ebef2e6967f04ca9c2609007bc5ddeeb7b0d36fbf95cd5",
+    "reproduction-checks/tqdm-003.py": "b70d0b380272ea62e78c842d2649bfc952c7fbab514aebeb935b54cdd5fe8f1b",
+    "reproduction/pilot-v1.json": "53f55fe7bd634328c946d0bfa74a96c24e46ba0b1b78a6b129d6642c661147d1"
+  },
+  "fingerprint": "c616e16419a9313b46ff733dc201a8f0a8bd86de313301f1b9fae266099c2adf"
+}
