@@ -86,6 +86,8 @@ class _ReviewerRequest:
         for value in schema["properties"].values():
             value.pop("default", None)
         completed = None
+        response_id = None
+        finalized_items = {}
         received = 0
         async with self.transport._client(session["access_token"]) as client:
             async with await client.responses.create(
@@ -105,6 +107,17 @@ class _ReviewerRequest:
                             "model_response_size_exceeded", "Model response exceeded local limit",
                             retryable=False, response_unknown=True, retry_kind="none",
                         )
+                    response = getattr(event, "response", None)
+                    identifier = getattr(response, "id", None)
+                    if identifier is not None:
+                        if response_id is not None and identifier != response_id:
+                            raise InvalidProviderResponse()
+                        response_id = identifier
+                    if event.type == "response.output_item.done":
+                        index = event.output_index
+                        if index in finalized_items or index < 0:
+                            raise InvalidProviderResponse()
+                        finalized_items[index] = event.item
                     if event.type == "response.failed":
                         error = event.response.error
                         raise stream_failure(error.code if error else None)
@@ -119,8 +132,27 @@ class _ReviewerRequest:
                 "model_stream_incomplete", "Model stream ended without completion",
                 retryable=False, response_unknown=True, retry_kind="none",
             )
+        # The plan-usage route may omit repeated output in its terminal frame.
+        # Reconstruct only from finalized items, never from partial text deltas.
+        output = completed.output or [finalized_items[i] for i in sorted(finalized_items)]
+        if completed.output:
+            final_by_id = {item.id: item for item in completed.output}
+            for item in finalized_items.values():
+                final = final_by_id.get(item.id)
+                if final is None or final.model_dump() != item.model_dump():
+                    raise InvalidProviderResponse()
+        texts = []
+        for item in output:
+            if item.type == "reasoning":
+                continue
+            if item.type != "message" or item.role != "assistant" or item.status != "completed":
+                raise InvalidProviderResponse()
+            for part in item.content:
+                if part.type != "output_text":
+                    raise InvalidProviderResponse()
+                texts.append(part.text)
         try:
-            parsed = ReviewOutput.model_validate_json(completed.output_text)
+            parsed = ReviewOutput.model_validate_json("".join(texts))
         except (ValidationError, ValueError, TypeError):
             raise InvalidProviderResponse() from None
         usage = completed.usage

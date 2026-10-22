@@ -124,6 +124,47 @@ async def test_real_sdk_stream_is_complete_structured_private_and_has_exact_usag
 
 
 @pytest.mark.asyncio
+async def test_terminal_frame_can_omit_output_only_after_finalized_item(wire):
+    settings, requests, replies, _ = wire
+    final = completed()
+    item = final["response"]["output"].pop()
+    replies.append((200, [
+        {"type": "response.output_item.done", "output_index": 0, "item": item}, final,
+    ]))
+    budget = ModelCallBudget(max_calls=1)
+    assert (await review(ChatGPTReviewerModel(settings, budget))).approved is False
+    assert budget.snapshot()["total_tokens"] == 10
+    assert len(requests) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mismatch", ["partial_only", "response_id", "final_item"])
+async def test_partial_or_conflicting_stream_output_is_never_accepted(wire, mismatch):
+    settings, _, replies, _ = wire
+    final = completed()
+    item = final["response"]["output"][0]
+    events = []
+    if mismatch == "partial_only":
+        final["response"]["output"] = []
+        events.append({"type": "response.output_text.delta", "delta": json.dumps({
+            "approved": True, "summary": "must not accept partial text",
+        })})
+    elif mismatch == "response_id":
+        events.append({"type": "response.created", "response": {
+            "id": "resp_different", "status": "in_progress", "output": [],
+        }})
+    else:
+        changed = json.loads(json.dumps(item))
+        changed["content"][0]["text"] = "{}"
+        events.append({"type": "response.output_item.done", "output_index": 0, "item": changed})
+    replies.append((200, [*events, final]))
+    budget = ModelCallBudget(max_calls=1)
+    with pytest.raises(ProviderRequestError):
+        await review(ChatGPTReviewerModel(settings, budget))
+    assert budget.calls_succeeded == 0
+
+
+@pytest.mark.asyncio
 async def test_role_routing_keeps_one_persistent_budget_and_records_each_provider(wire, tmp_path):
     settings, requests, replies, _ = wire
     replies.append((200, [completed()]))
