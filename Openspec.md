@@ -1,6 +1,6 @@
 # RepoPilot 项目规范与迭代验收
 
-> 更新日期：2026-10-22；本轮起始基线：`18ed369`；CH-03B 及前置依赖已由 PR #8 合并为 `main@554012e`；CH-06A 已完成隔离验收，未合并；最近完整真实模型评测：2026-09-09。
+> 更新日期：2026-10-22；本轮起始基线：`18ed369`；CH-03B 及前置依赖已由 PR #8 合并为 `main@554012e`；CH-06A 已完成隔离验收并推送独立分支，未合并；最近完整真实模型评测：2026-09-09。
 > 本文是现有项目的规范入口，记录当前行为、证据和后续变更的验收标准。
 > 本次建立的是单文件规范，尚未接入 OpenSpec CLI，也不代表已建立其提案、归档或自动校验流程。
 > 规划版本：Roadmap v3。CH-01～CH-08、CH-21 为主题编号，具体开发选带字母的子任务；新增的上下文与历史案例探索按需启动。
@@ -1128,6 +1128,6 @@ smoke 使用已经运行的服务。若 `.env` 选择真实模型，应按 [READ
 - 实验身份：仅 Mock/受控 transport，无付费模型或应用真实 GitHub 发布。服务 project `repopilot_ch06a_20261022_51033`，API 58080，Docker 29.5.3、PostgreSQL 16.15、Redis 7.4 镜像、LangGraph 1.2.16、saver 3.2.0。86 份源码、测试/API 各 46 份安装包与已提交代码一致，三轮专属资源均清理。
 - 证据：[专项验收](docs/ch06a-verification-2026-10-22.md)、[机器记录](docs/evidence/2026-10-22-ch06a-verification.json)、[执行契约](docs/execution-control.md)；原始结果在忽略目录 `reports/repopilot_ch06a_20261022_51033/`，宿主日志 `reports/ch06a-host-release.log`。历史真实评测报告、失败账本及 Mock 数据集字节保持不变。
 - 兼容与恢复：停止旧 API/Worker、排空执行、备份 SQL/artifacts 后升级 `20261022_0006 → 0007`；旧任务无期限/停止确认回填，历史耗时不补造。清理无法确认或 Worker 硬退出时留待人工检查，不杀可能复用的历史 PID；从备份恢复或前向修复，不做破坏性 downgrade。
-- PR / 合并：收尾时经 GitHub 与 `git fetch --prune origin` 核实，PR #8 已合并为 `main@554012e`，PR head `18ed369` 的 CI run `39642188749` success；合并后的文件树与 CH-06A 起始基线一致。此前 Draft/Open 记录保留为历史快照。CH-06A 尚未推送/创建新 PR，未合并，待独立分支交付记录补充。
+- PR / 合并：收尾时经 GitHub 与 `git fetch --prune origin` 核实，PR #8 已合并为 `main@554012e`，PR head `18ed369` 的 CI run `39642188749` success；合并后的文件树与 CH-06A 起始基线一致。此前 Draft/Open 记录保留为历史快照。CH-06A 已推送独立分支 [codex/ch-06a-confirmed-cancellation](https://github.com/xsw932187210-cell/RepoPilot/tree/codex/ch-06a-confirmed-cancellation)，首次推送 `6daad10` 含实现与验收记录，未创建新 PR、未合并；后续仅回填推送元数据。
 - 规范更新：RP-05、取消/API 当前行为、缺口、8.4、CH-06A、README、架构、迁移、执行/调用/发布/运行时文档同步；CH-06A 为 VERIFIED。
 - 下一张建议：无硬依赖的 P0 CH-06C；本轮不执行其他卡。

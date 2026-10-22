@@ -100,5 +100,7 @@ CH06A_DEPENDENCY_IMAGE=repopilot_ch05a_20261021_21666-test:local make ch06a-inte
 清理不可确认或 Worker 停止时保留人工检查入口。真实模型、真实缺陷质量和应用发布到 GitHub
 均未重跑。2026-09-09 的真实报告、失败账本和 Mock 数据集与 `b7cf1c9` 字节相同。
 
-本记录提交时 CH-06A 尚未推送、未创建新 PR、未合并；PR #8 仅包含前置依赖栈，已经合并。
+CH-06A 已推送到独立分支 [codex/ch-06a-confirmed-cancellation](https://github.com/xsw932187210-cell/RepoPilot/tree/codex/ch-06a-confirmed-cancellation)，首次推送提交为 `6daad10`，
+包含实现与验收记录；后续仅回填实际推送元数据。CH-06A 未创建新 PR、未合并；
+PR #8 仅包含前置依赖栈，已经合并。
 下一张建议为无硬依赖的 P0 **CH-06C**；本轮完成 CH-06A 后停止。

@@ -163,8 +163,9 @@
     "source-hashes.json": "6aacc168dad2a381420ccaa4744818a0483a9aed0fc0ab9ee0b8c4a7bb7eeec4"
   },
   "repository_delivery": {
+    "ch06a_branch_url": "https://github.com/xsw932187210-cell/RepoPilot/tree/codex/ch-06a-confirmed-cancellation",
     "ch06a_pull_request_created": false,
-    "ch06a_pushed": false,
+    "ch06a_pushed": true,
     "dependency_merge_commit": "554012eb1f4dc895cec9a42452d52eb9e5389344",
     "dependency_merge_tree_matches_baseline": true,
     "dependency_pr_ci_conclusion": "success",
@@ -174,7 +175,9 @@
     "dependency_pr_merged": true,
     "dependency_pr_state": "closed",
     "dependency_pull_request": "https://github.com/xsw932187210-cell/RepoPilot/pull/8",
-    "merged": false
+    "first_pushed_commit": "6daad100d7a6b2e6f6b2e4b9aafac1e56caf01f4",
+    "merged": false,
+    "push_date": "2026-10-22"
   },
   "schema_version": "ch06a-verification-v1",
   "service_tests": {
