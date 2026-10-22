@@ -1,9 +1,11 @@
 # Real-task corpus
 
-`evals/real/manifest.json` defines a deliberately narrow pilot corpus: 20 historical
+The unchanged default `evals/real/manifest.json` defines the historical pilot: 20
 Python bugs from **one** open-source project, The Fuck. It is useful for testing the
 end-to-end evaluator with a cached dependency image; it is not representative of the
 Python ecosystem and must not be described as SWE-bench or broad repair performance.
+The separate frozen pilot below adds three reproduced cases without rewriting that
+historical experiment identity.
 
 ## Provenance and license
 
@@ -120,3 +122,81 @@ bash scripts/eval_real.sh --reproduce-only
 Upstream code and tests are never executed directly on the host. The reproduction
 runner exports disposable trees and runs them in the bounded Docker acceptance
 environment. No model call is needed for corpus reproduction.
+
+## Frozen cross-project pilot v1
+
+`freeze-pilot-v1.json` freezes `manifest-pilot-v1.json`, reproduction counts,
+provenance, exclusions, license copies and evaluator-only public-symptom probes.
+Fingerprint: `c616e16419a9313b46ff733dc201a8f0a8bd86de313301f1b9fae266099c2adf`.
+There are 23 real defects, not synthetic mutations or repeated executions.
+
+| Partition | Project | Cases | Selection |
+| --- | --- | --- | --- |
+| development | The Fuck | 20 | Original records/fingerprints unchanged; previously analyzed |
+| holdout | tqdm | 1 | BugsInPy 3; remaining no-total boolean failure |
+| holdout | Cookiecutter | 2 | BugsInPy 3/4; duplicate choice prompt and failed pre-hook |
+
+Whole projects stay in one partition. The same coding assistant inspected reference
+fixes/tests for provenance, environment preparation and QA; no holdout answers or
+results were used for retrieval/prompt/router tuning. This is not a blind-curator or
+unseen-training-data claim. Public training contamination is unknown, and three
+holdout cases across two projects cannot provide precise generalization estimates.
+
+The [exclusion list](../evals/real/exclusions-pilot-v1.json) records eight inspected
+candidates: missing pre-existing fixture destinations, single-test-file leakage
+conflicts, a feature request, a near-duplicate, an oversized source file and an
+insufficiently matched Issue. This is not an exhaustive survey; about 50 cases remains
+an expansion target. Primary new sources are [tqdm #353](https://github.com/tqdm/tqdm/issues/353),
+[Cookiecutter #1167](https://github.com/cookiecutter/cookiecutter/issues/1167) /
+[PR #1168](https://github.com/cookiecutter/cookiecutter/pull/1168), and
+[Cookiecutter #464](https://github.com/cookiecutter/cookiecutter/issues/464) /
+[PR #549](https://github.com/cookiecutter/cookiecutter/pull/549). Pinned benchmark
+metadata is retained in `provenance/pilot-v1.json`; full OIDs/overlay hashes are in
+the manifest. `licenses/` preserves The Fuck MIT, tqdm MIT/MPL-2.0 and Cookiecutter
+BSD-3-Clause notices with the copyright years of the selected revisions.
+
+All 23 cases passed fixed-image Docker fail/pass reproduction and visible checks.
+The three new cases also have direct public-symptom checks, including executing the
+failing hook instead of relying solely on the upstream assertion's missing exception
+class. These are focused tests, not upstream full suites; six failing test instances
+in the new cases are still three defects. See [verification](ch07b-verification-2026-10-23.md).
+
+The historical base is `sha256:4488c6ee019a76b875dcbd99737dbeb5163c5bc5221c4ab491494a7890664e58`.
+The tqdm extension is `sha256:30ed8955d2abaccd55551edc84c03e7a0ec0140806eb3062d6289a56c12f37a2`;
+Cookiecutter is `sha256:71636a241413be383bd592c2cdcbd0609a86e68e5432c23bafc117851d59910a`.
+Both use Python 3.8.20 / pytest 6.2.5 rather than historical Python 3.6.9. All ports
+are documented in the recipe/provenance. The tqdm environment retains the previously
+prepared python-toolbox package (unused here) and nose. Cookiecutter adds its pinned
+dependencies and coverage plugin. No upstream VCS package, tox or setup hook executes
+on the host. Trusted preparation verifies the local base alias against the pinned
+ID before building. Recipes/versions are recorded, but builds are not bit-for-bit
+reproducible: a different image ID requires a new adapter/freeze and rerun.
+
+Metadata checks require no cache, Docker or model:
+
+```bash
+python scripts/verify_frozen_corpus.py --metadata-only
+python -m pytest -q tests/test_frozen_corpus.py tests/test_real_tasks.py
+```
+
+With trusted no-checkout Git caches and the frozen images available:
+
+```bash
+python scripts/verify_frozen_corpus.py \
+  --source thefuck=reports/real-corpus-cache/thefuck \
+  --source tqdm=reports/real-corpus-cache/tqdm \
+  --source cookiecutter=reports/real-corpus-cache/cookiecutter \
+  --output reports/pilot-v1-reproduction
+```
+
+The orchestrator reads Git objects as data and launches snapshot-only Docker children.
+Private test output is separate from count-only summaries. Probes, overlays and fixed
+trees never enter Agent exports. The legacy real-model entry still uses the original
+manifest until an experiment explicitly selects the new freeze.
+
+`contamination-pilot-v1.json` is an append-only operator record outside the immutable
+asset map; its current digest is returned for experiment binding. Reference-example,
+prompt-tuning or router-tuning events make `select("holdout")` fail. Reclassify the
+whole project in a new freeze and choose a new holdout; do not edit the old split or
+erase exposure events. A predeclared issue-only evaluation is not itself tuning;
+using its answers/hidden feedback/outcomes to revise strategy is exposure for future runs.

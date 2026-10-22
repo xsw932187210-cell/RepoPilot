@@ -43,6 +43,9 @@ known limitations, and acceptance criteria for the next iterations (Chinese).
 - Twenty pinned BugsInPy defects from The Fuck with a Docker reproduction validator,
   resumable per-case real-model evaluation, one-shot baseline comparison, and sanitized
   failure/latency reports; this is a one-project pilot, not a broad benchmark claim.
+- A separate [frozen corpus pilot](docs/real-task-corpus.md#frozen-cross-project-pilot-v1)
+  with 23 reproduced defects across three projects: the historical 20 are development,
+  and three new tqdm/Cookiecutter cases form a project-disjoint holdout. No new repair-rate result.
 - Automated lint, test, and 70% line-coverage quality gates on every push and pull request.
 - OpenAI-compatible and Google Cloud SDK adapters, with an optional ChatGPT OAuth Reviewer.
 
