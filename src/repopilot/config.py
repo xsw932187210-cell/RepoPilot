@@ -39,6 +39,12 @@ class Settings(BaseSettings):
     model_max_total_tokens: int = Field(default=0, ge=0)
     model_max_output_tokens: int = Field(default=4_096, ge=1, le=200_000)
 
+    task_timeout_seconds: int = Field(default=900, ge=1, le=86_400)
+    deadline_includes_queue: bool = False
+    deadline_includes_approval: bool = False
+    cancellation_poll_seconds: float = Field(default=0.1, ge=0.01, le=5)
+    publication_reconcile_seconds: float = Field(default=10, gt=0, le=60)
+
     workspace_root: Path = Path("./workspaces")
     demo_repository_root: Path = Path("./examples/buggy_calculator")
     max_context_files: int = Field(default=12, ge=1, le=30)
@@ -59,9 +65,7 @@ class Settings(BaseSettings):
     @property
     def allowed_github_owners(self) -> set[str]:
         return {
-            item.strip().lower()
-            for item in self.github_allowed_owners.split(",")
-            if item.strip()
+            item.strip().lower() for item in self.github_allowed_owners.split(",") if item.strip()
         }
 
     def ensure_directories(self) -> None:

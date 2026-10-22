@@ -61,3 +61,7 @@ eval-real-retrieval:
 		-v "$$(pwd)/reports:/app/reports" \
 		repopilot-eval-tools:local python scripts/eval_real_retrieval.py \
 			--source /source --output reports/real-retrieval.json
+
+.PHONY: ch06a-integration
+ch06a-integration:
+	./scripts/ch06a_integration.sh

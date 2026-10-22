@@ -15,6 +15,7 @@ from repopilot.security import SecurityError
 
 class SnapshotContainer:
     def __init__(self, *, upload_succeeds: bool = True, timeout: bool = False) -> None:
+        self.id = "a" * 64
         self.upload_succeeds = upload_succeeds
         self.timeout = timeout
         self.archive = b""

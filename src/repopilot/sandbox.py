@@ -6,14 +6,17 @@ import stat
 import sys
 import tarfile
 import tempfile
+import threading
 import time
+import uuid
 from pathlib import Path
 from typing import BinaryIO
 
 import docker
-from docker.errors import ContainerError, DockerException
+from docker.errors import ContainerError, DockerException, NotFound
 
 from repopilot.config import Settings
+from repopilot.execution import CleanupFailed, current_control, drain_thread, join_task
 from repopilot.models import SandboxResult
 from repopilot.repository import run_process
 from repopilot.security import SecurityError, parse_test_command, redact_secrets
@@ -114,12 +117,42 @@ class DockerSandbox:
 
     async def run(self, workspace: Path, command: str) -> SandboxResult:
         args = parse_test_command(command)
-        return await asyncio.to_thread(self._run_blocking, workspace, args)
+        control = current_control()
+        timeout = (
+            control.timeout(self.settings.sandbox_timeout_seconds)
+            if control
+            else self.settings.sandbox_timeout_seconds
+        )
+        aborted = threading.Event()
+        owned = []
+        thread = asyncio.create_task(
+            asyncio.to_thread(self._run_blocking, workspace, args, aborted, owned, timeout, control)
+        )
+        try:
+            return await asyncio.shield(thread)
+        except asyncio.CancelledError:
+            aborted.set()
+            # Only the exact object returned by this invocation's create may be killed.
+            if owned:
+                try:
+                    await drain_thread(owned[0].kill)
+                except DockerException:
+                    pass  # The joined thread still force-removes and reports cleanup failure.
+            await join_task(thread)
+            raise
 
-    def _run_blocking(self, workspace: Path, args: list[str]) -> SandboxResult:
+    def _run_blocking(
+        self,
+        workspace: Path,
+        args: list[str],
+        aborted: threading.Event,
+        owned: list,
+        timeout: float,
+        control,
+    ) -> SandboxResult:
         workspace = workspace.absolute()
         started = time.perf_counter()
-        client = docker.from_env(timeout=self.settings.sandbox_timeout_seconds + 10)
+        client = docker.from_env(timeout=10)
         container = None
         kwargs: dict[str, object] = {
             "image": self.settings.sandbox_image,
@@ -132,6 +165,10 @@ class DockerSandbox:
             "cap_drop": ["ALL"],
             "security_opt": ["no-new-privileges"],
             "user": "10001:10001",
+            "labels": {
+                "repopilot.task_id": control.task_id if control else "offline",
+                "repopilot.execution_id": str(uuid.uuid4()),
+            },
         }
         timed_out = False
         stdout = ""
@@ -142,12 +179,28 @@ class DockerSandbox:
             kwargs["image"] = image_id
             with tempfile.TemporaryFile() as snapshot:
                 _write_workspace_snapshot(workspace, snapshot)
+                if aborted.is_set():
+                    return SandboxResult(
+                        command=args, exit_code=130, duration_ms=0, image_id=image_id
+                    )
                 container = client.containers.create(**kwargs)
+                owned.append(container)
+                resource = {"kind": "docker_container", "id": container.id}
+                if control:
+                    control.track_from_thread(resource)
                 if not container.put_archive("/", snapshot):
                     raise RuntimeError("Docker sandbox could not load the workspace snapshot")
+            if aborted.is_set():
+                return SandboxResult(command=args, exit_code=130, duration_ms=0, image_id=image_id)
+            if control:
+                control.check()
+                timeout = control.timeout(timeout)
             container.start()
+            # Cancellation can race with start; the thread checks the same local latch.
+            if aborted.is_set():
+                container.kill()
             try:
-                result = container.wait(timeout=self.settings.sandbox_timeout_seconds)
+                result = container.wait(timeout=timeout)
                 exit_code = int(result.get("StatusCode", 1))
             except Exception as exc:  # Docker SDK uses transport-specific timeout types.
                 timed_out = True
@@ -167,9 +220,23 @@ class DockerSandbox:
             if container is not None:
                 try:
                     container.remove(force=True)
-                except DockerException:
+                except NotFound:
                     pass
-            client.close()
+                except Exception as error:
+                    raise CleanupFailed(
+                        {
+                            "kind": "docker_container",
+                            "id": container.id,
+                            "action": "remove",
+                            "error": type(error).__name__,
+                        }
+                    ) from None
+                finally:
+                    client.close()
+                if control:
+                    control.track_from_thread(resource, remove=True)
+            else:
+                client.close()
         return SandboxResult(
             command=args,
             exit_code=exit_code,

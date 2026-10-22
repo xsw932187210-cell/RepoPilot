@@ -17,6 +17,7 @@ from repopilot.approvals import ApprovalConflict, ApprovalStore
 from repopilot.candidates import ArtifactStore, Candidate, capture_manifest
 from repopilot.config import Settings
 from repopilot.events import EventBus, JobQueue
+from repopilot.execution import ExecutionStopped, current_control
 from repopilot.generations import GenerationCoordinator, MemoryGenerationStore, SQLGenerationStore
 from repopilot.github import GitHubPublisher, PublishResult
 from repopilot.graph.state import RepoPilotState
@@ -32,8 +33,9 @@ from repopilot.security import SecurityError
 MAX_POLICY_RETRIES = 1
 
 
-class TaskCancelled(RuntimeError):
-    pass
+class TaskCancelled(ExecutionStopped):
+    def __init__(self, message="cancel_requested"):
+        super().__init__("cancel_requested")
 
 
 def elapsed_ms(started: float) -> int:
@@ -113,10 +115,11 @@ class GraphDependencies:
                 payload=event_payload,
             )
 
-    async def ensure_active(
-        self, state: RepoPilotState, *, check_generation: bool = True
-    ) -> None:
-        if self.queue and await self.queue.is_cancelled(state["task_id"]):
+    async def ensure_active(self, state: RepoPilotState, *, check_generation: bool = True) -> None:
+        control = current_control()
+        if control:
+            control.check()
+        if not control and self.queue and await self.queue.is_cancelled(state["task_id"]):
             raise TaskCancelled("Task cancellation was requested")
         if check_generation and self.generations and state.get("candidate"):
             await self.generations.assert_current(Candidate.model_validate(state["candidate"]))
@@ -126,7 +129,8 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
     artifacts = ArtifactStore(deps.settings.workspace_root / ".artifacts")
     if deps.generations is None:
         deps.generations = (
-            SQLGenerationStore(deps.approvals.database) if deps.approvals
+            SQLGenerationStore(deps.approvals.database)
+            if deps.approvals
             else MemoryGenerationStore()
         )
     generations = GenerationCoordinator(artifacts, deps.generations, deps.workspaces)
@@ -135,7 +139,9 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
         candidate = Candidate.model_validate(state["candidate"])
         with artifacts.materialize(candidate) as snapshot:
             context = deps.workspaces.inspect(
-                snapshot, f"{state['issue_title']}\n{state['issue_body']}", search_terms,
+                snapshot,
+                f"{state['issue_title']}\n{state['issue_body']}",
+                search_terms,
             )
             if capture_manifest(snapshot, candidate.base_sha) != candidate.manifest:
                 raise SecurityError("Candidate materialization changed during inspection")
@@ -308,7 +314,8 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
         try:
             validate_modification_intent(changes, context)
             candidate = await generations.apply(
-                parent, changes.edits,
+                parent,
+                changes.edits,
                 expected_contents=context.files,
                 base_repository=deps.workspaces.base_repository(Path(state["workspace"])),
             )
@@ -571,7 +578,8 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
             if deps.approvals:
                 store = PublicationStore(deps.approvals.database, artifacts)
                 existing = await store.for_decision(
-                    state["task_id"], state.get("approval_decision_id", ""),
+                    state["task_id"],
+                    state.get("approval_decision_id", ""),
                 )
                 if existing:
                     deps.publisher.store = store
@@ -583,16 +591,22 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
                 raise ApprovalConflict("legacy_publication_requires_reconciliation")
             store = PublicationStore(deps.approvals.database, artifacts)
             intent = await store.ensure(
-                state["task_id"], state["approval_decision_id"],
+                state["task_id"],
+                state["approval_decision_id"],
                 state["candidate"]["candidate_id"],
             )
             deps.publisher.store = store
 
             async def cancelled() -> bool:
+                control = current_control()
+                if control:
+                    control.remaining()
+                    return bool(control.reason)
                 return bool(deps.queue and await deps.queue.is_cancelled(state["task_id"]))
 
             result = await deps.publisher.publish(
-                intent_id=intent.publish_intent_id, cancelled=cancelled,
+                intent_id=intent.publish_intent_id,
+                cancelled=cancelled,
             )
         receipt = result.receipt.model_dump(mode="json") if result.receipt else None
         status = "completed"
@@ -663,19 +677,28 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
             "node_metrics": [node_metric("cancelled", duration_ms, state.get("iteration", 0))],
         }
 
+    def interruptible(node):
+        async def execute(state):
+            control = current_control()
+            if control:
+                return await control.run(node(state))
+            return await node(state)
+
+        return execute
+
     graph = StateGraph(RepoPilotState)
-    graph.add_node("prepare", prepare)
-    graph.add_node("planner", planner)
-    graph.add_node("researcher", researcher)
-    graph.add_node("test_analyst", test_analyst)
-    graph.add_node("coder", coder)
-    graph.add_node("apply_policy", apply_policy)
-    graph.add_node("test_runner", test_runner)
-    graph.add_node("reviewer", reviewer)
-    graph.add_node("approval", approval)
+    graph.add_node("prepare", interruptible(prepare))
+    graph.add_node("planner", interruptible(planner))
+    graph.add_node("researcher", interruptible(researcher))
+    graph.add_node("test_analyst", interruptible(test_analyst))
+    graph.add_node("coder", interruptible(coder))
+    graph.add_node("apply_policy", interruptible(apply_policy))
+    graph.add_node("test_runner", interruptible(test_runner))
+    graph.add_node("reviewer", interruptible(reviewer))
+    graph.add_node("approval", interruptible(approval))
     graph.add_node("finalize", finalize)
-    graph.add_node("failed", failed)
-    graph.add_node("cancelled", cancelled)
+    graph.add_node("failed", interruptible(failed))
+    graph.add_node("cancelled", interruptible(cancelled))
 
     graph.add_edge(START, "prepare")
     graph.add_edge("prepare", "planner")

@@ -28,7 +28,9 @@ branch update atomic with the checks.
 The publisher accepts an async cancellation predicate. Cancellation before a request prevents
 it. Cancellation during transport allows that request to finish or fail, reads its target, saves
 the observed effects and stops subsequent writes. Cancellation is sticky for this intent. It
-does not delete objects, branches or PRs. CH-06A owns global stop confirmation and propagation.
+does not delete objects, branches or PRs. [CH-06A execution control](execution-control.md) now supplies the production stop predicate,
+interrupts local request waits and permits bounded read-only reconciliation. A confirmed local
+stop retains the independent remote receipt, including unknown or already-published effects.
 
 This protocol assumes one executing publisher per intent. SQL receipt CAS detects stale saves;
 it does not fence an already dispatched HTTP request. Multi-Worker ownership, automatic queue

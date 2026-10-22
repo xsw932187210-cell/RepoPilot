@@ -30,6 +30,7 @@ separately.
 | `20261019_0004` | Adds CH-03A's candidates, test evidence, approval requests and one-time decisions/resume intents |
 | `20261021_0005` | Adds CH-05A's generation records/current pointer; seeds existing explicit CH-03A approval bindings without retesting or editing artifacts |
 | `20261022_0006` | Adds `publish_intents`, unique decision binding, immutable payload digest and receipt CAS; does not invent historical publication outcomes |
+| `20261022_0007` | Adds durable stop requests, owned resource/cleanup evidence and separate execution/queue/approval accounting; historical deadlines and stop confirmations remain null |
 
 `Database.setup()` now runs the same upgrade path as the CLI. Compose also has a one-shot `migrate`
 service, and API/Worker startup waits for that service to finish successfully.
@@ -102,9 +103,10 @@ executes one conditional update and increments `state_version` only when both st
 
 | Current status | Allowed next status |
 | --- | --- |
-| `queued` | `running`, `cancelled` |
-| `running` | `awaiting_approval`, `completed`, `failed`, `cancelled` |
-| `awaiting_approval` | `queued`, `cancelled` |
+| `queued` | `running`, `cancelling`, `cancelled`, `failed` |
+| `running` | `awaiting_approval`, `completed`, `failed`, `cancelling`, `cancelled` |
+| `awaiting_approval` | `queued`, `cancelling`, `cancelled`, `failed` |
+| `cancelling` | `cancelled`, `failed`, only after resource cleanup confirmation |
 | `completed`, `failed`, `cancelled` | none |
 
 An illegal edge raises `InvalidTaskTransition`. A stale status or version raises
@@ -129,7 +131,7 @@ For an existing deployment:
 2. Confirm no task is actively executing and take a database backup appropriate to the deployment.
 3. Deploy the new image and run exactly one migrator: `repopilot-migrate upgrade`. With Compose,
    `docker compose run --rm migrate` uses the same entry point.
-4. Verify `repopilot-migrate current` reports `20261022_0006`. Back up the artifact volume with SQL.
+4. Verify `repopilot-migrate current` reports `20261022_0007`. Back up the artifact volume with SQL.
 5. Start only the new API and Worker image, then run the normal smoke checks.
 
 A fresh `docker compose up --build -d` performs step 3 through the one-shot `migrate` service. Do
@@ -185,3 +187,11 @@ CH10_POSTGRES_PORT=55440 CH10_COMPOSE_PROJECT=repopilot_ch10_manual \
 ```
 
 Both wrappers remove only their named resources and do not run a destructive downgrade.
+
+## CH-06A execution control
+
+Revision `20261022_0007` adds task fields and the `cancelling` state. Old task limits and
+stop confirmation timestamps remain null; elapsed counters start at zero and future phase
+accounting starts at upgrade time. Stop old executors and back up both SQL and artifacts before
+upgrading. There is no destructive downgrade. See [execution control](execution-control.md) for
+202/200 cancellation behavior, deadline policy, pending cleanup and conservative restart handling.

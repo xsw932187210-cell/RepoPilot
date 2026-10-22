@@ -12,7 +12,7 @@ from sqlalchemy import Connection, inspect
 from sqlalchemy.ext.asyncio import create_async_engine
 
 BASELINE_REVISION = "20260921_0001"
-HEAD_REVISION = "20261022_0006"
+HEAD_REVISION = "20261022_0007"
 
 _LEGACY_TASK_COLUMNS = {
     "id",

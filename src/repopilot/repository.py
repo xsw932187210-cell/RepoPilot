@@ -12,6 +12,7 @@ from typing import Any
 
 from repopilot.capabilities import WorkspaceCapabilityPolicy, default_workspace_policy
 from repopilot.config import Settings
+from repopilot.execution import CleanupFailed, controlled, current_control, join_task
 from repopilot.models import FileEdit
 from repopilot.retrieval import HybridCodeRetriever
 from repopilot.security import (
@@ -106,32 +107,72 @@ class RepositoryContext:
         return f"{prefix[:prefix_budget]}{''.join(rendered_files)}"
 
 
+async def run_process_bytes(
+    *args: str,
+    cwd: Path | None = None,
+    timeout_seconds: int = 120,
+    env: dict[str, str] | None = None,
+    input_bytes: bytes | None = None,
+) -> tuple[int, bytes, bytes]:
+    control = current_control()
+    if control:
+        timeout_seconds = control.timeout(timeout_seconds)
+    spawn = asyncio.create_task(
+        asyncio.create_subprocess_exec(
+            *args,
+            cwd=str(cwd) if cwd else None,
+            env=env,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            stdin=asyncio.subprocess.PIPE if input_bytes is not None else None,
+            start_new_session=True,
+        )
+    )
+    process = None
+    resource = None
+    try:
+        try:
+            process = await asyncio.shield(spawn)
+        except asyncio.CancelledError:
+            process = await join_task(spawn)
+            raise
+        resource = {"kind": "process_group", "id": str(process.pid)}
+        if control:
+            await control.track(resource)
+            control.check()
+        stdout, stderr = await controlled(process.communicate(input_bytes), timeout_seconds)
+        return process.returncode, stdout, stderr
+    finally:
+        if process:
+            try:
+                # Descendants share this newly created session, never another task's group.
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                await asyncio.wait_for(process.wait(), timeout=10)
+            except (OSError, TimeoutError) as error:
+                raise CleanupFailed(
+                    {
+                        **(resource or {"kind": "process_group", "id": str(process.pid)}),
+                        "action": "kill_and_wait",
+                        "error": type(error).__name__,
+                    }
+                ) from None
+            if control and resource:
+                await control.track(resource, remove=True)
+
+
 async def run_process(
     *args: str,
     cwd: Path | None = None,
     timeout_seconds: int = 120,
     env: dict[str, str] | None = None,
 ) -> tuple[int, str, str]:
-    process = await asyncio.create_subprocess_exec(
-        *args,
-        cwd=str(cwd) if cwd else None,
-        env=env,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        start_new_session=True,
+    code, stdout, stderr = await run_process_bytes(
+        *args, cwd=cwd, timeout_seconds=timeout_seconds, env=env
     )
-    try:
-        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout_seconds)
-    except (TimeoutError, asyncio.CancelledError) as exc:
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        await process.wait()
-        if isinstance(exc, asyncio.CancelledError):
-            raise
-        raise TimeoutError(f"Command timed out: {args[0]}") from None
-    return process.returncode, stdout.decode(errors="replace"), stderr.decode(errors="replace")
+    return code, stdout.decode(errors="replace"), stderr.decode(errors="replace")
 
 
 class WorkspaceManager:
@@ -217,8 +258,7 @@ class WorkspaceManager:
             directories[:] = sorted(
                 directory
                 for directory in directories
-                if directory not in _IGNORED_PARTS
-                and not (current_path / directory).is_symlink()
+                if directory not in _IGNORED_PARTS and not (current_path / directory).is_symlink()
             )
             for filename in sorted(filenames):
                 path = current_path / filename
@@ -422,9 +462,7 @@ class WorkspaceManager:
                     "generated content exceeds the workspace byte limit",
                     policy_version=self.capability_policy.version,
                 )
-            target_stat = self._existing_file_stat(
-                target, normalized, CapabilityAction.WRITE
-            )
+            target_stat = self._existing_file_stat(target, normalized, CapabilityAction.WRITE)
             if target_stat is None:
                 expected_path = absent_by_identity.get(normalized.identity)
                 if expected_path is not None and expected_path != normalized.value:
@@ -524,7 +562,9 @@ class WorkspaceManager:
                 fd = os.open(parts[-1], file_flags, 0o644, dir_fd=directory_fd)
             except FileExistsError as error:
                 raise CapabilityError(
-                    CapabilityReason.TARGET_EXISTS, action, path,
+                    CapabilityReason.TARGET_EXISTS,
+                    action,
+                    path,
                     "target appeared after the expected-absent preflight",
                     policy_version=self.capability_policy.version,
                 ) from error
@@ -536,7 +576,9 @@ class WorkspaceManager:
                     data = file.read(self.settings.max_file_bytes + 1)
                     if data != (previous or "").encode("utf-8"):
                         raise CapabilityError(
-                            CapabilityReason.STALE_CONTENT, action, path,
+                            CapabilityReason.STALE_CONTENT,
+                            action,
+                            path,
                             "workspace changed after modification preflight",
                             policy_version=self.capability_policy.version,
                         )
@@ -547,7 +589,9 @@ class WorkspaceManager:
                 os.fsync(file.fileno())
                 current = os.stat(parts[-1], dir_fd=directory_fd, follow_symlinks=False)
                 if (current.st_dev, current.st_ino, current.st_nlink) != (
-                    opened.st_dev, opened.st_ino, 1
+                    opened.st_dev,
+                    opened.st_ino,
+                    1,
                 ):
                     raise SecurityError("Staging target was replaced during modification")
         finally:

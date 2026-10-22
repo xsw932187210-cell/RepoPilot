@@ -12,6 +12,7 @@ from repopilot.security import CapabilityReason
 class TaskStatus(StrEnum):
     QUEUED = "queued"
     RUNNING = "running"
+    CANCELLING = "cancelling"
     AWAITING_APPROVAL = "awaiting_approval"
     COMPLETED = "completed"
     FAILED = "failed"
@@ -22,18 +23,22 @@ TASK_RESULT_SCHEMA_VERSION = 1
 EVENT_PAYLOAD_SCHEMA_VERSION = 1
 
 ALLOWED_TASK_TRANSITIONS: dict[TaskStatus, frozenset[TaskStatus]] = {
-    TaskStatus.QUEUED: frozenset({TaskStatus.RUNNING, TaskStatus.CANCELLED}),
+    TaskStatus.QUEUED: frozenset(
+        {TaskStatus.RUNNING, TaskStatus.CANCELLED, TaskStatus.CANCELLING, TaskStatus.FAILED}
+    ),
     TaskStatus.RUNNING: frozenset(
         {
             TaskStatus.AWAITING_APPROVAL,
+            TaskStatus.CANCELLING,
             TaskStatus.COMPLETED,
             TaskStatus.FAILED,
             TaskStatus.CANCELLED,
         }
     ),
     TaskStatus.AWAITING_APPROVAL: frozenset(
-        {TaskStatus.QUEUED, TaskStatus.CANCELLED}
+        {TaskStatus.QUEUED, TaskStatus.CANCELLED, TaskStatus.CANCELLING, TaskStatus.FAILED}
     ),
+    TaskStatus.CANCELLING: frozenset({TaskStatus.CANCELLED, TaskStatus.FAILED}),
     TaskStatus.COMPLETED: frozenset(),
     TaskStatus.FAILED: frozenset(),
     TaskStatus.CANCELLED: frozenset(),
@@ -49,6 +54,10 @@ class TaskCreate(BaseModel):
     base_branch: str = Field(default="main", min_length=1, max_length=120)
     test_command: str = Field(default="python -m pytest -q", max_length=300)
     max_iterations: int = Field(default=2, ge=1, le=5)
+
+    execution_timeout_seconds: int | None = Field(default=None, ge=1, le=86_400)
+    deadline_includes_queue: bool | None = None
+    deadline_includes_approval: bool | None = None
 
     @field_validator("repository_url")
     @classmethod
@@ -74,6 +83,20 @@ class TaskView(BaseModel):
     error: str | None = None
     created_at: datetime
     updated_at: datetime
+    execution_timeout_seconds: int | None = None
+    deadline_includes_queue: bool = False
+    deadline_includes_approval: bool = False
+    execution_elapsed_seconds: float = 0
+    queue_elapsed_seconds: float = 0
+    approval_elapsed_seconds: float = 0
+    phase_started_at: datetime | None = None
+    deadline_at: datetime | None = None
+    remaining_seconds: float | None = None
+    stop_requested_at: datetime | None = None
+    stopped_at: datetime | None = None
+    stop_reason: str | None = None
+    execution_resources: list[dict[str, Any]] = Field(default_factory=list)
+    cleanup_pending: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class EventView(BaseModel):

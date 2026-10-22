@@ -11,10 +11,12 @@ import pytest
 from approval_helpers import decision_request
 from generation_helpers import generation_case, pair
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from legacy_tasks import insert_legacy_task
 from redis.asyncio import Redis
 from sqlalchemy import func, select
 from sqlalchemy.engine import make_url
 
+from repopilot.approval_models import ApprovalView
 from repopilot.approvals import ApprovalStore
 from repopilot.candidates import ArtifactStore, digest_json
 from repopilot.config import Settings
@@ -129,14 +131,23 @@ async def test_database_cas_rejects_concurrent_old_parent(tmp_path):
         for batch in (edits, edits[:1]):
             with coordinator.artifacts.materialize(parent) as snapshot:
                 coordinator.workspaces.apply_edits(snapshot, batch, expected_contents=context)
-                candidates.append(await coordinator.artifacts.freeze(
-                    snapshot, task_id=parent.task_id, base_sha=parent.base_sha, generation=1,
-                    policy_version=parent.policy_version, base_repository=workspace,
-                ))
-        results = await asyncio.gather(*[
-            SQLGenerationStore(db).commit(parent, digest_json(index), candidate)
-            for index, candidate in enumerate(candidates)
-        ], return_exceptions=True)
+                candidates.append(
+                    await coordinator.artifacts.freeze(
+                        snapshot,
+                        task_id=parent.task_id,
+                        base_sha=parent.base_sha,
+                        generation=1,
+                        policy_version=parent.policy_version,
+                        base_repository=workspace,
+                    )
+                )
+        results = await asyncio.gather(
+            *[
+                SQLGenerationStore(db).commit(parent, digest_json(index), candidate)
+                for index, candidate in enumerate(candidates)
+            ],
+            return_exceptions=True,
+        )
         assert sum(isinstance(result, GenerationConflict) for result in results) == 1
         first = await SQLGenerationStore(db).current(parent.task_id)
         assert first in candidates
@@ -150,14 +161,13 @@ async def test_database_cas_rejects_concurrent_old_parent(tmp_path):
         await db.close()
 
 
-async def new_task(db):
-    return await db.create_task(
-        TaskCreate(
-            repository_url="demo://buggy-calculator",
-            issue_title="Fix add returning wrong result",
-            issue_body="The add function subtracts instead of adding.",
-        )
+async def new_task(db, *, legacy=False):
+    data = TaskCreate(
+        repository_url="demo://buggy-calculator",
+        issue_title="Fix add returning wrong result",
+        issue_body="The add function subtracts instead of adding.",
     )
+    return await insert_legacy_task(db, data) if legacy else await db.create_task(data)
 
 
 async def test_checkpoint_replay_after_generation_commit_does_not_repeat_model_or_test():
@@ -195,9 +205,12 @@ async def test_upgrade_preserves_ch03a_frozen_approval_and_resumes_original_cand
     try:
         await admin.execute(f'CREATE DATABASE "{name}"')
         await ensure_database_schema(url, revision="20261019_0004")
-        task = await new_task(db)
+        task = await new_task(db, legacy=True)
         assert await child("legacy_approval", task.id, url=url) == 0
-        original = await ApprovalStore(db).current(task.id)
+        original_path = Settings(_env_file=None).workspace_root / f"{task.id}-legacy-approval.json"
+        original = ApprovalView.model_validate_json(
+            await asyncio.to_thread(original_path.read_text)
+        )
         artifacts = ArtifactStore(Settings(_env_file=None).workspace_root / ".artifacts")
         original_diff = artifacts.read_diff(original.candidate)
         assert (await db.get_model_call_metrics(task.id))["reserved_calls"] == 3

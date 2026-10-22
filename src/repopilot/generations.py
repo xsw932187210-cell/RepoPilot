@@ -34,6 +34,7 @@ from repopilot.candidates import (
     sync_directory,
 )
 from repopilot.db import Base, TaskRecord
+from repopilot.execution import drain_thread
 from repopilot.models import FileEdit, TaskStatus
 from repopilot.security import SecurityError
 
@@ -288,9 +289,11 @@ def _read_journal(path: Path) -> dict[str, Any]:
     operation = payload.get("operation_id")
     phase = payload.get("phase")
     if (
-        not isinstance(operation, str) or len(operation) != 64
+        not isinstance(operation, str)
+        or len(operation) != 64
         or any(character not in "0123456789abcdef" for character in operation)
-        or not isinstance(phase, str) or phase not in {"writing", "sealed", "committed"}
+        or not isinstance(phase, str)
+        or phase not in {"writing", "sealed", "committed"}
     ):
         raise ValueError("Invalid staging journal identity")
     return payload
@@ -338,7 +341,7 @@ class GenerationCoordinator:
 
     async def _recover(self, root: Path, task_id: str) -> list[dict[str, Any]]:
         reports = []
-        for directory in sorted(await asyncio.to_thread(lambda: list(root.iterdir()))):
+        for directory in sorted(await drain_thread(lambda: list(root.iterdir()))):
             if not directory.is_dir() and not directory.is_symlink():
                 continue
             path = directory / "journal.json"

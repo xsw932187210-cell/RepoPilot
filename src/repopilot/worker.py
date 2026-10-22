@@ -18,10 +18,10 @@ from repopilot.candidates import ArtifactStore, Candidate
 from repopilot.config import Settings, get_settings
 from repopilot.db import Database, TaskRecord, TaskStateConflict
 from repopilot.events import EventBus, JobQueue
+from repopilot.execution import CleanupFailed, ExecutionControl, ExecutionStopped
 from repopilot.generations import GenerationConflict, GenerationCoordinator, SQLGenerationStore
 from repopilot.github import GitHubPublisher
 from repopilot.graph import GraphDependencies, build_graph
-from repopilot.graph.builder import TaskCancelled
 from repopilot.llm import build_agent_model, call_policy_from_settings
 from repopilot.model_calls import ControlledModelCaller
 from repopilot.models import TaskStatus, TaskView
@@ -114,22 +114,74 @@ class Worker:
 
     async def run_forever(self) -> None:
         await self.reconcile_staging()
+        await self.report_pending_stops()
         logger.info("RepoPilot worker is ready")
+        sweeper = asyncio.create_task(self._sweep_deadlines())
+        try:
+            while True:
+                job = await self.queue.dequeue(wait_seconds=5)
+                if job is None:
+                    continue
+                await self.handle(job)
+        finally:
+            sweeper.cancel()
+            await asyncio.gather(sweeper, return_exceptions=True)
+
+    async def _sweep_deadlines(self) -> None:
+        # Waiting tasks must expire even while this Worker is executing another task.
         while True:
-            job = await self.queue.dequeue(wait_seconds=5)
-            if job is None:
-                continue
-            await self.handle(job)
+            try:
+                for stopped in await self.database.expire_waiting_tasks():
+                    await self.events.notify_control(stopped.id)
+            except Exception as error:
+                logger.warning("Waiting deadline scan unavailable: %s", type(error).__name__)
+            await asyncio.sleep(1)
+
+    async def report_pending_stops(self) -> None:
+        async with self.database.sessions() as session:
+            pending = (
+                (
+                    await session.execute(
+                        select(TaskRecord).where(TaskRecord.status == TaskStatus.CANCELLING.value)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            snapshots = [task.to_view() for task in pending]
+        for task in snapshots:
+            # A restarted process cannot prove its predecessor's quiescence. In
+            # particular, a persisted POSIX PID might already have been reused.
+            await self.database.confirm_stop(
+                task.id,
+                expected_version=task.state_version,
+                cleanup_pending=task.cleanup_pending
+                or task.execution_resources
+                or [
+                    {
+                        "kind": "execution_attempt",
+                        "action": "verify_quiescence",
+                        "error": "worker_restart",
+                    }
+                ],
+            )
 
     async def reconcile_staging(self) -> dict[str, list[dict[str, Any]]]:
         """Classify retained data on startup; never enqueue or adopt a candidate."""
         async with self.database.sessions() as session:
-            task_ids = (await session.execute(
-                select(TaskRecord.id).where(TaskRecord.status == TaskStatus.RUNNING.value)
-            )).scalars().all()
+            task_ids = (
+                (
+                    await session.execute(
+                        select(TaskRecord.id).where(TaskRecord.status == TaskStatus.RUNNING.value)
+                    )
+                )
+                .scalars()
+                .all()
+            )
         coordinator = GenerationCoordinator(
             ArtifactStore(self.settings.workspace_root / ".artifacts"),
-            SQLGenerationStore(self.database), self.workspaces,
+            SQLGenerationStore(self.database),
+            self.workspaces,
         )
         reports = {}
         for task_id in task_ids:
@@ -141,6 +193,9 @@ class Worker:
         task_id = str(job["task_id"])
         token = str(uuid.uuid4())
         active_task: TaskView | None = None
+        control: ExecutionControl | None = None
+        watcher: asyncio.Task | None = None
+        result = None
         if not await self.queue.acquire(task_id, token):
             logger.info("Task %s is already owned by another worker", task_id)
             return
@@ -157,6 +212,9 @@ class Worker:
                     task.status.value,
                 )
                 return
+            if task.remaining_seconds == 0:
+                await self.database.request_stop(task_id, "deadline_exceeded")
+                return
             active_task = await self.database.transition_task(
                 task_id,
                 expected_status=TaskStatus.QUEUED,
@@ -170,75 +228,110 @@ class Worker:
                 node="worker",
                 message="Worker started graph execution",
             )
-            dependencies = await self._dependencies(task_id)
-            graph = build_graph(dependencies, self.checkpointer)
-            config = {"configurable": {"thread_id": task.graph_thread_id}}
-            # A queue message is a hint. Only the committed decision may resume a
-            # production approval; duplicate initial deliveries also resolve here.
-            resume = await self.approvals.resume_for_running_task(active_task)
-            if job.get("resume") is not None and resume is None:
-                raise ApprovalConflict("legacy_approval_requires_revalidation")
-            if resume is None:
-                graph_input: dict[str, Any] | Command = self._initial_state(task)
-            else:
-                graph_input = Command(resume=resume)
-            result = await graph.ainvoke(graph_input, config=config)
-            interrupts = result.get("__interrupt__", [])
-            if interrupts:
-                payloads = [getattr(item, "value", str(item)) for item in interrupts]
-                active_task = await self.approvals.open_request(
+
+            async def persist_resources(resources):
+                await self.database.execution_resources(
+                    task_id, active_task.state_version, resources
+                )
+
+            control = ExecutionControl(
+                task_id,
+                active_task.remaining_seconds,
+                reconcile_seconds=self.settings.publication_reconcile_seconds,
+                resource_hook=persist_resources,
+            )
+            watcher = asyncio.create_task(self._watch_execution(active_task, control))
+            with control.bind():
+                dependencies = await control.run(self._dependencies(task_id))
+                graph = build_graph(dependencies, self.checkpointer)
+                config = {"configurable": {"thread_id": task.graph_thread_id}}
+                # A queue message is a hint. Only the committed decision may resume a
+                # production approval; duplicate initial deliveries also resolve here.
+                resume = await self.approvals.resume_for_running_task(active_task)
+                if job.get("resume") is not None and resume is None:
+                    raise ApprovalConflict("legacy_approval_requires_revalidation")
+                if resume is None:
+                    graph_input: dict[str, Any] | Command = self._initial_state(task)
+                else:
+                    graph_input = Command(resume=resume)
+                result = await graph.ainvoke(graph_input, config=config)
+                control.check()
+                interrupts = result.get("__interrupt__", [])
+                if interrupts:
+                    payloads = [getattr(item, "value", str(item)) for item in interrupts]
+                    active_task = await self.approvals.open_request(
+                        task_id,
+                        expected_version=active_task.state_version,
+                        candidate=Candidate.model_validate(result["candidate"]),
+                        evidence=TestEvidence.model_validate(result["test_evidence"]),
+                        summary={"approval_requests": payloads, **result_summary(result)},
+                    )
+                    await self.events.publish(
+                        task_id,
+                        kind="approval_required",
+                        node="approval",
+                        message="Graph checkpointed and is waiting for human approval",
+                        payload={"requests": payloads},
+                    )
+                    return
+
+                final_status = {
+                    "completed": TaskStatus.COMPLETED,
+                    "cancelled": TaskStatus.CANCELLED,
+                    "failed": TaskStatus.FAILED,
+                }.get(result.get("status"), TaskStatus.FAILED)
+                active_task = await self.database.transition_task(
                     task_id,
+                    expected_status=TaskStatus.RUNNING,
                     expected_version=active_task.state_version,
-                    candidate=Candidate.model_validate(result["candidate"]),
-                    evidence=TestEvidence.model_validate(result["test_evidence"]),
-                    summary={"approval_requests": payloads, **result_summary(result)},
+                    status=final_status,
+                    result=result_summary(result),
+                    error=result.get("error"),
+                    expected_candidate_id=(result.get("candidate") or {}).get("candidate_id"),
                 )
                 await self.events.publish(
                     task_id,
-                    kind="approval_required",
-                    node="approval",
-                    message="Graph checkpointed and is waiting for human approval",
-                    payload={"requests": payloads},
+                    kind="task_finished",
+                    node="worker",
+                    message=f"Task finished with status {final_status.value}",
                 )
-                return
-
-            final_status = {
-                "completed": TaskStatus.COMPLETED,
-                "cancelled": TaskStatus.CANCELLED,
-                "failed": TaskStatus.FAILED,
-            }.get(result.get("status"), TaskStatus.FAILED)
-            active_task = await self.database.transition_task(
-                task_id,
-                expected_status=TaskStatus.RUNNING,
-                expected_version=active_task.state_version,
-                status=final_status,
-                result=result_summary(result),
-                error=result.get("error"),
-                expected_candidate_id=(result.get("candidate") or {}).get("candidate_id"),
-            )
-            await self.events.publish(
-                task_id,
-                kind="task_finished",
-                node="worker",
-                message=f"Task finished with status {final_status.value}",
-            )
         except (TaskStateConflict, GenerationConflict) as exc:
             logger.info("Discarding stale task state update: %s", exc)
-        except TaskCancelled as exc:
-            if active_task is not None and active_task.status is TaskStatus.RUNNING:
-                try:
-                    await self.database.transition_task(
-                        task_id,
-                        expected_status=TaskStatus.RUNNING,
-                        expected_version=active_task.state_version,
-                        status=TaskStatus.CANCELLED,
-                        error=str(exc),
-                    )
-                except TaskStateConflict as conflict:
-                    logger.info("Cancellation lost a state race: %s", conflict)
+        except ExecutionStopped as exc:
+            if exc.scope == "task":
+                await self.database.request_stop(task_id, exc.reason)
+            else:
+                await self.events.publish(
+                    task_id,
+                    kind="attempt_aborted",
+                    node="worker",
+                    message="Only this execution attempt was stopped",
+                    payload={"scope": "attempt"},
+                )
+        except CleanupFailed as exc:
+            if control:
+                control.cleanup_pending.append(exc.resource)
+            await self.database.request_stop(task_id, "cleanup_failed")
+        except asyncio.CancelledError:
+            if control:
+                control.abort_attempt()
+                control.cleanup_pending.append(
+                    {
+                        "kind": "execution_attempt",
+                        "action": "verify_quiescence",
+                        "error": "worker_interrupted",
+                    }
+                )
+            raise
         except Exception as exc:
             logger.exception("Task %s failed", task_id)
-            if active_task is not None and active_task.status is TaskStatus.RUNNING:
+            if control and control.resources:
+                control.cleanup_pending.extend(
+                    {**resource, "action": "verify_cleanup", "error": type(exc).__name__}
+                    for resource in control.resources
+                )
+                await self.database.request_stop(task_id, "cleanup_failed")
+            elif active_task is not None and active_task.status is TaskStatus.RUNNING:
                 try:
                     await self.database.transition_task(
                         task_id,
@@ -257,7 +350,58 @@ class Worker:
                         message=f"{type(exc).__name__}: {exc}",
                     )
         finally:
-            await self.queue.release(task_id, token)
+            try:
+                if watcher:
+                    watcher.cancel()
+                    await asyncio.gather(watcher, return_exceptions=True)
+                if control and active_task:
+                    current = await self.database.get_task(task_id)
+                    if (
+                        current
+                        and current.status is TaskStatus.CANCELLING
+                        and current.state_version == active_task.state_version + 1
+                    ):
+                        ledger = self.database.model_call_ledger(task_id)
+                        await ledger.ensure(call_policy_from_settings(self.settings))
+                        await ledger.reconcile_incomplete()
+                        await self.database.confirm_stop(
+                            task_id,
+                            expected_version=current.state_version,
+                            cleanup_pending=control.cleanup_pending,
+                            result=result_summary(result) if result else None,
+                        )
+                        await self.events.notify_control(task_id)
+            finally:
+                await self.queue.release(task_id, token)
+
+    async def _watch_execution(self, active: TaskView, control: ExecutionControl) -> None:
+        try:
+            while True:
+                current = await self.database.get_task(active.id)
+                if current is None or current.state_version not in {
+                    active.state_version,
+                    active.state_version + 1,
+                }:
+                    control.abort_attempt()
+                    return
+                if current.status is TaskStatus.CANCELLING:
+                    control.stop(current.stop_reason or "cancel_requested")
+                    await self.events.notify_control(active.id)
+                    return
+                if current.status is not TaskStatus.RUNNING:
+                    return
+                if control.remaining() == 0:
+                    await self.database.request_stop(active.id, "deadline_exceeded")
+                    return
+                await asyncio.sleep(self.settings.cancellation_poll_seconds)
+
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            control.abort_attempt()
+            logger.warning(
+                "Task %s execution control unavailable: %s", active.id, type(error).__name__
+            )
 
     @staticmethod
     def _initial_state(task: TaskView) -> dict[str, Any]:

@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+from repopilot.execution import CleanupFailed
 from repopilot.migrations import ensure_database_schema
 from repopilot.model_calls import (
     BackoffBudgetExceeded,
@@ -51,6 +52,7 @@ from repopilot.models import (
     TaskStatus,
     TaskView,
 )
+from repopilot.task_timing import deadline_at, phase_totals, remaining_seconds
 
 
 def utcnow() -> datetime:
@@ -87,9 +89,7 @@ class TaskStateConflict(RuntimeError):
         self.current_status = current_status
         self.current_version = current_version
         current = (
-            "missing"
-            if current_status is None
-            else f"{current_status.value}@{current_version}"
+            "missing" if current_status is None else f"{current_status.value}@{current_version}"
         )
         super().__init__(
             f"Task {task_id} state conflict: expected "
@@ -109,9 +109,7 @@ class TaskRecord(Base):
     test_command: Mapped[str] = mapped_column(String(300))
     max_iterations: Mapped[int] = mapped_column(Integer, default=2)
     graph_thread_id: Mapped[str] = mapped_column(String(80), unique=True, index=True)
-    state_version: Mapped[int] = mapped_column(
-        Integer, default=1, server_default=text("1")
-    )
+    state_version: Mapped[int] = mapped_column(Integer, default=1, server_default=text("1"))
     result: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     result_schema_version: Mapped[int] = mapped_column(
         Integer,
@@ -122,6 +120,35 @@ class TaskRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+    execution_timeout_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    deadline_includes_queue: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false")
+    )
+    deadline_includes_approval: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false")
+    )
+    execution_elapsed_seconds: Mapped[float] = mapped_column(
+        Float, default=0, server_default=text("0")
+    )
+    queue_elapsed_seconds: Mapped[float] = mapped_column(Float, default=0, server_default=text("0"))
+    approval_elapsed_seconds: Mapped[float] = mapped_column(
+        Float, default=0, server_default=text("0")
+    )
+    phase_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=utcnow
+    )
+    stop_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    stopped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    stop_reason: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    execution_resources: Mapped[list[dict]] = mapped_column(
+        JSON, default=list, server_default=text("'[]'")
+    )
+    cleanup_pending: Mapped[list[dict]] = mapped_column(
+        JSON, default=list, server_default=text("'[]'")
     )
 
     def to_view(self) -> TaskView:
@@ -141,6 +168,20 @@ class TaskRecord(Base):
             error=self.error,
             created_at=self.created_at,
             updated_at=self.updated_at,
+            execution_timeout_seconds=self.execution_timeout_seconds,
+            deadline_includes_queue=self.deadline_includes_queue,
+            deadline_includes_approval=self.deadline_includes_approval,
+            phase_started_at=self.phase_started_at,
+            deadline_at=deadline_at(self, utcnow()),
+            remaining_seconds=remaining_seconds(self, utcnow()),
+            stop_requested_at=self.stop_requested_at,
+            stopped_at=self.stopped_at,
+            stop_reason=self.stop_reason,
+            execution_resources=self.execution_resources or [],
+            cleanup_pending=self.cleanup_pending or [],
+            execution_elapsed_seconds=self.execution_elapsed_seconds,
+            queue_elapsed_seconds=self.queue_elapsed_seconds,
+            approval_elapsed_seconds=self.approval_elapsed_seconds,
         )
 
 
@@ -198,25 +239,15 @@ class ModelCallBudgetRecord(Base):
     succeeded_calls: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
     failed_calls: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
     unknown_calls: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
-    rate_limit_retries: Mapped[int] = mapped_column(
-        Integer, default=0, server_default=text("0")
-    )
-    transient_retries: Mapped[int] = mapped_column(
-        Integer, default=0, server_default=text("0")
-    )
+    rate_limit_retries: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
+    transient_retries: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
     backoff_seconds: Mapped[float] = mapped_column(Float, default=0, server_default=text("0"))
-    observed_input_tokens: Mapped[int] = mapped_column(
-        Integer, default=0, server_default=text("0")
-    )
+    observed_input_tokens: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
     observed_output_tokens: Mapped[int] = mapped_column(
         Integer, default=0, server_default=text("0")
     )
-    observed_total_tokens: Mapped[int] = mapped_column(
-        Integer, default=0, server_default=text("0")
-    )
-    usage_complete: Mapped[bool] = mapped_column(
-        Boolean, default=True, server_default=text("true")
-    )
+    observed_total_tokens: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
+    usage_complete: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
@@ -254,8 +285,28 @@ class ModelCallAttemptRecord(Base):
     total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     reserved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    finished_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+def phase_transition_values(task, now: datetime) -> dict[str, Any]:
+    return {**phase_totals(task, now), "phase_started_at": now}
+
+
+async def block_approvals(session: AsyncSession, task_id: str) -> None:
+    from repopilot.approvals import ApprovalRecord, DecisionRecord
+
+    await session.execute(
+        update(ApprovalRecord)
+        .where(ApprovalRecord.task_id == task_id, ApprovalRecord.status == "waiting")
+        .values(status="cancelled")
+    )
+    await session.execute(
+        update(DecisionRecord)
+        .where(
+            DecisionRecord.task_id == task_id,
+            DecisionRecord.dispatch_state.in_(["pending", "enqueued"]),
+        )
+        .values(dispatch_state="blocked", dispatch_error="task_stopped")
     )
 
 
@@ -277,6 +328,9 @@ class Database:
         task_id = str(uuid.uuid4())
         record = TaskRecord(
             id=task_id,
+            created_at=utcnow(),
+            updated_at=utcnow(),
+            phase_started_at=utcnow(),
             status=TaskStatus.QUEUED.value,
             repository_url=data.repository_url,
             issue_title=data.issue_title,
@@ -285,6 +339,11 @@ class Database:
             test_command=data.test_command,
             max_iterations=data.max_iterations,
             graph_thread_id=f"task-{task_id}",
+            execution_timeout_seconds=data.execution_timeout_seconds
+            if data.execution_timeout_seconds is not None
+            else 900,
+            deadline_includes_queue=bool(data.deadline_includes_queue),
+            deadline_includes_approval=bool(data.deadline_includes_approval),
             state_version=1,
             result_schema_version=TASK_RESULT_SCHEMA_VERSION,
         )
@@ -329,6 +388,19 @@ class Database:
             values["error"] = error
 
         async with self.sessions() as session:
+            prior = (
+                await session.execute(
+                    select(TaskRecord).where(TaskRecord.id == task_id).with_for_update()
+                )
+            ).scalar_one_or_none()
+            if prior:
+                values.update(phase_transition_values(prior, utcnow()))
+            if status in {TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED}:
+                if prior and prior.execution_resources:
+                    raise CleanupFailed(
+                        {**prior.execution_resources[0], "action": "verify_before_terminal"}
+                    )
+                values["stopped_at"] = utcnow()
             if expected_candidate_id is not None:
                 from repopilot.generations import require_current
 
@@ -378,6 +450,216 @@ class Database:
             if record is None:  # The primary key cannot disappear inside this transaction.
                 raise KeyError(task_id)
             return record.to_view()
+
+    async def request_stop(self, task_id: str, reason: str = "cancel_requested") -> TaskView:
+        """SQL is authoritative; a Redis hint is optional and cannot confirm a running stop."""
+        async with self.sessions() as session:
+            task = (
+                await session.execute(
+                    select(TaskRecord).where(TaskRecord.id == task_id).with_for_update()
+                )
+            ).scalar_one_or_none()
+            if task is None:
+                raise KeyError(task_id)
+            previous = TaskStatus(task.status)
+            if previous in {
+                TaskStatus.COMPLETED,
+                TaskStatus.FAILED,
+                TaskStatus.CANCELLED,
+                TaskStatus.CANCELLING,
+            }:
+                return task.to_view()
+            now = utcnow()
+            previous_version = task.state_version
+            idle = (
+                previous in {TaskStatus.QUEUED, TaskStatus.AWAITING_APPROVAL}
+                and not task.execution_resources
+            )
+            target = (
+                (TaskStatus.CANCELLED if reason == "cancel_requested" else TaskStatus.FAILED)
+                if idle
+                else TaskStatus.CANCELLING
+            )
+            values = {
+                **phase_transition_values(task, now),
+                "status": target.value,
+                "state_version": previous_version + 1,
+                "stop_reason": reason,
+                "stop_requested_at": now,
+                "updated_at": now,
+            }
+            if idle:
+                values.update(stopped_at=now, error=reason)
+            result = await session.execute(
+                update(TaskRecord)
+                .where(
+                    TaskRecord.id == task_id,
+                    TaskRecord.status == previous.value,
+                    TaskRecord.state_version == previous_version,
+                )
+                .values(**values)
+            )
+            if result.rowcount != 1:
+                await session.rollback()
+                raise TaskStateConflict(
+                    task_id,
+                    expected_status=previous,
+                    expected_version=previous_version,
+                    current_status=None,
+                    current_version=None,
+                )
+            await block_approvals(session, task_id)
+            for kind in (
+                ["cancellation_requested"] if reason == "cancel_requested" else [reason]
+            ) + (["execution_stopped"] if idle else []):
+                session.add(
+                    EventRecord(
+                        task_id=task_id,
+                        kind=kind,
+                        node="control",
+                        message=kind,
+                        payload={"reason": reason, "confirmed": idle},
+                        payload_schema_version=EVENT_PAYLOAD_SCHEMA_VERSION,
+                    )
+                )
+            await session.commit()
+            await session.refresh(task)
+            return task.to_view()
+
+    async def execution_resources(
+        self, task_id: str, active_version: int, resources: list[dict]
+    ) -> None:
+        async with self.sessions() as session:
+            changed = await session.execute(
+                update(TaskRecord)
+                .where(
+                    TaskRecord.id == task_id,
+                    or_(
+                        (TaskRecord.status == TaskStatus.RUNNING.value)
+                        & (TaskRecord.state_version == active_version),
+                        (TaskRecord.status == TaskStatus.CANCELLING.value)
+                        & (TaskRecord.state_version == active_version + 1),
+                    ),
+                )
+                .values(execution_resources=resources)
+            )
+            if changed.rowcount != 1:
+                raise RuntimeError("execution_resource_authority_lost")
+            await session.commit()
+
+    async def confirm_stop(
+        self,
+        task_id: str,
+        *,
+        expected_version: int,
+        cleanup_pending: list[dict] | None = None,
+        result: dict | None = None,
+    ) -> TaskView:
+        async with self.sessions() as session:
+            task = (
+                await session.execute(
+                    select(TaskRecord).where(TaskRecord.id == task_id).with_for_update()
+                )
+            ).scalar_one_or_none()
+            if task is None:
+                raise KeyError(task_id)
+            if task.status != TaskStatus.CANCELLING.value or task.state_version != expected_version:
+                raise TaskStateConflict(
+                    task_id,
+                    expected_status=TaskStatus.CANCELLING,
+                    expected_version=expected_version,
+                    current_status=TaskStatus(task.status),
+                    current_version=task.state_version,
+                )
+            pending = cleanup_pending or []
+            if pending or task.execution_resources:
+                task.cleanup_pending = pending or task.execution_resources
+                session.add(
+                    EventRecord(
+                        task_id=task_id,
+                        kind="cleanup_pending",
+                        node="control",
+                        message="Execution stop is not confirmed",
+                        payload={"resources": task.cleanup_pending},
+                        payload_schema_version=EVENT_PAYLOAD_SCHEMA_VERSION,
+                    )
+                )
+            else:
+                task.status = (
+                    TaskStatus.CANCELLED
+                    if task.stop_reason == "cancel_requested"
+                    else TaskStatus.FAILED
+                ).value
+                task.state_version += 1
+                task.stopped_at = utcnow()
+                task.cleanup_pending = []
+                task.error = task.stop_reason
+                if result is not None:
+                    task.result, task.result_schema_version = result, TASK_RESULT_SCHEMA_VERSION
+                session.add(
+                    EventRecord(
+                        task_id=task_id,
+                        kind="execution_stopped",
+                        node="control",
+                        message="Owned execution resources have stopped",
+                        payload={"reason": task.stop_reason, "confirmed": True},
+                        payload_schema_version=EVENT_PAYLOAD_SCHEMA_VERSION,
+                    )
+                )
+            await session.commit()
+            return task.to_view()
+
+    async def expire_waiting_tasks(self) -> list[TaskView]:
+        async with self.sessions() as session:
+            waiting = (
+                (
+                    await session.execute(
+                        select(TaskRecord).where(
+                            TaskRecord.status.in_(
+                                [TaskStatus.QUEUED.value, TaskStatus.AWAITING_APPROVAL.value]
+                            ),
+                            TaskRecord.execution_timeout_seconds.is_not(None),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            expired = [task.id for task in waiting if remaining_seconds(task, utcnow()) == 0]
+        stopped = []
+        for task_id in expired:
+            try:
+                stopped.append(await self.request_stop(task_id, "deadline_exceeded"))
+            except TaskStateConflict:
+                pass
+        return stopped
+
+    async def stop_events(self, task_id: str) -> list[EventView]:
+        async with self.sessions() as session:
+            events = (
+                (
+                    await session.execute(
+                        select(EventRecord)
+                        .where(
+                            EventRecord.task_id == task_id,
+                            EventRecord.kind.in_(
+                                [
+                                    "cancellation_requested",
+                                    "deadline_exceeded",
+                                    "cleanup_failed",
+                                    "cleanup_pending",
+                                    "execution_stopped",
+                                ]
+                            ),
+                        )
+                        .order_by(EventRecord.id.desc())
+                        .limit(2)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            return [event.to_view() for event in reversed(events)]
 
     async def add_event(
         self,
@@ -542,8 +824,7 @@ class DatabaseCallLedger:
         token_available = or_(
             ModelCallBudgetRecord.max_total_tokens.is_(None),
             ModelCallBudgetRecord.usage_complete.is_(False),
-            ModelCallBudgetRecord.observed_total_tokens
-            < ModelCallBudgetRecord.max_total_tokens,
+            ModelCallBudgetRecord.observed_total_tokens < ModelCallBudgetRecord.max_total_tokens,
         )
         async with self.database.sessions() as session, session.begin():
             result = await session.execute(
@@ -670,9 +951,7 @@ class DatabaseCallLedger:
         now = utcnow()
         status = CallStatus.UNKNOWN if unknown else CallStatus.FAILED
         counter = (
-            ModelCallBudgetRecord.unknown_calls
-            if unknown
-            else ModelCallBudgetRecord.failed_calls
+            ModelCallBudgetRecord.unknown_calls if unknown else ModelCallBudgetRecord.failed_calls
         )
         counter_name = "unknown_calls" if unknown else "failed_calls"
         async with self.database.sessions() as session, session.begin():

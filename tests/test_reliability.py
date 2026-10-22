@@ -697,6 +697,8 @@ async def test_local_sandbox_converts_timeout_to_evidence(
 
 
 class FakeContainer:
+    id = "b" * 64
+
     def put_archive(self, path: str, data: object) -> bool:
         del path, data
         return True

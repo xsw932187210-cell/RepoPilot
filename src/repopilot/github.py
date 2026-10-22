@@ -16,6 +16,7 @@ import httpx
 
 from repopilot.approvals import ApprovalConflict
 from repopilot.config import Settings
+from repopilot.execution import ExecutionStopped, current_control
 from repopilot.generations import GenerationConflict
 from repopilot.publication import (
     PublicationConflict,
@@ -147,14 +148,23 @@ class _Publication:
 
     async def get(self, path: str, *, params: dict | None = None) -> Any | None:
         try:
-            response = await self.client.get(path, params=params)
+            control = current_control()
+            timeout = control.reconciliation_timeout(30) if control else 30
+            if timeout <= 0:
+                raise RemoteUnknown("publication_reconciliation_deadline")
+            request = self.client.get(path, params=params, timeout=timeout)
+            response = (
+                await control.run(request, limit_seconds=timeout)
+                if control and not control.reason
+                else await asyncio.wait_for(request, timeout)
+            )
             if response.status_code == 404:
                 return None
             response.raise_for_status()
             if 'rel="next"' in response.headers.get("link", ""):
                 raise RemoteUnknown("remote_lookup_incomplete")
             return response.json()
-        except (httpx.HTTPError, ValueError) as error:
+        except (httpx.HTTPError, ValueError, TimeoutError, ExecutionStopped) as error:
             raise RemoteUnknown("remote_lookup_unavailable") from error
 
     async def stop_for_cancel(self) -> bool:
@@ -238,12 +248,19 @@ class _Publication:
                 await self.save(steps=steps)
                 return False
             try:
-                response = await self.client.post(path, json=payload)
+                control = current_control()
+                if control:
+                    response = await control.run(
+                        self.client.post(path, json=payload, timeout=control.timeout(30)),
+                        limit_seconds=30,
+                    )
+                else:
+                    response = await self.client.post(path, json=payload)
                 response.raise_for_status()
                 if name == "pr":
                     remote = self.validate_pr(response.json())
                     await self.save(remote_ids={**self.receipt.remote_ids, **remote})
-            except (httpx.HTTPError, ValueError):
+            except (httpx.HTTPError, ValueError, TimeoutError, ExecutionStopped):
                 await self.unknown(
                     "remote_request_outcome_unknown",
                     steps={**self.receipt.steps, name: "unknown"},

@@ -1,6 +1,6 @@
 # RepoPilot 项目规范与迭代验收
 
-> 更新日期：2026-10-22；本轮起始基线：`b7cf1c9`；CH-03B 已验收并推送分支，尚未创建 PR 或合并；最近完整真实模型评测：2026-09-09。
+> 更新日期：2026-10-22；本轮起始基线：`18ed369`；CH-03B 及前置依赖已由 PR #8 合并为 `main@554012e`；CH-06A 已完成隔离验收并推送独立分支，未合并；最近完整真实模型评测：2026-09-09。
 > 本文是现有项目的规范入口，记录当前行为、证据和后续变更的验收标准。
 > 本次建立的是单文件规范，尚未接入 OpenSpec CLI，也不代表已建立其提案、归档或自动校验流程。
 > 规划版本：Roadmap v3。CH-01～CH-08、CH-21 为主题编号，具体开发选带字母的子任务；新增的上下文与历史案例探索按需启动。
@@ -66,7 +66,7 @@ coder ← reviewer（预算内返工；测试门槛耗尽仍未通过则 failed�
 reviewer → approval 中断 → 拒绝：cancelled / 同意：finalize → completed
 ```
 
-对外任务状态为 `queued / running / awaiting_approval / completed / failed / cancelled`。任务记录带 `state_version`；每次状态更新比较调用方看到的 status/version，成功后版本加一。人工决定重新入队后，用同一个 `graph_thread_id` 和 `Command(resume=...)` 恢复执行。
+对外任务状态为 `queued / running / awaiting_approval / cancelling / completed / failed / cancelled`。任务记录带 `state_version`；每次状态更新比较调用方看到的 status/version，成功后版本加一。人工决定重新入队后，用同一个 `graph_thread_id` 和 `Command(resume=...)` 恢复执行。运行中收到停止请求先进入 `cancelling`，受控资源清理确认后再进入终态。
 
 两条必须区分的执行路径：
 
@@ -79,11 +79,11 @@ reviewer → approval 中断 → 拒绝：cancelled / 同意：finalize → comp
 
 ### RP-01：任务输入、状态和查询
 
-- 输入包括公开 GitHub HTTPS 仓库 URL 或内置 demo URI、Issue 标题与描述、基线分支、测试命令、最大迭代数。
+- 输入包括公开 GitHub HTTPS 仓库 URL 或内置 demo URI、Issue 标题与描述、基线分支、测试命令、最大迭代数，以及可选的执行期限和排队/审批计时策略。
 - 创建任务时校验仓库地址、分支和测试命令，成功返回 `202` 与任务 ID；非法输入返回 `422`。
 - API key 是可选配置；设置后通过 `X-API-Key` 校验。当前无用户身份、租户隔离或权限角色。
 - Task API 返回 `state_version` 与 `result_schema_version`，Event API/SSE 返回 `payload_schema_version`。迁移前的 result/event JSON 标记为版本 0 并保持原样可读，当前新写入为版本 1。
-- 状态更新只允许 `queued → running/cancelled`、`running → awaiting_approval/completed/failed/cancelled`、`awaiting_approval → queued/cancelled`；终态不可再转移。expected status/version 过期时拒绝，API 竞态返回 `409`。
+- 状态更新只允许 `queued → running/cancelling/cancelled/failed`、`running → awaiting_approval/cancelling/completed/failed/cancelled`、`awaiting_approval → queued/cancelling/cancelled/failed`、`cancelling → cancelled/failed`；终态不可再转移。停止确认与终态写入还须满足资源清理条件。expected status/version 过期时拒绝，API 竞态返回 `409`。
 - 主要 API：
 
 | 方法 | 路径 | 当前行为 |
@@ -98,9 +98,9 @@ reviewer → approval 中断 → 拒绝：cancelled / 同意：finalize → comp
 | GET | `/api/v1/tasks/{task_id}/candidates/{candidate_id}[/diff]` | 受 API Key 保护的完整 manifest 或未截断 Diff |
 | POST | `/api/v1/tasks/{task_id}/approval` | 强制 approval-v2 绑定，CAS 保存一次决定；精确重试返回原决定，旧请求 422、冲突 409 |
 | POST | `/api/v1/tasks/{task_id}/approval/dispatch` | 显式重投已保存的 pending/enqueued 恢复意图 |
-| POST | `/api/v1/tasks/{task_id}/cancel` | 写取消标记并更新对外状态 |
+| POST | `/api/v1/tasks/{task_id}/cancel` | SQL 持久化停止请求；运行中返回 202/cancelling，清理确认后才终态 |
 
-SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub 订阅之间存在消息空窗；不能保证实时流无丢失。取消接口返回 `cancelled` 也不代表当前外部调用或容器已立即停止。
+SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub 订阅之间存在消息空窗；不能保证实时流无丢失。新版运行中取消先返回 `cancelling`；只有 `stopped_at` 才代表受控本地执行已停止，旧迁移的 `cancelled` 无法补造确认。远端效果及 provider 计费仍须分别看 receipt/unknown 账本。
 
 ### RP-02：有界且可解释的上下文检索
 
@@ -152,7 +152,7 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 - Redis 锁使用 `SET NX EX 900`；释放时比较 token，防止旧持有者删除新锁。
 - 当前无锁续期、fencing token、消费 ACK 或 pending reclaim；长任务超过锁 TTL 时可能出现两个 Worker 同时执行，出队后崩溃可能丢失该次投递。
 - 任务表、checkpoint、工作区和发布操作没有统一事务；当前不能承诺任意节点崩溃后自动恢复或恰好执行一次。
-- 取消检查主要发生在执行节点入口，没有贯穿所有外部 I/O，也没有统一任务截止时间。
+- 取消请求存入 SQL，运行中先进入 `cancelling`；统一执行 scope 中断模型/进程组/容器等待，清理后 CAS 确认停止。新任务保存总执行预算及排队/审批计时策略；节点/模型等待不超过剩余期限，截止后不再发新模型请求。清理失败保留 ID/诊断；发布在途先对账，旧 Worker 重启不补造停止确认。
 
 验证入口：[数据库迁移说明](docs/database-migrations.md)、[test_migrations.py](tests/test_migrations.py)、[PostgreSQL 账本测试](tests/test_model_calls_postgres.py)、[recovery_smoke.sh](scripts/recovery_smoke.sh)、[运行时边界说明](docs/runtime-correctness.md)。恢复 smoke 适用于审批 checkpoint 及其调用计数；不等于队列找回、Worker fencing 或故障全覆盖。
 
@@ -200,6 +200,7 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 | CH-03A 候选与审批 | 2026-10-19：Linux Python 3.12 全量 204 passed / 0 skipped，82.91% coverage；Mock 10/10、API smoke、实际 Worker 重启通过；14 项服务条件入口均实跑 | 仅 Mock 与隔离 PostgreSQL/Redis/Docker；审批绑定、并发一次消费、投递失败保存/显式重试成立，不代表自动队列恢复、fencing 或最终 GitHub 发布身份绑定 |
 | CH-05A 暂存与代次 | 2026-10-21：Linux 全量 229 passed / 0 skipped，83.45% coverage；20 项服务条件测试全部实跑，Mock 10/10、API smoke、实际 Worker 重启、旧审批升级及 73 文件来源核对通过；专属资源清理确认 | 受控 POSIX writer 的私有暂存和完整代次可见性；显式重放与 orphan 核对成立，不等于文件系统/DB 事务、自动队列恢复、fencing 或端到端 GitHub 发布绑定 |
 | CH-03B 发布与对账 | 2026-10-22：Linux 281 passed / 0 skipped，83.55% coverage；27 项服务测试实跑，五阶段硬退出、Mock 10/10、smoke/Worker 重启和 80 文件来源核对通过 | GitHub 使用测试 transport；单执行者意图重放及取消/移动后对账，不是实际 GitHub 集成、fencing、外部事务或自动发布恢复 |
+| CH-06A 可确认取消与截止 | 2026-10-22：Linux 314 passed / 0 skipped，84.19% coverage；35 项服务入口全部实跑，真实容器/进程组停止及兄弟资源不受影响，Mock 10/10、smoke/Worker 重启通过；86 份源码与 46 份安装包来源一致 | 本地执行停止确认；不保证 provider 停止计费或远端回滚，清理失败/重启留待检查，无 Worker fencing/自动重领 |
 | CH-01A 离线诊断 | 2026-10-19：核对 40 个 case-mode，公开 12 个未通过项的观察分类与未知根因；lint、154 passed / 3 skipped、80.78% 行覆盖率 | 对 2026-09-09 v7 历史记录做离线分析；不是新真实模型实验，也不补足 CH-02B 集成验收 |
 | CH-02B 服务验收 | 2026-10-19：PostgreSQL 16.15 / Redis / Docker 下 6 项专项通过，容器内 Mock 10/10，API smoke 和实际 Worker 审批重启恢复通过，专属资源清理确认 | 中途 checkpoint 经测试入口显式恢复；未实现自动队列找回。离线套件 154 passed / 9 skipped，80.78%；6 项服务测试另行实跑，另外 3 项 PostgreSQL 条件入口未重跑 |
 | Mock 工作流回归 | 10/10 | 验证流程及确定性夹具，不代表 LLM 编码能力 |
@@ -221,10 +222,10 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 | --- | --- | --- |
 | 项目级权限适配 | 默认测试/构建/凭据受保护，create 关闭；特例目前由服务端 Python policy 注入，还没有版本化项目 manifest | CH-07A |
 | 任意外部 writer / 产物保留 | 已有私有暂存、OS 锁、完整代次 CAS 和改动检测；管理员可绕过应用边界，尚无回收/保留期策略 | CH-04B、CH-16 |
-| 发布与远端变化的原子性 | 已按获批 SHA/完整 artifact 构建并持久化意图/对账；基线检查与 GitHub 移动不原子，重验标记保留；尚无多 Worker fencing 或自动恢复调度 | CH-04B/C、CH-06A |
+| 发布与远端变化的原子性 | 已按获批 SHA/完整 artifact 构建并持久化意图/对账；基线检查与 GitHub 移动不原子，重验标记保留；尚无多 Worker fencing 或自动恢复调度 | CH-04B/C |
 | 队列出队后崩溃 / 锁到期 | 无自动回收或阻止过期 Worker 副作用的机制 | CH-04 |
 | 数据库与 Redis/事件/checkpoint 的交接 | 审批决定与 pending 意图已可靠保存并可显式重投；创建任务仍有交接窗口，消费无 ACK/自动找回 | CH-04A |
-| 取消与任务超时 | 对外状态和实际执行停止可能不同步 | CH-06 |
+| 取消后服务不可达 / Worker 硬退出 | 保留 cancelling、资源 ID 和清理证据，不自动杀历史 PID 或补造停止确认；需人工检查或后续恢复调度 | CH-04B/C |
 | 历史事件切换实时订阅 | SSE 可能漏掉切换窗口事件 | CH-06 |
 | 在线日志 / 状态脱敏范围 | 评测 sanitizer 不覆盖所有在线错误、payload 和 checkpoint | CH-06 |
 | 外部模型调用原子性与计费 | 已有持久化预留、未定响应和有界重试；数据库/provider 无跨系统事务，缺 usage/特殊计费时不能承诺精确金额，也尚无 Worker fencing | CH-04B（所有权）；CH-10 记账已完成 |
@@ -299,7 +300,7 @@ S/M/L 表示相对范围：S 通常是独立诊断或小接口；M 是一组紧�
 
 2026-10-19 确认的质量迭代顺序：先做 CH-01A 失败归因，再通过 CH-07A/B/C 建立跨项目开发集和冻结保留集；按证据选择 CH-13 Reviewer 校准或 CH-01B 任务路由，每次只验证一个主要策略变化。CH-14 的片段检索、CH-21 的压缩/历史案例复用由大文件、长任务或重复仓库任务的瓶颈触发；CH-12 多用户权限由明确使用需求触发，不作为本轮前置功能。
 
-CH-01A、CH-02B、CH-03A 已于 2026-10-19 完成本地验收；CH-05A 于 2026-10-21、CH-03B 于 2026-10-22 完成本地验收，均仍待对应 PR/合并处理。CH-02A、CH-09、CH-10 已合并。下一张可选 **CH-06A**，其 CH-09/CH-10/CH-03B 硬依赖已有实现与证据；质量数据方向可独立开展 **CH-07A**。执行顺序始终以各卡硬依赖为准。
+CH-01A、CH-02B、CH-03A 已于 2026-10-19、CH-05A 于 2026-10-21、CH-03B 于 2026-10-22 完成验收，依赖历史已由 PR #8 合并为 `main@554012e`。CH-06A 于 2026-10-22 在独立分支完成验收，未合并。CH-02A、CH-09、CH-10 已合并。下一张可选无硬依赖的 P0 **CH-06C**；质量数据方向也可独立开展 **CH-07A**。执行顺序始终以各卡硬依赖为准。
 
 ### 8.4 跨任务接口约定（已落实项与待实现设计）
 
@@ -335,6 +336,8 @@ CH-03B 接口映射（2026-10-22，已实现并验收）：`PublicationStore.ens
 
 `publish-receipt-v1` 保存 `pending/publishing/unknown/published/blocked/cancelled/revalidation_required`、每步发起/确认、远端 ID、取消及基线观测。Git 对象预先确定 ID；ref 只创建，PR 已可能发出而查询为空时不重复创建。先核对全部已发出步骤，再处理取消/基线变化，保留可能已存在的 PR。CLI 默认只读对账；没有自动调度器或多 Worker fencing。API `/publication` 只读 SQL，任务终态不抹去远端事实。详细契约见 [发布与恢复](docs/publication.md)。
 
+CH-06A 接口映射（2026-10-22，已实现并验收）：复用任务状态版本 CAS，运行中取消进入 `cancelling`，清理完成才进入 `cancelled`；停止失败保留资源 ID/清理证据，不补造确认。新任务默认 900 秒累计执行预算，排队/审批分别计时，是否计入由持久化策略显式配置；旧任务不回填期限或停止确认。统一 `ExecutionControl` 支持任务停止和仅 attempt 的 abort，后者不能把任务标为 cancelled。发布使用原 CH-03B 取消/对账，停止后允许有界只读对账。
+
 四个全局约束：
 
 1. **代码身份一致**：被测试、被审批和被提交的必须是同一个候选；不能只比较一段展示用 Diff。
@@ -346,7 +349,7 @@ CH-03B 接口映射（2026-10-22，已实现并验收）：`PublicationStore.ens
 
 #### CH-01A：建立失败账本和可核验复盘
 
-- **状态**：VERIFIED（2026-10-19，离线观察分类与回归通过，缺乏因果证据的根因保留 unknown）。**优先级/规模**：P0 / S。**硬依赖**：无。
+- **状态**：MERGED（2026-10-19，离线观察分类与回归通过，缺乏因果证据的根因保留 unknown；2026-10-22 由 PR #8 合并为 `main@554012e`）。**优先级/规模**：P0 / S。**硬依赖**：无。
 - **入口**：[历史报告](docs/real-evaluation-results-2026-09-09.md)、`eval_report.py`、本地忽略的 `reports/`；不要默认其他电脑拥有原始报告。
 - **实施步骤**：
   1. 核对 20 个缺陷、40 个 case-mode 对和 12 个未通过项；分别记录 outcome、runtime failure 与 quota 状态。
@@ -402,7 +405,7 @@ CH-03B 接口映射（2026-10-22，已实现并验收）：`PublicationStore.ens
 
 #### CH-02B：结构化策略反馈与有界纠正
 
-- **状态**：VERIFIED（原实现 `9032103`；2026-10-19 在 `codex/ch-02b-integration-validation` 完成隔离服务验收，未合并）。**优先级/规模**：P0 / M。**硬依赖**：CH-02A、CH-10。
+- **状态**：MERGED（原实现 `9032103`；2026-10-19 在 `codex/ch-02b-integration-validation` 完成隔离服务验收；2026-10-22 由 PR #8 合并为 `main@554012e`）。**优先级/规模**：P0 / M。**硬依赖**：CH-02A、CH-10。
 - **入口**：`graph/builder.py`、`graph/state.py`、`llm.py`、`models.py`、`test_reliability.py`。
 - **实施步骤**：
   1. 将权限拒绝转换为稳定 reason code、受控目标路径和可允许动作；异常原文和宿主路径不直接进入模型反馈。
@@ -418,7 +421,7 @@ CH-03B 接口映射（2026-10-22，已实现并验收）：`PublicationStore.ens
 
 #### CH-03A：冻结候选和一次性审批决定
 
-- **状态**：VERIFIED（2026-10-19，204 passed / 0 skipped，82.91% coverage，Mock/服务故障/Worker 重启均通过；尚未推送或合并）。**优先级/规模**：P0 / L。**硬依赖**：CH-02A、CH-09。
+- **状态**：MERGED（2026-10-19，204 passed / 0 skipped，82.91% coverage，Mock/服务故障/Worker 重启均通过；2026-10-22 由 PR #8 合并为 `main@554012e`）。**优先级/规模**：P0 / L。**硬依赖**：CH-02A、CH-09。
 - **入口**：`repository.py`、`sandbox.py`、`models.py`、`db.py`、`api.py`、`graph/builder.py`。
 - **实施步骤**：
   1. 准备仓库时记录实际 base commit；从待测完整快照生成确定性 manifest/digest，包含路径、文件模式和内容摘要，候选 ID 不依赖易截断的展示 Diff。定义最小不可变 artifact 存取接口并持久化引用；后续 staging 实现复用该接口，不能使审批绑定可变工作区路径。
@@ -432,7 +435,7 @@ CH-03B 接口映射（2026-10-22，已实现并验收）：`PublicationStore.ens
 
 #### CH-03B：发布绑定、幂等意图与远端对账
 
-- **状态**：VERIFIED（2026-10-22，281 passed / 0 skipped，83.55% coverage；仅测试 transport；分支已推送，未创建 PR 或合并）。**优先级/规模**：P0 / L。**硬依赖**：CH-03A、CH-05A。
+- **状态**：MERGED（2026-10-22，281 passed / 0 skipped，83.55% coverage；仅测试 transport；PR #8 已合并为 `main@554012e`）。**优先级/规模**：P0 / L。**硬依赖**：CH-03A、CH-05A。
 - **入口**：`github.py`、`worker.py`、`db.py`、`graph/builder.py`、`test_github.py`。
 - **实施步骤**：
   1. publisher 接收并核验已持久化的发布意图、候选与有效审批；拒绝只有原始 edits 而没有证据的调用。使用获批 base SHA 构建 commit，不重新套用未经测试的新 HEAD。
@@ -490,7 +493,7 @@ CH-03B 接口映射（2026-10-22，已实现并验收）：`PublicationStore.ens
 
 #### CH-05A：暂存候选与原子可见代次
 
-- **状态**：VERIFIED（2026-10-21，229 passed / 0 skipped，83.45% coverage，Mock/硬退出/审批升级/Worker 重启均通过；尚未推送或合并）。**优先级/规模**：P0 / L。**硬依赖**：CH-02A、CH-03A。
+- **状态**：MERGED（2026-10-21，229 passed / 0 skipped，83.45% coverage，Mock/硬退出/审批升级/Worker 重启均通过；2026-10-22 由 PR #8 合并为 `main@554012e`）。**优先级/规模**：P0 / L。**硬依赖**：CH-02A、CH-03A。
 - **入口**：`generations.py`、`repository.py`、`candidates.py`、`graph/builder.py`、`db.py`、`worker.py`；代次状态复用 `graph/state.py` 的 candidate 字段，沙箱接口保持不变。
 - **实施步骤**：
   1. 复用候选身份和 manifest，写入新的 staging 目录，不对当前已接受候选逐文件覆盖；确定目录/manifest 的完整写入与校验顺序。
@@ -518,7 +521,7 @@ CH-03B 接口映射（2026-10-22，已实现并验收）：`PublicationStore.ens
 
 #### CH-06A：可确认取消与全局截止时间
 
-- **状态**：TODO。**优先级/规模**：P1 / L。**硬依赖**：CH-09、CH-10、CH-03B。
+- **状态**：VERIFIED（2026-10-22，314 passed / 0 skipped，84.19% coverage；真实容器/进程停止、Mock、smoke、Worker 重启均通过，未合并）。**优先级/规模**：P1 / L。**硬依赖**：CH-09、CH-10、CH-03B。
 - **入口**：`api.py`、`models.py`、`worker.py`、`llm.py`、`sandbox.py`、`repository.py`、发布模块。
 - **实施步骤**：
   1. 区分 cancel requested 与 confirmed stopped；采用字段或新状态时给出迁移与兼容说明，终态更新使用 CAS 防止旧 Worker 覆盖取消。
@@ -862,6 +865,7 @@ make ch02b-integration
 make ch03a-integration
 make ch05a-integration
 make ch03b-integration
+make ch06a-integration
 make eval
 make smoke
 make smoke-recovery
@@ -894,6 +898,8 @@ smoke 使用已经运行的服务。若 `.env` 选择真实模型，应按 [READ
 - [CH-05A 隔离验收](docs/ch05a-verification-2026-10-21.md)：多文件中断、进程硬退出、精确重放、旧审批升级、来源核对与资源清理。
 - [发布意图与远端对账](docs/publication.md)：获批完整树/固定 parent、分阶段 receipt、取消与基线移动、只读 CLI 和升级边界。
 - [CH-03B 隔离验收](docs/ch03b-verification-2026-10-22.md)：五阶段 HTTP 丢响应/硬退出、SQL CAS、完整来源核对及中间失败记录。
+- [可确认取消与截止时间](docs/execution-control.md)：API 状态、时间口径、清理证据、发布及重启边界。
+- [CH-06A 隔离验收](docs/ch06a-verification-2026-10-22.md)：假时钟、真实容器/进程停止、迁移故障、发布取消和最终来源核对。
 - [模型调用预算与 provider 故障](docs/model-call-control.md)：配置、账本状态、错误分类、重试与崩溃窗口。
 - [工作区能力策略](docs/workspace-capabilities.md)：版本化 read/write/create 权限、拒绝原因与边界。
 - [CH-02B 隔离服务验收](docs/ch02b-verification-2026-10-19.md)：策略纠正、持久化限额、硬退出后显式接续、旧审批 checkpoint 与实际 Worker 重启的验证范围。
@@ -1110,3 +1116,18 @@ smoke 使用已经运行的服务。若 `.env` 选择真实模型，应按 [READ
 
 - 用户授权创建 PR 后，已创建草稿 [PR #8](https://github.com/xsw932187210-cell/RepoPilot/pull/8)：base `main`，head `codex/ch-03b-publication-reconciliation@17c12e4`。包含 CH-02B/CH-01A/CH-03A/CH-05A/CH-03B 的未合并依赖历史，共 18 个提交。
 - PR 仍为 Draft/Open，未合并；CH-03B 保持 VERIFIED。原验收与真实评测口径不变。用户下一轮范围明确为 CH-06A，将从该实现建立独立分支。
+
+### 2026-10-22 · CH-06A · 可确认取消与全局截止时间
+
+- 实现基线：干净的 `codex/ch-03b-publication-reconciliation@18ed369`；用户先授权创建 PR #8，再授权 CH-06A。开始时未合并的前置依赖保留在 PR #8；没有覆盖已有工作或修改本地 main。
+- 已核实的硬依赖：CH-09 `59d996f` / PR #6，CH-10 `adbca64` / PR #7，CH-03B `2e1daa0` / `5c5d892` / 281 项完整服务验收；均为当前分支祖先。
+- 本轮分支及代码：`codex/ch-06a-confirmed-cancellation`；`89f45a2`、`83e0c73`。最后一次完整验收固定源码为 `83e0c735814ebca376e81f432d084f64e5397730`。
+- 变更范围：运行中取消为 202/cancelling，清理后停止确认 CAS；持久化执行/排队/审批计时及期限配置；统一模型等待、退避、进程组、候选 Git、Docker 控制；保留失败清理 ID 和诊断，启动不伪造停止；接入发布对账和仅 attempt 的中止接口。未实现其他卡、自动重领或 fencing。
+- 验证：lint/diff/脚本语法通过。宿主 Python 3.13.5 为 279 passed / 35 skipped、83.68%；独立 Linux Python 3.12.15 为 314 passed / 0 skipped、84.19%。35 项服务入口全部实跑，Mock 10/10、API smoke、实际 Worker 审批重启通过；模型调用 3→3、unknown=0、test_runner/finalize 各 1 次。
+- 故障验证：真实容器取消/到期后移除原 ID 才确认，旁边容器仍运行；真实进程组父子停止、另一 session 不受影响；模型中断保留 UNKNOWN，期限不发下一次调用；两个取消只有一份持久化请求；PR 已创建的响应等待取消后仍保留该 PR；0007 第三列故障回滚/重跑成功，旧确认不补造。首次服务夹具旧 ORM 写入失败及第二次中间验收均留档。
+- 实验身份：仅 Mock/受控 transport，无付费模型或应用真实 GitHub 发布。服务 project `repopilot_ch06a_20261022_51033`，API 58080，Docker 29.5.3、PostgreSQL 16.15、Redis 7.4 镜像、LangGraph 1.2.16、saver 3.2.0。86 份源码、测试/API 各 46 份安装包与已提交代码一致，三轮专属资源均清理。
+- 证据：[专项验收](docs/ch06a-verification-2026-10-22.md)、[机器记录](docs/evidence/2026-10-22-ch06a-verification.json)、[执行契约](docs/execution-control.md)；原始结果在忽略目录 `reports/repopilot_ch06a_20261022_51033/`，宿主日志 `reports/ch06a-host-release.log`。历史真实评测报告、失败账本及 Mock 数据集字节保持不变。
+- 兼容与恢复：停止旧 API/Worker、排空执行、备份 SQL/artifacts 后升级 `20261022_0006 → 0007`；旧任务无期限/停止确认回填，历史耗时不补造。清理无法确认或 Worker 硬退出时留待人工检查，不杀可能复用的历史 PID；从备份恢复或前向修复，不做破坏性 downgrade。
+- PR / 合并：收尾时经 GitHub 与 `git fetch --prune origin` 核实，PR #8 已合并为 `main@554012e`，PR head `18ed369` 的 CI run `39642188749` success；合并后的文件树与 CH-06A 起始基线一致。此前 Draft/Open 记录保留为历史快照。CH-06A 已推送独立分支 [codex/ch-06a-confirmed-cancellation](https://github.com/xsw932187210-cell/RepoPilot/tree/codex/ch-06a-confirmed-cancellation)，首次推送 `6daad10` 含实现与验收记录，未创建新 PR、未合并；后续仅回填推送元数据。
+- 规范更新：RP-05、取消/API 当前行为、缺口、8.4、CH-06A、README、架构、迁移、执行/调用/发布/运行时文档同步；CH-06A 为 VERIFIED。
+- 下一张建议：无硬依赖的 P0 CH-06C；本轮不执行其他卡。
