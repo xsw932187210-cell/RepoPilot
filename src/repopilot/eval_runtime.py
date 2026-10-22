@@ -22,7 +22,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from repopilot.data_boundary import PUBLIC_DATA_VERSION, public_json, safe_error
+from repopilot.data_boundary import (
+    PUBLIC_DATA_VERSION,
+    public_json,
+    require_secret_free,
+    safe_error,
+)
 from repopilot.model_calls import (
     EVALUATION_BUDGET_VERSION,
     CallBudgetExceeded,
@@ -143,6 +148,8 @@ class EvaluationConfig:
         # Validate serializability now rather than halfway through a paid run.
         object.__setattr__(self, "_context_json", _canonical_json(self.context_budget))
         object.__setattr__(self, "_evaluator_json", _canonical_json(self.evaluator_config))
+        # Run metadata is public evidence, never an SDK credential container.
+        require_secret_free(self.as_dict())
 
     def as_dict(self) -> dict[str, object]:
         return {

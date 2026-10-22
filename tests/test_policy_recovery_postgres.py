@@ -158,7 +158,7 @@ async def test_postgres_policy_correction_survives_process_exit(scenario: str) -
                 if event.node == "apply_policy" and event.payload.get("feedback")
             ]
             assert len(denials) == 1
-            assert "sk-fixture-private-marker" not in json.dumps(recovered.result)
+            assert "untrusted-host/private-marker" not in json.dumps(recovered.result)
             completed = await approve_and_wait(row.id)
             assert completed["result"]["policy_retry_count"] == 1
             final_metrics = await db.get_model_call_metrics(row.id)

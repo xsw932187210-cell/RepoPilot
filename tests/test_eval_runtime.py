@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from repopilot.config import Settings
+from repopilot.data_boundary import SensitiveExecutionData
 from repopilot.eval_runtime import (
     CallBudgetExceeded,
     EvaluationConfig,
@@ -436,6 +437,11 @@ async def test_structured_evaluation_credentials_are_removed_without_mutating_in
     assert report["records"][0]["result"]["safe_count"] == 3
     assert report["metadata"]["runtime_policy"]["public_data_version"] == "public-data-v1"
     assert json.dumps(original, sort_keys=True) == before
+
+
+def test_evaluation_metadata_cannot_persist_credential_fields():
+    with pytest.raises(SensitiveExecutionData):
+        config(evaluator_config={"nested": {"Authorization": "opaque-eval-key"}})
 
 
 @pytest.mark.asyncio

@@ -15,13 +15,14 @@ from approval_helpers import approval_case
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 from langsmith.run_helpers import get_tracing_context
+from publication_helpers import GitHubServer, publication_case
 from sqlalchemy import insert, select, update
 from starlette.requests import Request
 from test_reliability import MemoryRedis
 
 from repopilot.api import app, stream_events
 from repopilot.approvals import ApprovalStore, EvidenceRecord
-from repopilot.candidates import ArtifactStore, Candidate, bound_resume
+from repopilot.candidates import ArtifactStore, Candidate, bound_resume, digest_json
 from repopilot.config import Settings
 from repopilot.data_boundary import (
     PublicLogFilter,
@@ -36,6 +37,7 @@ from repopilot.github import GitHubPublisher
 from repopilot.graph import GraphDependencies, build_graph
 from repopilot.llm import MockAgentModel, OpenAICompatibleAgentModel
 from repopilot.models import CodeChangeOutput, FileEdit, PlanOutput, TaskCreate, TaskStatus
+from repopilot.publication import PublishIntentRecord
 from repopilot.repository import WorkspaceManager
 from repopilot.sandbox import LocalSandbox
 from repopilot.security import contains_known_secret, redact_secrets
@@ -399,3 +401,29 @@ async def test_unhandled_api_error_is_a_stable_code_without_provider_body(
         response = await client.get("/api/v1/tasks/known-task")
     assert response.status_code == 500 and response.json() == {"detail": "internal_error"}
     assert OPAQUE not in caplog.text
+
+
+@pytest.mark.parametrize("already_published", [False, True])
+async def test_legacy_publication_title_blocks_new_pr_but_preserves_reconciled_effect(
+    database, tmp_path, already_published,
+):
+    settings, store, intent, _ = await publication_case(database, tmp_path / "publication")
+    server = GitHubServer(intent.approved_base_sha)
+    publisher = GitHubPublisher(settings, store=store, transport=httpx.MockTransport(server))
+    if already_published:
+        assert (await publisher.publish(intent_id=intent.publish_intent_id)).published
+    async with database.sessions() as session, session.begin():
+        task = await session.get(TaskRecord, intent.task_id)
+        task.issue_title = f"legacy title {TOKEN}"
+        row = await session.get(PublishIntentRecord, intent.publish_intent_id)
+        row.payload = {**row.payload, "title": f"[RepoPilot] legacy title {TOKEN}"}
+        row.payload_digest = digest_json(row.payload)
+    result = await publisher.publish(intent_id=intent.publish_intent_id)
+    assert all(TOKEN.encode() not in request.content for request in server.requests)
+    if already_published:
+        assert result.published and len(server.state["pulls"]) == 1
+        assert server.posts["pr"] == 1
+    else:
+        assert not result.published and result.receipt.phase == "blocked"
+        assert result.receipt.reason == "sensitive_publication_metadata"
+        assert server.posts["pr"] == 0

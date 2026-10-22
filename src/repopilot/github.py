@@ -16,6 +16,7 @@ import httpx
 
 from repopilot.approvals import ApprovalConflict
 from repopilot.config import Settings
+from repopilot.data_boundary import SensitiveExecutionData, require_secret_free
 from repopilot.execution import ExecutionStopped, current_control
 from repopilot.generations import GenerationConflict
 from repopilot.publication import (
@@ -241,6 +242,11 @@ class _Publication:
                 raise PublicationConflict("confirmed_remote_target_missing")
             if not await self.may_write():
                 return False
+            if name == "pr":
+                try:
+                    require_secret_free(payload)
+                except SensitiveExecutionData as error:
+                    raise PublicationConflict("sensitive_publication_metadata") from error
             steps = {**self.receipt.steps, name: "sending"}
             await self.save(phase="publishing", steps=steps, reason=None)
             if await self.stop_for_cancel():

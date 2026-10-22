@@ -20,8 +20,8 @@ from repopilot.api import app
 from repopilot.config import Settings
 from repopilot.db import Database, EventRecord, TaskRecord
 from repopilot.events import EventBus
-from repopilot.llm import MockAgentModel
-from repopilot.models import TaskCreate, TaskStatus
+from repopilot.llm import BudgetedAgentModel, MockAgentModel
+from repopilot.models import CodeChangeOutput, FileEdit, TaskCreate, TaskStatus
 from repopilot.worker import Worker
 
 POSTGRES_URL = os.getenv("REPOPILOT_CH06C_POSTGRES_TEST_URL", "")
@@ -180,6 +180,49 @@ async def test_provider_failure_is_safe_in_postgres_checkpoints(tmp_path, monkey
         count = await assert_checkpoints_secret_free(POSTGRES_URL, task.graph_thread_id)
         assert TOKEN not in caplog.text and OPAQUE not in caplog.text
         print(f"CH-06C provider_failure=classified checkpoint_count={count} secrets_absent=true")
+    finally:
+        await redis.aclose()
+        await db.close()
+
+
+@pytest.mark.parametrize("proposal_field", ["path", "content"])
+async def test_sensitive_proposal_never_enters_postgres_checkpoint(
+    tmp_path, monkeypatch, proposal_field,
+):
+    class SensitiveModel(MockAgentModel):
+        async def propose_changes(self, title, body, plan, context, feedback):
+            return CodeChangeOutput(summary="unsafe proposal", edits=[FileEdit(
+                path=(f"/untrusted-host/{TOKEN}/source.py"
+                      if proposal_field == "path" else "calculator.py"),
+                content=f"API_KEY = '{TOKEN}'\n" if proposal_field == "content" else "value = 1\n",
+            )])
+
+    monkeypatch.setattr("repopilot.worker.build_agent_model",
+                        lambda settings, call_control: BudgetedAgentModel(
+                            SensitiveModel(), call_control,
+                        ))
+    assert make_url(POSTGRES_URL).database == "repopilot_ch06c_test"
+    db = Database(POSTGRES_URL)
+    await db.setup()
+    redis = Redis.from_url(os.environ["REDIS_URL"], decode_responses=False)
+    try:
+        async with AsyncPostgresSaver.from_conn_string(checkpoint_url(POSTGRES_URL)) as saver:
+            await saver.setup()
+            worker = Worker(Settings(
+                _env_file=None, workspace_root=tmp_path / "private",
+                demo_repository_root=Path("examples/buggy_calculator"),
+            ), db, redis, saver)
+            task = await db.create_task(task_data())
+            await worker.handle({"task_id": task.id})
+        result = await db.get_task(task.id)
+        assert result.status is TaskStatus.FAILED and result.error == "sensitive_execution_data"
+        assert result.result["generation"] == 0 and result.result["policy_retry_count"] == 0
+        assert (await db.get_model_call_metrics(task.id))["reserved_calls"] == 2
+        count = await assert_checkpoints_secret_free(POSTGRES_URL, task.graph_thread_id)
+        print(
+            f"CH-06C proposal_secret={proposal_field} "
+            f"refused_before_checkpoint=true count={count}"
+        )
     finally:
         await redis.aclose()
         await db.close()
