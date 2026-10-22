@@ -232,7 +232,9 @@ retry, and crash-window contract.
 CH-06A adds [confirmed cancellation and persisted task deadlines](docs/execution-control.md).
 Running cancellation returns 202/cancelling until owned resource cleanup is confirmed. New tasks
 default to 900 seconds of execution; queue and approval time are separately recorded and excluded
-unless configured. Run `make ch06a-integration` for the isolated fault/restart suite.
+unless configured. The [2026-10-22 verification](docs/ch06a-verification-2026-10-22.md) records
+314 container tests with zero skips, 84.19% coverage, Mock 10/10 and Worker restart recovery.
+Run `make ch06a-integration` for the isolated fault/restart suite.
 
 
 CH-03B's [2026-10-22 verification record](docs/ch03b-verification-2026-10-22.md) covers 281

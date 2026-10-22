@@ -1,0 +1,202 @@
+{
+  "application_external_calls": {
+    "real_github_publication": false,
+    "real_model": false
+  },
+  "baseline": "18ed369",
+  "branch": "codex/ch-06a-confirmed-cancellation",
+  "cleanup": {
+    "repopilot_ch06a_20261022_44110": true,
+    "repopilot_ch06a_20261022_49200": true,
+    "repopilot_ch06a_20261022_51033": true
+  },
+  "code_commits": [
+    "89f45a2",
+    "83e0c73"
+  ],
+  "configuration_sha256": {
+    "Dockerfile.ch06a-cached": "bc2514504f0c0df5cc0d34ca0cf606c6f7c0a8e14c5a670974081ad7b9fa4608",
+    "docker-compose.ch06a-test.yml": "d10804f2047b2c7a54b1306c891126d376a4481ba7362e4db6dd77d736fd9433",
+    "pyproject.toml": "6c630b1af5ae8fe8b93bdffce11294b9ce5f7e35442b4fb4a8aaf05447c07b6a",
+    "scripts/ch06a_integration.sh": "6144e11b1cee2c551c34dbf724291825e4e26c3d9b0979d9406ca901a443e462",
+    "tests/coverage.ch06a.ini": "2d5a503645ab51dd1ab0e3f70a03cae2aa839ba456278a7daf5e7e39714a266b"
+  },
+  "container": {
+    "api_port": 58080,
+    "coverage_percent": 84.19,
+    "docker_engine": "29.5.3",
+    "errors": 0,
+    "failures": 0,
+    "passed": 314,
+    "postgres": "16.15",
+    "project": "repopilot_ch06a_20261022_51033",
+    "redis_image": "redis:7.4-alpine",
+    "runtime": {
+      "checkpoint_postgres": "3.2.0",
+      "langgraph": "1.2.16",
+      "pytest": "8.4.2",
+      "python": "3.12.15"
+    },
+    "skipped": 0,
+    "tests": 314
+  },
+  "date": "2026-10-22",
+  "dependencies": {
+    "CH-03B": [
+      "2e1daa0",
+      "5c5d892",
+      "PR #8 merged",
+      "main@554012e"
+    ],
+    "CH-09": [
+      "59d996f",
+      "PR #6",
+      "main@bc49d5b"
+    ],
+    "CH-10": [
+      "adbca64",
+      "PR #7",
+      "main@12b9e3d"
+    ]
+  },
+  "fault_probes": {
+    "approval_cancel": "bound_request_blocked",
+    "attempt_abort_scope": "attempt_only",
+    "backoff_cancel": "no_retry_transport",
+    "candidate_git": "binary_IO_and_process_group_cancelled_including_external_abort",
+    "cleanup_failure": "cancelling_without_stopped_at_and_retained_resource_ID",
+    "fake_clock_policies": 4,
+    "model_cancel": "local_wait_closed_started_becomes_unknown",
+    "postgres_cancel_requests": {
+      "concurrent": 2,
+      "durable": 1,
+      "stale_completion": "rejected"
+    },
+    "publication_inflight": [
+      "blob",
+      "pr"
+    ],
+    "publication_transport": "httpx.MockTransport",
+    "queued_cancel": "idle_CAS_confirmed",
+    "real_docker": [
+      "cancel_requested",
+      "deadline_exceeded"
+    ],
+    "real_process_group": "parent_and_child_stopped_sibling_running",
+    "remote_effects_retained": true,
+    "sibling_container_unchanged": true,
+    "worker_restart_pending_stop": "unconfirmed_with_diagnostic"
+  },
+  "historical_unchanged_sha256": {
+    "docs/evidence/2026-09-09-failure-ledger.json": "564d6b89ebb37040fe678e0e3267fe49820b61905c827201d8ee9ba405b7d0c0",
+    "docs/real-evaluation-results-2026-09-09.md": "38e2d49551a8e90249360641582cef353893a5299677c18297864efff0c6b3bb",
+    "evals/cases.jsonl": "6e5c1012e81c11d9a4cda4d2d5f761313398f5383bb0a3a71960e6569b25bdf7"
+  },
+  "host": {
+    "coverage_percent": 83.68,
+    "errors": 0,
+    "failures": 0,
+    "log": "reports/ch06a-host-release.log",
+    "passed": 279,
+    "python": "3.13.5",
+    "skipped": 35,
+    "tests": 314
+  },
+  "images": {
+    "dependency": "sha256:b448f62d9bc51ac0661e2cb7d4a666ca26b6be2baf74683ef6dd754cd586f7a1",
+    "runtime": "sha256:3c8ad7cc53368dfdda12492ece4876579a9b9c58fa8048423bcc3b8434e6bc4a",
+    "sandbox": "sha256:705dfb5379c3ea782510a306e05a4165ed892d98ae7200b26cf7c767d0c1745b",
+    "test": "sha256:956582d2f29657dc02d6ec3a665064a6e8af01aacf9b0512a9dc8a0c448f0ce0"
+  },
+  "intermediate_runs": [
+    {
+      "coverage_percent": 83.98,
+      "failed": 1,
+      "passed": 303,
+      "project": "repopilot_ch06a_20261022_44110",
+      "reason": "CH-05A legacy fixture used new ORM fields against revision 0004; fixed old-field insertion and pinned old-Worker approval snapshot"
+    },
+    {
+      "all_smokes_passed": true,
+      "coverage_percent": 84.12,
+      "failed": 0,
+      "passed": 312,
+      "project": "repopilot_ch06a_20261022_49200",
+      "skipped": 0,
+      "source_commit": "89f45a2",
+      "superseded_by": "83e0c73 candidate Git cancellation bridge"
+    }
+  ],
+  "limitations": [
+    "single executor; no ownership epoch or fencing",
+    "no automatic interrupted-task recovery dispatcher",
+    "local stop cannot prove provider billing stopped",
+    "remote effects remain separately reconciled; unknown is preserved",
+    "real provider and application GitHub publication were not executed"
+  ],
+  "migration": {
+    "from": "20261022_0006",
+    "head": "20261022_0007",
+    "legacy_deadlines_fabricated": 0,
+    "legacy_stop_confirmations_fabricated": 0,
+    "postgres_interruption_rollback_and_retry": true
+  },
+  "mock": {
+    "count": 10,
+    "dataset_sha256": "6e5c1012e81c11d9a4cda4d2d5f761313398f5383bb0a3a71960e6569b25bdf7",
+    "model": "deterministic-mock-v1",
+    "provider": "mock",
+    "successful": 10
+  },
+  "raw_evidence_sha256": {
+    "api-source-hashes.json": "4efea27562404b5be61334eda604f17545879366f00a1ed6cb1ad841475cbab2",
+    "cleanup.json": "e28de465839ee5ec84575cca106f86cdeabc08bbe45edfd7ba5f386853fa542f",
+    "dependency-image-id.json": "4a268c8b9fb5174e4a361659208d45ff13b50f0b89bc1d83cc30111e3167de9e",
+    "image-ids.jsonl": "5c46513d7b9dd9bd9dde24e6b9a29cf73600c927685c6eb9b2c48d0c441f9ee9",
+    "installed-source-hashes.json": "4efea27562404b5be61334eda604f17545879366f00a1ed6cb1ad841475cbab2",
+    "integration.log": "b548ad09742aef727ad6ba6769939b2eb93aa4f6f555f36609d0c5ead1ea3708",
+    "integration.xml": "ce12a14e01b98218dbcef2629752e86941db7be0d71ffa1af45f80558af93817",
+    "mock-evaluation.json": "9a2a24e2c70e2d2d8dc9c1aa82b444dfd153387096d4902b1f94091fe80e0588",
+    "recovery.jsonl": "b9d186c4578af431551006caa7e7eda13e17ee284689dfc379f7bb75ebb9c2e8",
+    "runtime-versions.json": "4765201d9905955cbae9f995efd4ace4a312b2f46230ab9b42ff203d5a321829",
+    "smoke.jsonl": "57d0df1c0525d8e7872438421bf6b43b335b7f485a0eadb25443f27e31798eac",
+    "source-hashes.json": "6aacc168dad2a381420ccaa4744818a0483a9aed0fc0ab9ee0b8c4a7bb7eeec4"
+  },
+  "repository_delivery": {
+    "ch06a_pull_request_created": false,
+    "ch06a_pushed": false,
+    "dependency_merge_commit": "554012eb1f4dc895cec9a42452d52eb9e5389344",
+    "dependency_merge_tree_matches_baseline": true,
+    "dependency_pr_ci_conclusion": "success",
+    "dependency_pr_ci_run": 39642188749,
+    "dependency_pr_draft": false,
+    "dependency_pr_head": "18ed36963c9a7ec471cb9af13d4981747adfb72c",
+    "dependency_pr_merged": true,
+    "dependency_pr_state": "closed",
+    "dependency_pull_request": "https://github.com/xsw932187210-cell/RepoPilot/pull/8",
+    "merged": false
+  },
+  "schema_version": "ch06a-verification-v1",
+  "service_tests": {
+    "CH-06A": 8,
+    "previous_postgres_probes": 27,
+    "total": 35
+  },
+  "source_verification": {
+    "api_and_test_package_match": true,
+    "api_installed_files": 46,
+    "installed_files": 46,
+    "python_files": 86,
+    "workspace_and_commit_match": true
+  },
+  "status": "VERIFIED",
+  "verified_source_commit": "83e0c735814ebca376e81f432d084f64e5397730",
+  "worker_restart": {
+    "approval_object_unchanged": true,
+    "calls_after": 3,
+    "calls_before": 3,
+    "finalize_runs": 1,
+    "test_runner_runs": 1,
+    "unknown_calls": 0
+  }
+}
