@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     model_name: str = "gpt-4.1-mini"
     openai_api_key: str = Field(default="", repr=False)
     openai_base_url: str = Field(default="", repr=False)
+    google_cloud_api_key: str = Field(default="", repr=False)
+    review_model_provider: str = ""
+    review_model_name: str = "gpt-6.1-sol"
+    chatgpt_storage_dir: Path = Path(".local/chatgpt")
+    chatgpt_max_response_bytes: int = Field(default=65_536, ge=1_024, le=1_000_000)
     model_temperature: float = 0.0
     model_max_calls: int = Field(default=12, ge=1, le=100)
     model_request_timeout_seconds: float = Field(default=90.0, gt=0, le=900)

@@ -14,7 +14,8 @@ COPY pyproject.toml README.md LICENSE ./
 COPY src ./src
 COPY examples ./examples
 COPY evals ./evals
-RUN pip install --upgrade pip && pip install "."
+COPY scripts/check_model_connections.py ./scripts/check_model_connections.py
+RUN pip install --upgrade pip && pip install ".[oauth]"
 
 RUN useradd --create-home --uid 10001 repopilot \
     && mkdir -p /workspaces \

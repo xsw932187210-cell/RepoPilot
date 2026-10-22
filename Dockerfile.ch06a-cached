@@ -9,6 +9,7 @@ COPY src ./src
 COPY tests ./tests
 COPY examples ./examples
 COPY evals ./evals
+COPY scripts/check_model_connections.py ./scripts/check_model_connections.py
 COPY docs/evidence/2026-09-09-failure-ledger.json ./docs/evidence/2026-09-09-failure-ledger.json
 RUN pip install --no-deps .
 USER repopilot

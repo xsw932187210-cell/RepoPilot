@@ -253,6 +253,39 @@ def test_provider_errors_do_not_echo_sensitive_body():
         auth.http_json(client, "GET", f"{auth.RESOURCE}/models")
 
 
+@pytest.mark.parametrize("subject", ["test-subject", "different-account"])
+def test_refresh_verifies_optional_new_identity_and_keeps_account_binding(
+    tmp_path, signing_key, subject,
+):
+    store = auth.PrivateStore(tmp_path / "private")
+    store.write("registration.json", {"client_id": "oaiapp_test"})
+    prior = {
+        "subject": "test-subject", "client_id": "oaiapp_test", "issuer": auth.ISSUER,
+        "ext_agent_host_id": store.host_id(), "access_token": "synthetic-old",
+        "refresh_token": "synthetic-renew", "scopes": auth.SCOPES.split(), "expires_at": 0,
+    }
+    store.write("session.json", prior)
+    client, requests = mock_provider(signing_key, {
+        "access_token": "synthetic-new", "refresh_token": "synthetic-rotated",
+        "token_type": "Bearer", "expires_in": 3600,
+        "id_token": signed_token(signing_key, nonce=None, sub=subject),
+    })
+    with client, store.lock():
+        if subject == "different-account":
+            with pytest.raises(auth.AuthorizationError, match="account_mismatch"):
+                auth.refresh_session(client, store)
+            assert store.read("session.json") == prior
+        else:
+            result = auth.refresh_session(client, store)
+            assert result["access_token"] == "synthetic-new"  # noqa: S105
+            assert result["subject"] == prior["subject"]
+            assert result["scopes"] == prior["scopes"]
+    posted = parse_qs(requests[0].content.decode())
+    assert posted["grant_type"] == ["refresh_token"]
+    assert posted["client_id"] == ["oaiapp_test"]
+    assert "scope" not in posted
+
+
 def test_actual_loopback_rejects_wrong_host_and_state_then_accepts_once(
     tmp_path, signing_key, monkeypatch, capsys
 ):

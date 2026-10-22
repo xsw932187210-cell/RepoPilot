@@ -34,7 +34,7 @@ from repopilot.eval_report import build_eval_report, render_markdown
 from repopilot.eval_runtime import EvaluationConfig, EvaluationRuntime, ModelCallBudget
 from repopilot.github import GitHubPublisher
 from repopilot.graph.builder import GraphDependencies, build_graph
-from repopilot.llm import build_agent_model
+from repopilot.llm import build_agent_model, model_role_profile
 from repopilot.models import FileEdit, PlanOutput
 from repopilot.real_tasks import (
     ProjectAdapter,
@@ -54,7 +54,7 @@ from repopilot.security import (
     safe_workspace_path,
 )
 
-EVALUATOR_CONFIG_VERSION = 9
+EVALUATOR_CONFIG_VERSION = 11
 
 
 def save_json(path: Path, value: object) -> None:
@@ -441,6 +441,7 @@ async def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
             "provider": base_settings.model_provider,
             "model": base_settings.model_name,
             "temperature": base_settings.model_temperature,
+            "model_roles": model_role_profile(base_settings),
             "max_calls": args.max_calls,
         },
     )
@@ -493,8 +494,11 @@ async def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
         return summary
     if any(task.corpus.kind != "real" for task in tasks):
         raise ValueError("Synthetic fixtures are not real-model benchmark cases")
-    if base_settings.model_provider != "openai":
-        raise ValueError("Real benchmark requires MODEL_PROVIDER=openai; mock is not a real result")
+    if base_settings.model_provider not in {"openai", "google_cloud"}:
+        raise ValueError(
+            "Real benchmark requires MODEL_PROVIDER=openai or google_cloud; "
+            "mock is not a real result"
+        )
     if len(verified) != len(tasks):
         raise ValueError(
             "Every selected task must pass buggy/fixed reproduction before model evaluation"
@@ -510,6 +514,7 @@ async def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
         context_budget={"files": 12, "chars": 70_000, "initial_retrieval": "issue-only"},
         test_evaluator="withheld-junit-v2",
         evaluator_config={
+            "model_roles": model_role_profile(base_settings),
             "acceptance": evaluator_identity,
             "implementation_sha256": implementation_digest,
             "max_iterations": 2,
