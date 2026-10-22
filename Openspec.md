@@ -1,6 +1,6 @@
 # RepoPilot 项目规范与迭代验收
 
-> 更新日期：2026-10-22；本轮起始基线：`4d55a5b`；CH-06A 已由 PR #9 合并；CH-06C 已完成隔离验收并推送，未合并；最近完整真实模型评测：2026-09-09。
+> 更新日期：2026-10-22；本轮起始基线：`f6b4c3c`；CH-06A 已由 PR #9 合并；CH-06C 已完成隔离验收并推送，未合并；CH-07A 实现与验收中；最近完整真实模型评测：2026-09-09。
 > 本文是现有项目的规范入口，记录当前行为、证据和后续变更的验收标准。
 > 本次建立的是单文件规范，尚未接入 OpenSpec CLI，也不代表已建立其提案、归档或自动校验流程。
 > 规划版本：Roadmap v3。CH-01～CH-08、CH-21 为主题编号，具体开发选带字母的子任务；新增的上下文与历史案例探索按需启动。
@@ -122,7 +122,7 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 - `CodeChangeOutput-v2` 的每项在线写意图须携带精确路径、`action=write` 和当前内容 SHA-256；程序先验证意图，再由写边界执行全批预检。旧 `FileEdit` 的摘要字段保持可选以兼容直接调用/已有 artifact，但图入口强制要求。
 - 某项预检失败时不开始批次写入；拒绝转换为 `policy-feedback-v1` 的稳定 reason、受控路径和允许动作，不向 Coder 传异常原文。`apply_policy` 在下一次 Coder 请求前 checkpoint 全任务最多一次的 `policy_retry_count`；持续违规以 `policy_retry_exhausted` 停止，过期内容摘要不能在刷新后复用。
 - 模型修改只写入新的私有 staging；整批文件、manifest 和完整 Diff 刷盘验证后，以数据库 CAS 选择完整代次，不覆盖原 checkout。第二个文件写失败只留下不可见的部分 stage，不改变 current generation。受支持 writer 由任务级 OS 文件锁串行化；描述符写入拒绝链接置换，整树摘要核对外部改动，失败保留现场且不盲目回滚。此边界不等于文件系统/数据库事务或 Worker fencing。
-- 真实评测仍注入更严格的 policy：只允许修改导出时已记录的 `thefuck/**/*.py`，不允许新路径，且独立验收 overlay 只在另一个全新工作区中加入。
+- 真实评测通过受信任 `python-source-v1` 项目适配注入更严格的 policy：只允许导出时已记录、位于 source roots 且不在 readonly paths 的 Python 文件，不允许新路径；默认原 20 例仍保持 `thefuck/**/*.py` 权限。独立验收 overlay 只在另一个全新工作区中加入。
 
 验证入口：[能力策略说明](docs/workspace-capabilities.md)、[候选代次契约](docs/candidate-generations.md)、[test_generations.py](tests/test_generations.py)、[test_capabilities.py](tests/test_capabilities.py)、[test_runtime_boundaries.py](tests/test_runtime_boundaries.py)、[test_reliability.py](tests/test_reliability.py)、[test_real_evaluation.py](tests/test_real_evaluation.py)。
 
@@ -172,6 +172,8 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 验证入口：[发布契约](docs/publication.md)、[test_github.py](tests/test_github.py)、[test_publication.py](tests/test_publication.py)、[PostgreSQL 发布故障](tests/test_publication_postgres.py)、[test_security.py](tests/test_security.py)、[test_sandbox.py](tests/test_sandbox.py)、[容器探针](examples/sandbox_probe/test_isolation.py)。
 
 ### RP-07：可持续的真实评测
+
+- CH-07A 新运行采用 manifest schema 2 / evaluator config 9 / acceptance protocol 4；项目适配绑定 source/read-only/test roots、可见/隐藏策略、固定镜像、Python path 与可信依赖准备。配置/recipe/overlay 指纹校验后才执行；来源不能取自模型或候选。原 manifest 字节保留为 manifest-v1.json，只能显式只读加载；新旧实验目录拒绝混跑。
 
 - 新评测运行指纹包含 public_data_version；结构化授权字段统一处理，失败仅保存 code/type，不保存原始异常消息。既有真实实验文件保持原样，不在旧目录混跑新口径。
 
@@ -225,7 +227,7 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 
 | 缺口 | 当前表现 | 对应后续变更 |
 | --- | --- | --- |
-| 项目级权限适配 | 默认测试/构建/凭据受保护，create 关闭；特例目前由服务端 Python policy 注入，还没有版本化项目 manifest | CH-07A |
+| 项目级权限适配 | 已实现 schema-2 受信任 Python 项目 manifest、源码/只读路径和环境绑定，原 20 例口径保持；跨项目真实数据集尚未建立 | CH-07A 验收中；CH-07B 数据 |
 | 任意外部 writer / 产物保留 | 已有私有暂存、OS 锁、完整代次 CAS 和改动检测；管理员可绕过应用边界，尚无回收/保留期策略 | CH-04B、CH-16 |
 | 发布与远端变化的原子性 | 已按获批 SHA/完整 artifact 构建并持久化意图/对账；基线检查与 GitHub 移动不原子，重验标记保留；尚无多 Worker fencing 或自动恢复调度 | CH-04B/C |
 | 队列出队后崩溃 / 锁到期 | 无自动回收或阻止过期 Worker 副作用的机制 | CH-04 |
@@ -572,7 +574,7 @@ CH-06C 接口映射（2026-10-22，已实现并验收）：public-data-v1 对公
 
 #### CH-07A：解除真实评测对单仓库的硬编码
 
-- **状态**：TODO。**优先级/规模**：P1 / M。**硬依赖**：CH-02A。
+- **状态**：IN_PROGRESS（2026-10-22，从干净 `codex/ch-06c-data-boundaries@f6b4c3c` 建立 `codex/ch-07a-project-adapters`，保留未合并 CH-06C 历史；CH-02A 硬依赖已合并）。**优先级/规模**：P1 / M。**硬依赖**：CH-02A。
 - **入口**：`real_tasks.py`、`real_evaluation.py`、`acceptance.py`、`evals/real/manifest.json`。
 - **实施步骤**：
   1. 在 manifest/schema 中显式记录 project、source roots、只读路径、buggy/fixed commit、可见/隐藏测试策略、runtime image 身份和许可。

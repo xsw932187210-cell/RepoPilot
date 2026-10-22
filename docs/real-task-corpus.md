@@ -27,6 +27,11 @@ every task still names an upstream buggy revision and its later upstream fix.
 ## Manifest contract
 
 The manifest is evaluator-owned metadata and is never copied into a model workspace.
+Schema 2 adds a top-level `projects` map: literal source/read-only/test roots, visible/hidden
+test policies, pinned runtime image/Python path, dependency preparation and verified recipe
+hashes. The original 20 task records and their fingerprints are unchanged. The byte-identical
+schema-1 manifest is archived as `manifest-v1.json` and can only be loaded explicitly for reading.
+See [project adapters and migration](project-adapters.md) for the complete contract.
 Each task contains:
 
 - a stable task ID and pinned BugsInPy case;

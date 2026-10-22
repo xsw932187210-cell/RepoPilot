@@ -4,17 +4,19 @@ This is a small, one-project pilot, **not** SWE-bench and not evidence of genera
 repository repair performance. The corpus is 20 pinned BugsInPy defects from The Fuck.
 Corpus metadata and third-party test licenses are under `evals/real/`.
 
-The current implementation records this contract as protocol/evaluator configuration version 8:
-the model sees issue text plus bounded retrieved context, may edit only existing
-`thefuck/**/*.py` source files, and is evaluated by the withheld JUnit acceptance suite
-(`withheld-junit-v1`). The version is part of the resumable experiment identity, so changing
-these rules requires a new output directory.
+The current implementation uses manifest schema **2**, evaluator configuration **9**,
+acceptance protocol **4** and `withheld-junit-v2`. Trusted project adapters declare source
+roots, read-only/test paths and immutable runtime images. The current real corpus still
+permits only existing `thefuck/**/*.py` source files. The separate `tinyledger` fixture is
+synthetic and contributes no real repair results. See the [adapter and migration
+contract](project-adapters.md). New experiments require a new output directory.
 
-Version 8 changes only evidence persistence: raw patches, commands, process output and per-test
+Historical version 8 changed only evidence persistence: raw patches, commands, process output and per-test
 identities are removed before checkpoints are written, secret redaction is centralized, and
 latency excludes unattempted quota placeholders. It does not change prompts, retrieval, candidate
 execution or the acceptance decision. The published 2026-09-09 comparison was captured under
-version 7 immediately before this storage hardening; future runs use version 8.
+version 7 immediately before this storage hardening. Version 9 adds explicit project/environment
+binding and refuses to write old directories; it does not rerun or replace that historical report.
 
 CH-10 separately versions the model-call checkpoint envelope as evaluation schema `4` with
 `evaluation-call-budget-v2`. It preserves reserved/started/outcome counters across process restart,
@@ -42,8 +44,10 @@ pairs are attempted again. Configuration changes require a separate output direc
 changing the selection in the same model-record directory is deliberately rejected.
 Use `--model <exact-provider-model-id>` with a new output directory to compare a
 different available model without editing the credential-bearing `.env` file.
-No dependency installation occurs in model-controlled workspaces. Image tags are
-resolved to immutable local image IDs and included in experiment identity. The base
+No dependency installation occurs in model-controlled workspaces. Each adapter pins an immutable
+image; an optional image alias must resolve to that same local ID. The ID and adapter fingerprint
+are included in experiment identity. Rebuilding the recipe requires an explicit manifest image
+update and a new output directory. The base
 Python digest and direct Python dependency versions are pinned in the Dockerfile;
 OS/transitive dependency rebuilding can still produce a different image ID.
 Rate-limit and retryable HTTP/transport failures use bounded per-request backoff; every

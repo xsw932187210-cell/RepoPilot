@@ -69,3 +69,7 @@ ch06a-integration:
 .PHONY: ch06c-integration
 ch06c-integration:
 	./scripts/ch06c_integration.sh
+
+.PHONY: ch07a-integration
+ch07a-integration:
+	./scripts/ch07a_integration.sh

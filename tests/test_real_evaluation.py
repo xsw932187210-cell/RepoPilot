@@ -12,13 +12,20 @@ from repopilot.llm import MockAgentModel
 from repopilot.models import CodeChangeOutput, FileEdit
 from repopilot.policy_feedback import content_sha256
 from repopilot.real_evaluation import OfflineWorkspace
+from repopilot.real_tasks import load_real_task_manifest
 from repopilot.repository import RepositoryContext, WorkspaceManager, run_process
 from repopilot.sandbox import LocalSandbox
 from repopilot.security import SecurityError
 
 
+def corpus_task():
+    return load_real_task_manifest(
+        Path(__file__).parents[1] / "evals" / "real" / "manifest.json"
+    ).tasks[0]
+
+
 def test_offline_harness_protects_acceptance_files(tmp_path):
-    manager = OfflineWorkspace(Settings(_env_file=None), None, tmp_path, tmp_path)
+    manager = OfflineWorkspace(Settings(_env_file=None), corpus_task(), tmp_path, tmp_path)
     manager.original = {"thefuck/rules/example.py": "old"}
     with pytest.raises(SecurityError):
         manager.apply_edits(tmp_path, [FileEdit(path="tests/test_rule.py", content="assert True")])
@@ -30,7 +37,7 @@ def test_offline_harness_keeps_existing_source_editable(tmp_path):
     source = tmp_path / "thefuck" / "rules" / "example.py"
     source.parent.mkdir(parents=True)
     source.write_text("old", encoding="utf-8")
-    manager = OfflineWorkspace(Settings(_env_file=None), None, tmp_path, tmp_path)
+    manager = OfflineWorkspace(Settings(_env_file=None), corpus_task(), tmp_path, tmp_path)
     manager.original = {"thefuck/rules/example.py": "old"}
 
     assert manager.apply_edits(
@@ -42,7 +49,7 @@ def test_offline_harness_keeps_existing_source_editable(tmp_path):
 
 
 def test_initial_retrieval_policy_is_shared(tmp_path):
-    manager = OfflineWorkspace(Settings(_env_file=None), None, tmp_path, tmp_path)
+    manager = OfflineWorkspace(Settings(_env_file=None), corpus_task(), tmp_path, tmp_path)
     manager.original = {"thefuck/rules/example.py": "source"}
     context = RepositoryContext(
         tree=["tests/test_example.py", "thefuck/rules/example.py"],
@@ -73,10 +80,14 @@ async def test_frozen_workflow_supports_history_free_evaluation_export(tmp_path)
     (source / "tests" / "test_rule.py").write_text(
         "from thefuck.rules.example import add\n\ndef test_add():\n    assert add(2, 3) == 5\n"
     )
+    (source / "LICENSE").write_text("MIT fixture license\n", encoding="utf-8")
     for args in [("git", "add", "."), ("git", "commit", "-m", "offline fixture")]:
         assert (await run_process(*args, cwd=source))[0] == 0
     sha = await source_manager.base_commit(source)
-    task = SimpleNamespace(source=SimpleNamespace(buggy_commit=sha))
+    task = SimpleNamespace(
+        adapter=corpus_task().adapter,
+        source=SimpleNamespace(buggy_commit=sha, license_file="LICENSE"),
+    )
     manager = OfflineWorkspace(settings, task, source, tmp_path / "agent")
 
     class RuleModel(MockAgentModel):

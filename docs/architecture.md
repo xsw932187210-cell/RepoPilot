@@ -149,6 +149,12 @@ Attempt abort is a local stop interface for future ownership loss, not Worker fe
 ## Public data boundary
 
 CH-06C adds [public projections and private execution data](data-boundaries.md).
+
+CH-07A moves evaluation source rules and runtime selection into [trusted project adapters](project-adapters.md).
+Each project binds literal source/read-only/test roots, a pinned image and Python path, while
+task metadata and hidden overlays remain in the trusted evaluator. Candidate changes are replayed
+into a fresh buggy export before acceptance; graph/model inputs retain only buggy context and
+visible tests. Schema-1 manifests and old run directories remain historical read-only evidence.
 API/events use reviewed fields and classified errors; provider exceptions are replaced before
 LangGraph stores error writes. Async graph/model scopes disable automatic external tracing.
 Known credentials cause code/context rejection rather than code rewriting. Complete Diff access

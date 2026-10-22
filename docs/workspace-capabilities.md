@@ -31,9 +31,11 @@ Test writes can be enabled only by constructing a trusted policy with
 `default_workspace_policy(..., allow_test_writes=True)` or by injecting another service-owned
 policy. There is no task, issue, repository, or model field that enables this override.
 
-The real-defect evaluator injects a stricter policy. It may modify only files already exported in
-its original `thefuck/**/*.py` source set; it still cannot add paths, alter the independent hidden
-acceptance overlay, approve, or publish.
+The real-defect evaluator injects a stricter [trusted project adapter](project-adapters.md).
+Only exported existing Python files under declared source roots may be edited; explicit
+read-only paths take precedence. The original 20-case manifest retains its `thefuck/**/*.py`
+source set and unchanged task fingerprints. No adapter enables new paths, changes the hidden
+overlay, approves or publishes. An upstream repository or model cannot supply this configuration.
 
 ## Path and batch enforcement
 

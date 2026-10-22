@@ -249,14 +249,26 @@ def default_workspace_policy(
     )
 
 
-def real_evaluation_policy(*, max_file_bytes: int) -> WorkspaceCapabilityPolicy:
-    """Keep the pinned corpus stricter than the generic application policy."""
+def real_evaluation_policy(
+    *,
+    max_file_bytes: int,
+    source_roots: tuple[str, ...] = ("thefuck",),
+    readonly_paths: tuple[str, ...] = (),
+) -> WorkspaceCapabilityPolicy:
+    """Evaluator-owned Python adapter; never derive these rules from a repository.
+
+    Defaults retain the historical The Fuck policy for direct legacy callers.
+    Current evaluation always supplies a validated manifest adapter explicitly.
+    """
 
     return WorkspaceCapabilityPolicy(
         read=PathCapability(allow=("*",), deny=_CREDENTIAL_PATTERNS),
         write=PathCapability(
-            allow=("thefuck/*.py",),
-            deny=_CREDENTIAL_PATTERNS,
+            allow=tuple(f"{root}/*.py" for root in source_roots),
+            deny=(
+                *_CREDENTIAL_PATTERNS,
+                *(pattern for path in readonly_paths for pattern in (path, f"{path}/*")),
+            ),
         ),
         create=CreateCapability(max_bytes=max_file_bytes),
     )

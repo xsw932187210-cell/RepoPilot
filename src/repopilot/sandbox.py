@@ -112,8 +112,9 @@ class LocalSandbox:
 class DockerSandbox:
     """Run tests against a disposable snapshot; never mount worker/host directories."""
 
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, *, pythonpath: tuple[str, ...] | None = None):
         self.settings = settings
+        self.pythonpath = pythonpath
 
     async def run(self, workspace: Path, command: str) -> SandboxResult:
         args = parse_test_command(command)
@@ -170,6 +171,12 @@ class DockerSandbox:
                 "repopilot.execution_id": str(uuid.uuid4()),
             },
         }
+        if self.pythonpath is not None:
+            # Evaluator-owned adapter only; no Issue/repository/model-supplied environment.
+            kwargs["environment"] = {
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "PYTHONPATH": ":".join(self.pythonpath),
+            }
         timed_out = False
         stdout = ""
         stderr = ""

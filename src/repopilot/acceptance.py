@@ -18,7 +18,7 @@ from repopilot.sandbox import _write_workspace_snapshot
 from repopilot.security import parse_test_command, redact_secrets
 
 MAX_REPORT_BYTES = 2 * 1024 * 1024
-ACCEPTANCE_PROTOCOL_VERSION = 3
+ACCEPTANCE_PROTOCOL_VERSION = 4
 
 
 def parse_junit(data: bytes) -> dict[str, str]:
@@ -75,8 +75,9 @@ def compare_acceptance(
 class AcceptanceRunner:
     """No host mounts, credentials, network or model-visible hidden-test feedback."""
 
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, *, pythonpath: tuple[str, ...] = ("/workspace",)):
         self.settings = settings
+        self.pythonpath = pythonpath
 
     async def run(self, workspace: Path, command: str) -> dict[str, object]:
         args = parse_test_command(command)
@@ -102,7 +103,10 @@ class AcceptanceRunner:
                 cap_drop=["ALL"],
                 security_opt=["no-new-privileges"],
                 user="10001:10001",
-                environment={"PYTHONDONTWRITEBYTECODE": "1", "PYTHONPATH": "/workspace"},
+                environment={
+                    "PYTHONDONTWRITEBYTECODE": "1",
+                    "PYTHONPATH": ":".join(self.pythonpath),
+                },
             )
             with tempfile.TemporaryFile() as snapshot:
                 _write_workspace_snapshot(workspace, snapshot)
