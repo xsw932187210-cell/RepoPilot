@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import hmac
-import json
 import logging
 from collections import Counter, defaultdict
 from collections.abc import Mapping
@@ -10,6 +9,7 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import ORJSONResponse, StreamingResponse
 from redis.asyncio import Redis
 
@@ -23,6 +23,18 @@ from repopilot.approval_models import (
 from repopilot.approvals import ApprovalConflict, ApprovalStore
 from repopilot.candidates import ArtifactStore, Candidate
 from repopilot.config import Settings, get_settings
+from repopilot.data_boundary import (
+    PUBLIC_DATA_VERSION,
+    configure_public_logging,
+    public_error_code,
+    public_event_payload,
+    public_json,
+    public_receipt,
+    public_result,
+    public_text,
+    require_secret_free,
+    safe_error,
+)
 from repopilot.db import Database, TaskStateConflict
 from repopilot.events import EventBus, JobQueue
 from repopilot.models import (
@@ -44,6 +56,7 @@ from repopilot.security import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    configure_public_logging()
     settings = get_settings()
     database = Database(settings.database_url)
     await database.setup()
@@ -66,6 +79,72 @@ app = FastAPI(
     default_response_class=ORJSONResponse,
     lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def protect_unhandled_error(request: Request, call_next):
+    configure_public_logging()
+    try:
+        response = await call_next(request)
+        response.headers["X-RepoPilot-Public-Data"] = PUBLIC_DATA_VERSION
+        return response
+    except Exception as error:
+        logging.getLogger(__name__).error("API operation failed: %s", safe_error(error))
+        return ORJSONResponse(status_code=500, content={"detail": "internal_error"})
+
+
+@app.exception_handler(RequestValidationError)
+async def public_validation_error(request: Request, error: RequestValidationError):
+    # Pydantic's default response echoes rejected input and exception context.
+    return ORJSONResponse(status_code=422, content={
+        "detail": [
+            {key: public_json(item[key]) for key in ("loc", "type", "msg") if key in item}
+            for item in error.errors()[:50]
+        ]
+    })
+
+
+@app.exception_handler(HTTPException)
+async def public_http_error(request: Request, error: HTTPException):
+    return ORJSONResponse(
+        status_code=error.status_code,
+        content={"detail": public_json(error.detail)},
+    )
+
+
+def public_task(task: TaskView) -> TaskView:
+    return task.model_copy(update={
+        "issue_title": public_text(task.issue_title, 240),
+        "issue_body": public_text(task.issue_body, 12_000),
+        "repository_url": public_text(task.repository_url),
+        "base_branch": public_text(task.base_branch, 120),
+        "test_command": public_text(task.test_command, 300),
+        "result": public_result(task.result),
+        "error": public_error_code(task.error) if task.error else None,
+        "execution_resources": public_json(task.execution_resources),
+        "cleanup_pending": public_json(task.cleanup_pending),
+    })
+
+
+def public_event(event: EventView) -> EventView:
+    return event.model_copy(update={
+        "kind": public_text(event.kind, 60).replace("\r", "").replace("\n", ""),
+        "node": public_text(event.node, 80).replace("\r", "").replace("\n", ""),
+        "message": "Task execution failed" if event.kind == "task_error"
+        else public_text(event.message),
+        "payload": public_event_payload(event.payload),
+    })
+
+
+def require_public_authority(value) -> None:
+    # Reject unsafe legacy authority objects instead of changing evidence/manifests
+    # while retaining their old digest. Canonical private records stay untouched.
+    try:
+        require_secret_free(value.model_dump(mode="json"))
+    except SecurityError as error:
+        raise HTTPException(
+            status_code=409, detail="sensitive_legacy_data_requires_revalidation"
+        ) from error
 
 
 def resources(request: Request) -> tuple[Settings, Database, EventBus, JobQueue, Redis]:
@@ -171,6 +250,7 @@ async def create_task(data: TaskCreate, request: Request, _: Protected) -> TaskV
         validate_repository_url(data.repository_url)
         validate_branch(data.base_branch)
         parse_test_command(data.test_command)
+        require_secret_free([data.repository_url, data.base_branch, data.test_command])
     except SecurityError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -185,7 +265,7 @@ async def create_task(data: TaskCreate, request: Request, _: Protected) -> TaskV
         payload={"repository_url": task.repository_url, "issue_title": task.issue_title},
     )
     await queue.enqueue(task.id)
-    return task
+    return public_task(task)
 
 
 @app.get("/api/v1/tasks/{task_id}", response_model=TaskView)
@@ -194,7 +274,7 @@ async def get_task(task_id: str, request: Request, _: Protected) -> TaskView:
     task = await database.get_task(task_id)
     if task is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
-    return task
+    return public_task(task)
 
 
 @app.get("/api/v1/tasks/{task_id}/metrics", response_model=TaskMetrics)
@@ -204,7 +284,7 @@ async def get_task_metrics(task_id: str, request: Request, _: Protected) -> Task
     if task is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     model_calls = await database.get_model_call_metrics(task_id)
-    return summarize_task_metrics(task, model_calls)
+    return summarize_task_metrics(public_task(task), model_calls)
 
 
 @app.get("/api/v1/tasks/{task_id}/publication", response_model=list[PublishReceipt])
@@ -212,10 +292,12 @@ async def get_publication(task_id: str, request: Request, _: Protected) -> list[
     settings, database, _, _, _ = resources(request)
     if await database.get_task(task_id) is None:
         raise HTTPException(status_code=404, detail="Task not found")
-    return await PublicationStore(
+    receipts = await PublicationStore(
         database,
         ArtifactStore(settings.workspace_root / ".artifacts"),
     ).receipts(task_id)
+    return [PublishReceipt.model_validate(public_receipt(receipt.model_dump(mode="json")))
+            for receipt in receipts]
 
 
 @app.get("/api/v1/tasks/{task_id}/events", response_model=list[EventView])
@@ -228,7 +310,7 @@ async def get_events(
     _, database, _, _, _ = resources(request)
     if await database.get_task(task_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
-    return await database.list_events(task_id, after_id=after_id)
+    return [public_event(event) for event in await database.list_events(task_id, after_id=after_id)]
 
 
 @app.get("/api/v1/tasks/{task_id}/stream")
@@ -240,6 +322,7 @@ async def stream_events(task_id: str, request: Request, _: Protected) -> Streami
     async def generate():
         last_id = 0
         for event in await database.list_events(task_id):
+            event = public_event(event)
             last_id = event.id
             yield f"id: {event.id}\nevent: {event.kind}\ndata: {event.model_dump_json()}\n\n"
         subscriber = events.subscribe(task_id).__aiter__()
@@ -251,11 +334,17 @@ async def stream_events(task_id: str, request: Request, _: Protected) -> Streami
                 continue
             except StopAsyncIteration:
                 return
-            payload = json.loads(raw)
+            if len(raw) > 1_000_000:
+                continue
+            try:
+                event = public_event(EventView.model_validate_json(raw))
+            except ValueError:
+                continue
+            payload = event.model_dump(mode="json")
             if int(payload.get("id", 0)) <= last_id:
                 continue
             last_id = int(payload["id"])
-            yield f"id: {last_id}\nevent: {payload['kind']}\ndata: {raw}\n\n"
+            yield f"id: {last_id}\nevent: {event.kind}\ndata: {event.model_dump_json()}\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 
@@ -271,7 +360,9 @@ def approval_error(error: KeyError | ApprovalConflict) -> HTTPException:
 async def get_approval(task_id: str, request: Request, _: Protected) -> ApprovalView:
     _, database, _, _, _ = resources(request)
     try:
-        return await ApprovalStore(database).current(task_id)
+        approval = await ApprovalStore(database).current(task_id)
+        require_public_authority(approval)
+        return approval
     except (KeyError, ApprovalConflict) as error:
         raise approval_error(error) from error
 
@@ -285,7 +376,9 @@ async def get_candidate(
 ) -> Candidate:
     _, database, _, _, _ = resources(request)
     try:
-        return await ApprovalStore(database).candidate(task_id, candidate_id)
+        candidate = await ApprovalStore(database).candidate(task_id, candidate_id)
+        require_public_authority(candidate)
+        return candidate
     except KeyError as error:
         raise approval_error(error) from error
 
@@ -298,6 +391,8 @@ async def get_candidate_diff(
     _: Protected,
 ) -> Response:
     settings, database, _, _, _ = resources(request)
+    if not settings.api_key:
+        raise HTTPException(status_code=503, detail="private_artifact_requires_api_key")
     try:
         candidate = await ApprovalStore(database).candidate(task_id, candidate_id)
         diff = await asyncio.to_thread(
@@ -307,7 +402,10 @@ async def get_candidate_diff(
         raise approval_error(error) from error
     except (SecurityError, OSError) as error:
         raise HTTPException(status_code=503, detail="approval_artifact_unavailable") from error
-    return Response(diff, media_type="text/plain", headers={"ETag": f'"{candidate.diff_digest}"'})
+    return Response(diff, media_type="text/plain", headers={
+        "ETag": f'"{candidate.diff_digest}"', "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+    })
 
 
 async def deliver_approval(
@@ -344,6 +442,7 @@ async def approval_receipt(
     assert task is not None
     if decision.dispatch_state == "pending":
         response.status_code = 202
+    require_public_authority(decision)
     return ApprovalReceipt(task_id=task_id, task_status=task.status, decision=decision)
 
 
@@ -420,4 +519,4 @@ async def cancel_task(task_id: str, request: Request, response: Response, _: Pro
         await events.notify_control(task_id)
     if stopped.status is TaskStatus.CANCELLING:
         response.status_code = 202
-    return stopped
+    return public_task(stopped)

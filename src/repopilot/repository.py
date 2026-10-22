@@ -22,6 +22,7 @@ from repopilot.security import (
     NormalizedWorkspacePath,
     SecurityError,
     WorkspacePathError,
+    contains_known_secret,
     normalize_workspace_path,
     safe_workspace_path,
     validate_branch,
@@ -182,6 +183,7 @@ class WorkspaceManager:
         capability_policy: WorkspaceCapabilityPolicy | None = None,
     ):
         self.settings = settings
+        settings.ensure_directories()
         self.capability_policy = capability_policy or default_workspace_policy(
             max_file_bytes=settings.max_file_bytes
         )
@@ -288,7 +290,10 @@ class WorkspaceManager:
                     content = source.read()
             except (OSError, UnicodeDecodeError):
                 continue
-            contents[relative] = content
+            # Skip the complete file. Replacing tokens in code would alter its
+            # meaning and invalidate expected-content digests on recovery.
+            if not contains_known_secret(relative) and not contains_known_secret(content):
+                contents[relative] = content
 
         result = HybridCodeRetriever(
             max_files=self.settings.max_context_files,

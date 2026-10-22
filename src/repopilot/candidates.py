@@ -318,9 +318,10 @@ class ArtifactStore:
         entries, contents = _capture(workspace)
         manifest = {"schema_version": "manifest-v1", "base_sha": base_sha, "entries": entries}
         digest = digest_json(manifest)
-        self.root.mkdir(parents=True, exist_ok=True)
+        self.root.mkdir(mode=0o700, parents=True, exist_ok=True)
         if self.root.is_symlink():
             raise SecurityError("Artifact storage cannot be a symlink")
+        self.root.chmod(0o700)
         sync_directory(self.root.parent)
         temporary_context = (
             nullcontext(staging)

@@ -29,6 +29,7 @@ from repopilot.acceptance import (
 from repopilot.candidates import ArtifactStore, Candidate
 from repopilot.capabilities import real_evaluation_policy
 from repopilot.config import Settings
+from repopilot.data_boundary import safe_error
 from repopilot.eval_report import build_eval_report, render_markdown
 from repopilot.eval_runtime import EvaluationConfig, EvaluationRuntime, ModelCallBudget
 from repopilot.github import GitHubPublisher
@@ -47,7 +48,6 @@ from repopilot.security import (
     CapabilityAction,
     CapabilityError,
     CapabilityReason,
-    redact_secrets,
 )
 
 
@@ -239,8 +239,8 @@ async def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
                 record = {
                     "case_id": task.id,
                     "verified": False,
-                    "error_type": type(error).__name__,
-                    "error_message": redact_secrets(str(error))[:1_000],
+                    "error_type": safe_error(error)["type"],
+                    "error_message": safe_error(error)["code"],
                     "task_fingerprint": task.fingerprint,
                     "evaluator_identity": evaluator_identity,
                 }

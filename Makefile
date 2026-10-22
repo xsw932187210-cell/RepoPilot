@@ -65,3 +65,7 @@ eval-real-retrieval:
 .PHONY: ch06a-integration
 ch06a-integration:
 	./scripts/ch06a_integration.sh
+
+.PHONY: ch06c-integration
+ch06c-integration:
+	./scripts/ch06c_integration.sh

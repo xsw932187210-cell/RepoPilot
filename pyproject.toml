@@ -20,6 +20,7 @@ dependencies = [
   "langchain-openai>=1.0,<2",
   "langgraph>=1.2,<2",
   "langgraph-checkpoint-postgres>=3.0,<4",
+  "langsmith>=0.14,<1",
   "orjson>=3.10,<4",
   "psycopg[binary,pool]>=3.2,<4",
   "pydantic>=2.11,<3",

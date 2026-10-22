@@ -1,13 +1,20 @@
 #!/bin/sh
 set -eu
 
-project="${CH06A_COMPOSE_PROJECT:-repopilot_ch06a_$(date +%Y%m%d)_$$}"
+verification_card="${REPOPILOT_VERIFICATION_CARD:-CH-06A}"
+case "$verification_card" in
+  CH-06A) project_prefix=repopilot_ch06a_ ;;
+  CH-06C) project_prefix=repopilot_ch06c_ ;;
+  *) printf 'Unsupported verification card\n' >&2; exit 1 ;;
+esac
+project="${CH06A_COMPOSE_PROJECT:-${project_prefix}$(date +%Y%m%d)_$$}"
 port="${CH06A_API_PORT:-58080}"
 compose_file="docker-compose.ch06a-test.yml"
 
 case "$project" in
-  repopilot_ch06a_*) ;;
-  *) printf 'CH-06A requires a dedicated repopilot_ch06a_ project name\n' >&2; exit 1 ;;
+  "$project_prefix"*) ;;
+  *) printf '%s requires a dedicated %s project name\n' "$verification_card" "$project_prefix" >&2
+     exit 1 ;;
 esac
 case "$project" in
   *[!a-z0-9_-]*) printf 'Invalid CH-06A project name\n' >&2; exit 1 ;;
@@ -67,7 +74,8 @@ fi
 # Only the trusted, pinned pre-CH-06A source is exposed to the legacy child.
 git archive 12b9e3d src | tar -x -C "$CH06A_LEGACY_ROOT"
 git archive a1e5f41 src | tar -x -C "$CH06A_APPROVAL_LEGACY_ROOT"
-printf 'CH-06A project=%s api_port=%s report_dir=%s legacy=12b9e3d,approval=a1e5f41\n' "$project" "$port" "$report_root"
+printf '%s project=%s api_port=%s report_dir=%s legacy=12b9e3d,approval=a1e5f41\n' \
+  "$verification_card" "$project" "$port" "$report_root"
 if ! compose build api sandbox probe >"$report_root/build.log" 2>&1; then
   tail -n 100 "$report_root/build.log"
   exit 1
@@ -88,6 +96,9 @@ compose exec -T postgres createdb -U repopilot repopilot_ch06a_test
 compose exec -T postgres createdb -U repopilot repopilot_ch03b_test
 compose exec -T postgres createdb -U repopilot repopilot_ch09_test
 compose exec -T postgres createdb -U repopilot repopilot_ch10_test
+if [ "$verification_card" = CH-06C ]; then
+  compose exec -T postgres createdb -U repopilot repopilot_ch06c_test
+fi
 if ! compose run --rm --no-deps probe python -m pytest \
   --cov-config=tests/coverage.ch06a.ini \
   --cov=repopilot --cov-report=term-missing --cov-fail-under=70 \
@@ -103,7 +114,7 @@ compose run --rm --no-deps probe python -m repopilot.evaluation --provider mock 
   >"$report_root/mock-run.log"
 compose cp api:/workspaces/ch06a-mock-evaluation.json "$report_root/mock-evaluation.json"
 compose run --rm --no-deps probe python -c \
-  'import importlib.metadata as m,json,sys; print(json.dumps({"python":sys.version.split()[0],"langgraph":m.version("langgraph"),"checkpoint_postgres":m.version("langgraph-checkpoint-postgres"),"pytest":m.version("pytest")},sort_keys=True))' \
+  'import importlib.metadata as m,json,sys; print(json.dumps({"python":sys.version.split()[0],"langgraph":m.version("langgraph"),"langsmith":m.version("langsmith"),"checkpoint_postgres":m.version("langgraph-checkpoint-postgres"),"pytest":m.version("pytest")},sort_keys=True))' \
   >"$report_root/runtime-versions.json"
 compose run --rm --no-deps probe python -c \
   'import hashlib,json,pathlib; roots=[pathlib.Path("src"),pathlib.Path("tests")]; files=sorted(p for root in roots for p in root.rglob("*.py") if "__pycache__" not in p.parts); print(json.dumps({str(p):hashlib.sha256(p.read_bytes()).hexdigest() for p in files},sort_keys=True))' \
@@ -124,4 +135,4 @@ REPOPILOT_COMPOSE_PROJECT="$project" REPOPILOT_COMPOSE_FILE="$compose_file" \
 compose exec -T postgres psql -U repopilot -d repopilot_ch05a_test -Atc 'SHOW server_version' \
   >"$report_root/postgres-version.txt"
 compose ps --format json >"$report_root/services.jsonl"
-printf 'CH-06A integration, mock eval, API smoke and Worker restart: passed\n'
+printf '%s integration, mock eval, API smoke and Worker restart: passed\n' "$verification_card"

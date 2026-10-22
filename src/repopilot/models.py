@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from repopilot.security import CapabilityReason
+from repopilot.security import CapabilityReason, redact_secrets
 
 
 class TaskStatus(StrEnum):
@@ -58,6 +58,11 @@ class TaskCreate(BaseModel):
     execution_timeout_seconds: int | None = Field(default=None, ge=1, le=86_400)
     deadline_includes_queue: bool | None = None
     deadline_includes_approval: bool | None = None
+
+    @field_validator("issue_title", "issue_body")
+    @classmethod
+    def redact_issue_metadata(cls, value: str) -> str:
+        return redact_secrets(value)
 
     @field_validator("repository_url")
     @classmethod

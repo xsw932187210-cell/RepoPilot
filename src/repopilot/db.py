@@ -20,6 +20,9 @@ from sqlalchemy import (
     text,
     update,
 )
+from sqlalchemy import (
+    event as sql_event,
+)
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -29,6 +32,7 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+from repopilot.data_boundary import public_event_payload, public_text
 from repopilot.execution import CleanupFailed
 from repopilot.migrations import ensure_database_schema
 from repopilot.model_calls import (
@@ -214,6 +218,15 @@ class EventRecord(Base):
             payload_schema_version=self.payload_schema_version,
             created_at=self.created_at,
         )
+
+
+@sql_event.listens_for(EventRecord, "before_insert")
+def _protect_new_event(mapper, connection, target: EventRecord) -> None:
+    # Includes control/approval events written inside their authority transaction.
+    target.kind = public_text(target.kind, 60).replace("\r", "").replace("\n", "")
+    target.node = public_text(target.node, 80).replace("\r", "").replace("\n", "")
+    target.message = public_text(target.message)
+    target.payload = public_event_payload(target.payload or {})
 
 
 class ModelCallBudgetRecord(Base):

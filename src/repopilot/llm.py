@@ -5,8 +5,10 @@ from dataclasses import dataclass
 from typing import Any, Protocol, TypeVar
 
 from langchain_openai import ChatOpenAI
+from langsmith import tracing_context
 
 from repopilot.config import Settings
+from repopilot.data_boundary import require_secret_free
 from repopilot.model_calls import (
     CALL_CONTROL_VERSION,
     CallIdentity,
@@ -298,6 +300,7 @@ class OpenAICompatibleAgentModel:
         messages: list[dict[str, Any]],
         role: str,
     ) -> _StructuredOutput:
+        require_secret_free(messages)
         structured = self.model.with_structured_output(schema, include_raw=True)
 
         def validate_response(response: object) -> None:
@@ -318,13 +321,14 @@ class OpenAICompatibleAgentModel:
                 else f"{schema.__name__}-v1"
             ),
         )
-        envelope = await self.call_control.call(
-            structured.ainvoke,
-            messages,
-            call_identity=identity,
-            call_role=role,
-            response_validator=validate_response,
-        )
+        with tracing_context(enabled=False):
+            envelope = await self.call_control.call(
+                structured.ainvoke,
+                messages,
+                call_identity=identity,
+                call_role=role,
+                response_validator=validate_response,
+            )
         parsed = envelope["parsed"]
         return parsed
 

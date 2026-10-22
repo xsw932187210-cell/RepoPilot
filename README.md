@@ -250,3 +250,7 @@ claimed as done.
 ## License
 
 MIT
+
+CH-06C defines [public diagnostics and private execution data](docs/data-boundaries.md):
+allowlisted API/events, classified failures, guarded model/checkpoint input and private
+byte-exact Diff access requiring an API Key. Run `make ch06c-integration` for isolated verification.

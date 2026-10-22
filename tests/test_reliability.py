@@ -585,9 +585,9 @@ async def test_policy_failure_result_summary_excludes_host_path(tmp_path: Path) 
     )
     summary = result_summary(result)
     assert summary["status"] == "failed"
-    assert summary["policy_feedback"]["reason_code"] == "outside_context"
-    assert summary["policy_feedback"]["target_path"] is None
-    assert summary["error"] == "policy_retry_exhausted"
+    # CH-06C refuses the token-bearing proposal before checkpointing its path.
+    assert summary["policy_feedback"] is None
+    assert summary["error"] == "sensitive_execution_data"
     assert "/Users/person" not in str(summary)
     assert "sk-abcdefghijklmnopqrstuvwxyz1234567890" not in str(summary)
 

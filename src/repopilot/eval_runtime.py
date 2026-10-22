@@ -22,6 +22,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from repopilot.data_boundary import PUBLIC_DATA_VERSION, public_json, safe_error
 from repopilot.model_calls import (
     EVALUATION_BUDGET_VERSION,
     CallBudgetExceeded,
@@ -103,12 +104,12 @@ def _sanitize_evidence(value: object) -> object:
                     safe[count_key] = 0
                 continue
             safe[key] = _sanitize_evidence(item)
-        return safe
+        return public_json(safe)
     if isinstance(value, (list, tuple, set, frozenset)):
         return [_sanitize_evidence(item) for item in value]
     if isinstance(value, str):
         return redact_secrets(value)
-    return value
+    return public_json(value)
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,7 +167,7 @@ Sleeper = Callable[[float], Awaitable[None]]
 
 
 def _safe_error(error: BaseException) -> dict[str, str]:
-    return {"type": type(error).__name__, "message": redact_secrets(str(error))[:2_000]}
+    return safe_error(error)
 
 
 def _utc_now() -> str:
@@ -223,6 +224,7 @@ class EvaluationRuntime:
     def runtime_policy(self) -> dict[str, int | float | str]:
         return {
             "call_control_version": EVALUATION_BUDGET_VERSION,
+            "public_data_version": PUBLIC_DATA_VERSION,
             "max_rate_limit_retries": self.max_rate_limit_retries,
             "max_transient_retries": self.max_transient_retries,
             "base_backoff_seconds": self.base_backoff_seconds,
@@ -246,7 +248,8 @@ class EvaluationRuntime:
         return self.cases_dir / f"{key}.json"
 
     def _atomic_write(self, path: Path, payload: Mapping[str, Any]) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
+        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        path.parent.chmod(0o700)
         rendered = f"{json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)}\n"
         fd, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
         temporary = Path(temporary_name)

@@ -17,17 +17,17 @@ class Settings(BaseSettings):
 
     app_name: str = "RepoPilot"
     environment: str = "development"
-    api_key: str = ""
+    api_key: str = Field(default="", repr=False)
 
-    database_url: str = "sqlite+aiosqlite:///./repopilot.db"
-    langgraph_database_url: str = ""
-    redis_url: str = "redis://localhost:6379/0"
+    database_url: str = Field(default="sqlite+aiosqlite:///./repopilot.db", repr=False)
+    langgraph_database_url: str = Field(default="", repr=False)
+    redis_url: str = Field(default="redis://localhost:6379/0", repr=False)
     queue_name: str = "repopilot:jobs"
 
     model_provider: str = "mock"
     model_name: str = "gpt-4.1-mini"
-    openai_api_key: str = ""
-    openai_base_url: str = ""
+    openai_api_key: str = Field(default="", repr=False)
+    openai_base_url: str = Field(default="", repr=False)
     model_temperature: float = 0.0
     model_max_calls: int = Field(default=12, ge=1, le=100)
     model_request_timeout_seconds: float = Field(default=90.0, gt=0, le=900)
@@ -59,7 +59,7 @@ class Settings(BaseSettings):
     running_in_container: bool = False
 
     github_write_enabled: bool = False
-    github_token: str = ""
+    github_token: str = Field(default="", repr=False)
     github_allowed_owners: str = "xsw932187210-cell"
 
     @property
@@ -69,7 +69,10 @@ class Settings(BaseSettings):
         }
 
     def ensure_directories(self) -> None:
-        self.workspace_root.mkdir(parents=True, exist_ok=True)
+        self.workspace_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if self.workspace_root.is_symlink():
+            raise ValueError("Workspace storage cannot be a symlink")
+        self.workspace_root.chmod(0o700)
 
 
 @lru_cache

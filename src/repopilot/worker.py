@@ -16,6 +16,11 @@ from repopilot.approval_models import TestEvidence
 from repopilot.approvals import ApprovalConflict, ApprovalStore
 from repopilot.candidates import ArtifactStore, Candidate
 from repopilot.config import Settings, get_settings
+from repopilot.data_boundary import (
+    configure_public_logging,
+    public_result,
+    safe_error,
+)
 from repopilot.db import Database, TaskRecord, TaskStateConflict
 from repopilot.events import EventBus, JobQueue
 from repopilot.execution import CleanupFailed, ExecutionControl, ExecutionStopped
@@ -27,13 +32,14 @@ from repopilot.model_calls import ControlledModelCaller
 from repopilot.models import TaskStatus, TaskView
 from repopilot.repository import WorkspaceManager
 from repopilot.sandbox import build_sandbox
+from repopilot.security import redact_secrets
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("repopilot.worker")
 
 
 def result_summary(result: dict[str, Any]) -> dict[str, Any]:
-    return {
+    return public_result({
         "status": result.get("status"),
         "iteration": result.get("iteration"),
         "policy_retry_count": result.get("policy_retry_count", 0),
@@ -60,7 +66,7 @@ def result_summary(result: dict[str, Any]) -> dict[str, Any]:
         "approval_decision_id": result.get("approval_decision_id"),
         "publish_receipt": result.get("publish_receipt"),
         "publish_reason": result.get("publish_reason"),
-    }
+    })
 
 
 class Worker:
@@ -71,6 +77,7 @@ class Worker:
         redis: Redis,
         checkpointer: Any,
     ):
+        configure_public_logging()
         self.settings = settings
         self.database = database
         self.redis = redis
@@ -99,7 +106,7 @@ class Worker:
             ArtifactStore(self.settings.workspace_root / ".artifacts"), generations, self.workspaces
         ).recover(task_id)
         if recovered:
-            logger.info("Task %s staging reconciliation: %s", task_id, recovered)
+            logger.info("Task %s staging reconciliation: %d record(s)", task_id, len(recovered))
         return GraphDependencies(
             settings=self.settings,
             model=build_agent_model(self.settings, call_control=call_control),
@@ -186,7 +193,10 @@ class Worker:
         reports = {}
         for task_id in task_ids:
             reports[task_id] = await coordinator.recover(task_id)
-            logger.info("Task %s startup staging reconciliation: %s", task_id, reports[task_id])
+            logger.info(
+                "Task %s startup staging reconciliation: %d record(s)",
+                task_id, len(reports[task_id]),
+            )
         return reports
 
     async def handle(self, job: dict[str, Any]) -> None:
@@ -296,7 +306,7 @@ class Worker:
                     message=f"Task finished with status {final_status.value}",
                 )
         except (TaskStateConflict, GenerationConflict) as exc:
-            logger.info("Discarding stale task state update: %s", exc)
+            logger.info("Discarding stale task state update: %s", type(exc).__name__)
         except ExecutionStopped as exc:
             if exc.scope == "task":
                 await self.database.request_stop(task_id, exc.reason)
@@ -324,7 +334,8 @@ class Worker:
                 )
             raise
         except Exception as exc:
-            logger.exception("Task %s failed", task_id)
+            diagnostic = safe_error(exc)
+            logger.error("Task %s failed: %s", task_id, diagnostic)
             if control and control.resources:
                 control.cleanup_pending.extend(
                     {**resource, "action": "verify_cleanup", "error": type(exc).__name__}
@@ -338,16 +349,17 @@ class Worker:
                         expected_status=TaskStatus.RUNNING,
                         expected_version=active_task.state_version,
                         status=TaskStatus.FAILED,
-                        error=f"{type(exc).__name__}: {exc}",
+                        error=diagnostic["code"],
                     )
                 except TaskStateConflict as conflict:
-                    logger.info("Failure reporting lost a state race: %s", conflict)
+                    logger.info("Failure reporting lost a state race: %s", type(conflict).__name__)
                 else:
                     await self.events.publish(
                         task_id,
                         kind="task_error",
                         node="worker",
-                        message=f"{type(exc).__name__}: {exc}",
+                        message="Task execution failed",
+                        payload={"error_code": diagnostic["code"]},
                     )
         finally:
             try:
@@ -408,8 +420,8 @@ class Worker:
         return {
             "task_id": task.id,
             "repository_url": task.repository_url,
-            "issue_title": task.issue_title,
-            "issue_body": task.issue_body,
+            "issue_title": redact_secrets(task.issue_title),
+            "issue_body": redact_secrets(task.issue_body),
             "base_branch": task.base_branch,
             "test_command": task.test_command,
             "max_iterations": task.max_iterations,

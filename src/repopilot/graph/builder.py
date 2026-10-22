@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.errors import GraphBubbleUp
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 from pydantic import ValidationError
@@ -16,10 +17,16 @@ from repopilot.approval_models import TestEvidence, evidence_identity
 from repopilot.approvals import ApprovalConflict, ApprovalStore
 from repopilot.candidates import ArtifactStore, Candidate, capture_manifest
 from repopilot.config import Settings
+from repopilot.data_boundary import (
+    PublicExecutionError,
+    SensitiveExecutionData,
+    require_secret_free,
+)
 from repopilot.events import EventBus, JobQueue
 from repopilot.execution import ExecutionStopped, current_control
 from repopilot.generations import GenerationCoordinator, MemoryGenerationStore, SQLGenerationStore
 from repopilot.github import GitHubPublisher, PublishResult
+from repopilot.graph.privacy import PrivateExecutionGraph
 from repopilot.graph.state import RepoPilotState
 from repopilot.llm import AgentModel
 from repopilot.model_calls import ModelCallControlError
@@ -28,7 +35,7 @@ from repopilot.policy_feedback import normalized_policy_feedback, validate_modif
 from repopilot.publication import PublicationStore
 from repopilot.repository import RepositoryContext, WorkspaceManager
 from repopilot.sandbox import DockerSandbox, LocalSandbox
-from repopilot.security import SecurityError
+from repopilot.security import SecurityError, redact_secrets
 
 MAX_POLICY_RETRIES = 1
 
@@ -283,6 +290,19 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
                 "policy_error_code": "invalid_modification_intent",
                 "node_metrics": [node_metric("coder", duration_ms, state.get("iteration", 0))],
             }
+        try:
+            require_secret_free(changes.model_dump())
+        except SensitiveExecutionData:
+            duration_ms = elapsed_ms(started)
+            await deps.emit(
+                state, "coder", "Modification intent contains sensitive execution data",
+                {"error_code": "sensitive_execution_data"}, duration_ms,
+            )
+            return {
+                "pending_changes": None,
+                "policy_error_code": "sensitive_execution_data",
+                "node_metrics": [node_metric("coder", duration_ms, state.get("iteration", 0))],
+            }
         duration_ms = elapsed_ms(started)
         await deps.emit(
             state,
@@ -387,6 +407,11 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
         candidate = Candidate.model_validate(state["candidate"])
         with artifacts.materialize(candidate) as snapshot:
             result = await deps.sandbox.run(snapshot, state["test_command"])
+        # Diagnostic output is sanitized before binding evidence or checkpointing.
+        result = result.model_copy(update={
+            "stdout": redact_secrets(result.stdout),
+            "stderr": redact_secrets(result.stderr),
+        })
         await deps.generations.assert_current(candidate)
         evidence = TestEvidence(
             evidence_digest="",
@@ -677,12 +702,29 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
             "node_metrics": [node_metric("cancelled", duration_ms, state.get("iteration", 0))],
         }
 
-    def interruptible(node):
+    def interruptible(node, *, cancellable=True):
         async def execute(state):
-            control = current_control()
-            if control:
-                return await control.run(node(state))
-            return await node(state)
+            try:
+                control = current_control()
+                if control and cancellable:
+                    result = await control.run(node(state))
+                else:
+                    result = await node(state)
+            except GraphBubbleUp:
+                raise
+            except Exception as error:
+                if type(error).__module__.startswith("repopilot."):
+                    # Preserve application control-flow types only when their
+                    # checkpoint representation contains no known credentials.
+                    try:
+                        require_secret_free(str(error))
+                    except SecurityError:
+                        pass
+                    else:
+                        raise
+                raise PublicExecutionError(error) from None
+            require_secret_free(result)
+            return result
 
         return execute
 
@@ -696,7 +738,8 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
     graph.add_node("test_runner", interruptible(test_runner))
     graph.add_node("reviewer", interruptible(reviewer))
     graph.add_node("approval", interruptible(approval))
-    graph.add_node("finalize", finalize)
+    # Publication retains its bounded reconciliation window after a stop.
+    graph.add_node("finalize", interruptible(finalize, cancellable=False))
     graph.add_node("failed", interruptible(failed))
     graph.add_node("cancelled", interruptible(cancelled))
 
@@ -725,4 +768,4 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
     graph.add_edge("finalize", END)
     graph.add_edge("failed", END)
     graph.add_edge("cancelled", END)
-    return graph.compile(checkpointer=checkpointer)
+    return PrivateExecutionGraph(graph.compile(checkpointer=checkpointer))

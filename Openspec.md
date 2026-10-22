@@ -1,6 +1,6 @@
 # RepoPilot 项目规范与迭代验收
 
-> 更新日期：2026-10-22；本轮起始基线：`18ed369`；CH-03B 及前置依赖已由 PR #8 合并为 `main@554012e`；CH-06A 已完成隔离验收并推送独立分支，未合并；最近完整真实模型评测：2026-09-09。
+> 更新日期：2026-10-22；本轮起始基线：`4d55a5b`；CH-06A 已由 PR #9 合并；CH-06C 开发中；最近完整真实模型评测：2026-09-09。
 > 本文是现有项目的规范入口，记录当前行为、证据和后续变更的验收标准。
 > 本次建立的是单文件规范，尚未接入 OpenSpec CLI，也不代表已建立其提案、归档或自动校验流程。
 > 规划版本：Roadmap v3。CH-01～CH-08、CH-21 为主题编号，具体开发选带字母的子任务；新增的上下文与历史案例探索按需启动。
@@ -158,6 +158,8 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 
 ### RP-06：工具执行与发布边界
 
+- CH-06C 的公开诊断使用字段白名单与稳定错误码，原始 provider 异常/traceback 不进入日志或图错误记录。模型/checkpoint 前检查已知凭据，完整代码不作字符串替换；完整 Diff 要求配置 API Key。详见 [数据出口契约](docs/data-boundaries.md)，当前实现待隔离验收。
+
 - 测试命令解析为 argv，经过命令约束，不通过 shell 执行任意模型字符串。
 - Docker 接收一次性工作区快照，禁网、无宿主目录挂载、UID/GID 10001、移除 capabilities、禁止提权、限制内存与进程数，并在超时后尝试终止与清理。
 - 快照拒绝符号链接和特殊文件；标准输出/错误在返回时截断并脱敏。返回长度限制不代表生成日志过程中已有完整流量限额。
@@ -170,6 +172,8 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 验证入口：[发布契约](docs/publication.md)、[test_github.py](tests/test_github.py)、[test_publication.py](tests/test_publication.py)、[PostgreSQL 发布故障](tests/test_publication_postgres.py)、[test_security.py](tests/test_security.py)、[test_sandbox.py](tests/test_sandbox.py)、[容器探针](examples/sandbox_probe/test_isolation.py)。
 
 ### RP-07：可持续的真实评测
+
+- 新评测运行指纹包含 public_data_version；结构化授权字段统一处理，失败仅保存 code/type，不保存原始异常消息。既有真实实验文件保持原样，不在旧目录混跑新口径。
 
 - 20 个固定版本的 BugsInPy / The Fuck 历史缺陷，记录上游来源、测试夹具哈希和许可。
 - 每例先验证 buggy 失败、fixed 通过、验收测试标识一致；环境或收集失败不算复现成功。
@@ -227,7 +231,7 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 | 数据库与 Redis/事件/checkpoint 的交接 | 审批决定与 pending 意图已可靠保存并可显式重投；创建任务仍有交接窗口，消费无 ACK/自动找回 | CH-04A |
 | 取消后服务不可达 / Worker 硬退出 | 保留 cancelling、资源 ID 和清理证据，不自动杀历史 PID 或补造停止确认；需人工检查或后续恢复调度 | CH-04B/C |
 | 历史事件切换实时订阅 | SSE 可能漏掉切换窗口事件 | CH-06 |
-| 在线日志 / 状态脱敏范围 | 评测 sanitizer 不覆盖所有在线错误、payload 和 checkpoint | CH-06 |
+| 已知模式之外的数据泄漏 | 已集中投影公开出口并拒绝已知凭据进入模型/checkpoint；正则无法识别任意秘密，无生产加密、多用户隔离或自动保留期 | CH-12、CH-16；新增凭据类型需补模式/测试 |
 | 外部模型调用原子性与计费 | 已有持久化预留、未定响应和有界重试；数据库/provider 无跨系统事务，缺 usage/特殊计费时不能承诺精确金额，也尚无 Worker fencing | CH-04B（所有权）；CH-10 记账已完成 |
 | 单一项目和单次实验 | 无法支持跨仓库泛化或稳定收益结论 | CH-01、CH-07 |
 
@@ -300,7 +304,7 @@ S/M/L 表示相对范围：S 通常是独立诊断或小接口；M 是一组紧�
 
 2026-10-19 确认的质量迭代顺序：先做 CH-01A 失败归因，再通过 CH-07A/B/C 建立跨项目开发集和冻结保留集；按证据选择 CH-13 Reviewer 校准或 CH-01B 任务路由，每次只验证一个主要策略变化。CH-14 的片段检索、CH-21 的压缩/历史案例复用由大文件、长任务或重复仓库任务的瓶颈触发；CH-12 多用户权限由明确使用需求触发，不作为本轮前置功能。
 
-CH-01A、CH-02B、CH-03A 已于 2026-10-19、CH-05A 于 2026-10-21、CH-03B 于 2026-10-22 完成验收，依赖历史已由 PR #8 合并为 `main@554012e`。CH-06A 于 2026-10-22 在独立分支完成验收，未合并。CH-02A、CH-09、CH-10 已合并。下一张可选无硬依赖的 P0 **CH-06C**；质量数据方向也可独立开展 **CH-07A**。执行顺序始终以各卡硬依赖为准。
+CH-01A、CH-02B、CH-03A 已于 2026-10-19、CH-05A 于 2026-10-21、CH-03B 于 2026-10-22 完成验收，依赖历史已由 PR #8 合并为 `main@554012e`。CH-06A 于 2026-10-22 验收并由 PR #9 合并为 `main@4d55a5b`。CH-02A、CH-09、CH-10 已合并。本轮正在开发无硬依赖的 P0 **CH-06C**；质量数据方向也可独立开展 **CH-07A**。执行顺序始终以各卡硬依赖为准。
 
 ### 8.4 跨任务接口约定（已落实项与待实现设计）
 
@@ -521,7 +525,7 @@ CH-06A 接口映射（2026-10-22，已实现并验收）：复用任务状态版
 
 #### CH-06A：可确认取消与全局截止时间
 
-- **状态**：VERIFIED（2026-10-22，314 passed / 0 skipped，84.19% coverage；真实容器/进程停止、Mock、smoke、Worker 重启均通过，未合并）。**优先级/规模**：P1 / L。**硬依赖**：CH-09、CH-10、CH-03B。
+- **状态**：MERGED（2026-10-22，314 passed / 0 skipped，84.19% coverage；真实容器/进程停止、Mock、smoke、Worker 重启均通过；PR #9 合并为 `main@4d55a5b`）。**优先级/规模**：P1 / L。**硬依赖**：CH-09、CH-10、CH-03B。
 - **入口**：`api.py`、`models.py`、`worker.py`、`llm.py`、`sandbox.py`、`repository.py`、发布模块。
 - **实施步骤**：
   1. 区分 cancel requested 与 confirmed stopped；采用字段或新状态时给出迁移与兼容说明，终态更新使用 CAS 防止旧 Worker 覆盖取消。
@@ -548,7 +552,7 @@ CH-06A 接口映射（2026-10-22，已实现并验收）：复用任务状态版
 
 #### CH-06C：在线日志、事件与持久化数据审计
 
-- **状态**：TODO。**优先级/规模**：P0 / M。**硬依赖**：无。
+- **状态**：IMPLEMENTED_UNVERIFIED（离线 309 passed / 38 skipped，84.89%；服务验收待执行）。**优先级/规模**：P0 / M。**硬依赖**：无。
 - **入口**：`security.py`、`events.py`、`worker.py`、`api.py`、`llm.py`、`eval_runtime.py`。
 - **实施步骤**：
   1. 枚举数据出口：logger/traceback、事件 message/payload、API error/result、checkpoint、模型输入和评测报告；分别定义可公开和私有执行数据。
@@ -898,6 +902,7 @@ smoke 使用已经运行的服务。若 `.env` 选择真实模型，应按 [READ
 - [CH-05A 隔离验收](docs/ch05a-verification-2026-10-21.md)：多文件中断、进程硬退出、精确重放、旧审批升级、来源核对与资源清理。
 - [发布意图与远端对账](docs/publication.md)：获批完整树/固定 parent、分阶段 receipt、取消与基线移动、只读 CLI 和升级边界。
 - [CH-03B 隔离验收](docs/ch03b-verification-2026-10-22.md)：五阶段 HTTP 丢响应/硬退出、SQL CAS、完整来源核对及中间失败记录。
+- [数据出口与私有执行数据](docs/data-boundaries.md)：公开字段、已知凭据、checkpoint/模型输入、私有 Diff 与手动保留规则。
 - [可确认取消与截止时间](docs/execution-control.md)：API 状态、时间口径、清理证据、发布及重启边界。
 - [CH-06A 隔离验收](docs/ch06a-verification-2026-10-22.md)：假时钟、真实容器/进程停止、迁移故障、发布取消和最终来源核对。
 - [模型调用预算与 provider 故障](docs/model-call-control.md)：配置、账本状态、错误分类、重试与崩溃窗口。
@@ -1131,3 +1136,11 @@ smoke 使用已经运行的服务。若 `.env` 选择真实模型，应按 [READ
 - PR / 合并：收尾时经 GitHub 与 `git fetch --prune origin` 核实，PR #8 已合并为 `main@554012e`，PR head `18ed369` 的 CI run `39642188749` success；合并后的文件树与 CH-06A 起始基线一致。此前 Draft/Open 记录保留为历史快照。CH-06A 已推送独立分支 [codex/ch-06a-confirmed-cancellation](https://github.com/xsw932187210-cell/RepoPilot/tree/codex/ch-06a-confirmed-cancellation)，首次推送 `6daad10` 含实现与验收记录，未创建新 PR、未合并；后续仅回填推送元数据。
 - 规范更新：RP-05、取消/API 当前行为、缺口、8.4、CH-06A、README、架构、迁移、执行/调用/发布/运行时文档同步；CH-06A 为 VERIFIED。
 - 下一张建议：无硬依赖的 P0 CH-06C；本轮不执行其他卡。
+
+### 2026-10-22 · CH-06A · PR 合并与 CH-06C 接手
+
+- 用户明确授权创建并合并 CH-06A PR，再开启下一卡。已创建并合并 [PR #9](https://github.com/xsw932187210-cell/RepoPilot/pull/9)：base `main@554012e`，head `825262c`，4 个提交、46 个文件。PR CI run `39748939113` success，页面 2/2 checks passed；合并提交 `4d55a5b5b83b617881b0b2bf9d2ea7dc94ef3785`。
+- GitHub 与 fetch 已核实合并，合并文件树与已验收分支完全一致；CH-06A 更新为 MERGED，原始验收数据不变。
+- 下一卡 CH-06C 无硬依赖，从干净 `origin/main@4d55a5b` 建立 `codex/ch-06c-data-boundaries`；本轮只开发该卡。
+- 实施约定：统一已知秘密模式、公开 JSON 字段及稳定诊断；日志不记录原始异常/traceback，事件在保存和发布时投影，API 历史读取再次投影。图/模型入口拒绝含已知凭据的代码，普通元数据脱敏；私有源码与 artifact 不做破坏性字符串替换，完整 Diff 仅在配置 API Key 后访问。私有 checkpoint/artifacts 留在服务存储，手动保留/备份与删除流程明确，自动 GC 与多用户加密仍属后续卡。
+- 计划验证：伪造 token、嵌套 header、带凭据/编码 URL、换行异常、历史记录/SSE、模型与 checkpoint 泄漏、恢复内容字节一致；离线全量、Mock 和隔离运行/重启回归。
