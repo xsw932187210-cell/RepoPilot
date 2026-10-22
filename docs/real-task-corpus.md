@@ -27,6 +27,11 @@ every task still names an upstream buggy revision and its later upstream fix.
 ## Manifest contract
 
 The manifest is evaluator-owned metadata and is never copied into a model workspace.
+Schema 2 adds a top-level `projects` map: literal source/read-only/test roots, visible/hidden
+test policies, pinned runtime image/Python path, dependency preparation and verified recipe
+hashes. The original 20 task records and their fingerprints are unchanged. The byte-identical
+schema-1 manifest is archived as `manifest-v1.json` and can only be loaded explicitly for reading.
+See [project adapters and migration](project-adapters.md) for the complete contract.
 Each task contains:
 
 - a stable task ID and pinned BugsInPy case;
@@ -65,7 +70,8 @@ the graph state, prompts, visible test output or retry feedback.
 
 After the agent has finished, the trusted evaluator replays allowed source edits into
 a fresh buggy export and calls `materialize_hidden_overlay`. That function restricts
-destinations to existing regular files below `tests/`, checks source and target path
+destinations to existing regular files below the adapter's read-only test roots (`tests/`
+for this real corpus), checks source and target path
 containment, rejects symlink escapes, verifies both the expected buggy-file SHA-256
 and fixed overlay SHA-256, and then replaces the relevant test file. Requiring the
 original hash prevents an overlay from silently overwriting a candidate-created or
