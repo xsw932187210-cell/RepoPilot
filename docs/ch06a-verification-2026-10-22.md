@@ -104,3 +104,7 @@ CH-06A 已推送到独立分支 [codex/ch-06a-confirmed-cancellation](https://gi
 包含实现与验收记录；后续仅回填实际推送元数据。CH-06A 未创建新 PR、未合并；
 PR #8 仅包含前置依赖栈，已经合并。
 下一张建议为无硬依赖的 P0 **CH-06C**；本轮完成 CH-06A 后停止。
+
+2026-10-22 交付更新：[PR #9](https://github.com/xsw932187210-cell/RepoPilot/pull/9) 已通过 CI
+并合并为 `main@4d55a5b5b83b617881b0b2bf9d2ea7dc94ef3785`，当前状态 **MERGED**。
+上述未创建 PR/未合并为首次推送时的历史快照，验收源码和历史质量口径没有变化。
