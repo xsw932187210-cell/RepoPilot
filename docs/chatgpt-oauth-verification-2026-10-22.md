@@ -29,6 +29,7 @@
 - 全量覆盖率 **85.45%**；授权模块 **80.51%**。42 项服务条件入口未运行，本轮没有新的容器验收结论。
 - PyJWT **2.15.1**、cryptography **50.0.2**、httpx **0.28.1**、pytest **8.4.2**。
 - `ruff check .` 和 `git diff --check` 通过。
+- 显式 `--provider mock --model deterministic-mock-v1` 回归 **10/10**，非真实模型效果。
 - 测试运行时文件与 `9dfe7a7` 的 6 个实现/契约文件字节一致，摘要见机器可读记录。
 - 首次沙箱内专项为 23 passed / 1 failed：loopback 监听受沙箱限制，未取得回调准备状态；
   授权使用本机 loopback 权限后，24 项全部实跑通过。依赖首次下载也受网络沙箱限制，授权后安装成功。
@@ -44,3 +45,10 @@
 - 接入真实评测前仍需确认模型、总 API 尝试数和可用预算，并冻结实验身份。
 
 操作见 [授权说明](chatgpt-authorization.md)。
+
+## 交付
+
+代码已推送并创建 [Draft PR #11](https://github.com/xsw932187210-cell/RepoPilot/pull/11)，
+base 为 `codex/ch-07a-project-adapters@d4353b9`，未合并。PR 的 `1307cea` 首轮 CI
+[run 39808935536](https://github.com/xsw932187210-cell/RepoPilot/actions/runs/39808935536)
+已成功；后续纯记录提交不改变上述已测试的实现字节。

@@ -22,6 +22,17 @@
     "credential_files_tracked": false
   },
   "deepseek": {"key_configured": true, "requests": 0},
+  "git_delivery": {
+    "pushed": true,
+    "pull_request": "https://github.com/xsw932187210-cell/RepoPilot/pull/11",
+    "draft": true,
+    "merged": false,
+    "base": "codex/ch-07a-project-adapters",
+    "base_sha": "d4353b992cfcd37e57137f2c170793d70cfb5cdb",
+    "ci_verified_head": "1307cea84c95875a2974047d5c18507c668cbeda",
+    "ci_run": 39808935536,
+    "ci_conclusion": "success"
+  },
   "verification": {
     "platform": "darwin",
     "python": "3.13.5",
@@ -35,6 +46,10 @@
     "oauth_coverage_percent": 80.50541516245487,
     "ruff": "passed",
     "diff_check": "passed",
+    "mock_count": 10,
+    "mock_successful": 10,
+    "mock_model": "deterministic-mock-v1",
+    "mock_dataset_sha256": "6e5c1012e81c11d9a4cda4d2d5f761313398f5383bb0a3a71960e6569b25bdf7",
     "docker_rerun": false,
     "PyJWT": "2.15.1",
     "cryptography": "50.0.2",
@@ -51,6 +66,7 @@
   },
   "evidence_sha256": {
     "reports/chatgpt-oauth-host.xml": "f88135196993175d54df762217a3113ee1704f60479af5032fd37e00d212f6fc",
-    "reports/chatgpt-oauth-coverage.json": "d0d306a7f7f2909342c61512e466637509b68200caa1c63b4931a8156f8e463a"
+    "reports/chatgpt-oauth-coverage.json": "d0d306a7f7f2909342c61512e466637509b68200caa1c63b4931a8156f8e463a",
+    "reports/chatgpt-oauth-mock.json": "10984f07df148cfb6665ddf08c57b4c8ed2f52b472601752e73fc74be4b1bc30"
   }
 }
