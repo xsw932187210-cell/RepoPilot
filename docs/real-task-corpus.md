@@ -70,7 +70,8 @@ the graph state, prompts, visible test output or retry feedback.
 
 After the agent has finished, the trusted evaluator replays allowed source edits into
 a fresh buggy export and calls `materialize_hidden_overlay`. That function restricts
-destinations to existing regular files below `tests/`, checks source and target path
+destinations to existing regular files below the adapter's read-only test roots (`tests/`
+for this real corpus), checks source and target path
 containment, rejects symlink escapes, verifies both the expected buggy-file SHA-256
 and fixed overlay SHA-256, and then replaces the relevant test file. Requiring the
 original hash prevents an overlay from silently overwriting a candidate-created or

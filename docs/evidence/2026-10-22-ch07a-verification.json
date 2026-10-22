@@ -1,0 +1,224 @@
+{
+  "application_real_github_publication": false,
+  "baseline_commit": "f6b4c3c",
+  "branch": "codex/ch-07a-project-adapters",
+  "card": "CH-07A",
+  "compatibility": {
+    "cases": 20,
+    "exported_file_instances_checked": 4996,
+    "metadata_equal": true,
+    "permissions_equal": true,
+    "retrieval_equal": true
+  },
+  "compose": {
+    "api_port": 58100,
+    "cleanup": {
+      "project": "repopilot_ch07a_20261022_82289",
+      "resources_removed": true
+    },
+    "dependency_image": "sha256:b76b7e77bc68cf47dc90da397c01036bfd1db454ef413ca6cd8a075cb4e5dd22",
+    "images": [
+      "sha256:643b5f89871c926c12d4023e543ebd4d2e64ad87fd7e1073400aaa2371f2cf82",
+      "sha256:be122d0fce24845f7c41d12c8e24c9f7d65a7aa70e7888cf12b11e3033f9233d",
+      "sha256:1e72db83a5b4927b6469ec74df2bb5e7b7f388eaf7f98b7cb3c27a4dcd6ae6d4"
+    ],
+    "postgres_version": "16.15",
+    "project": "repopilot_ch07a_20261022_82289"
+  },
+  "date": "2026-10-22",
+  "dependencies": {
+    "CH-02A": {
+      "commit": "a2cb1d5",
+      "merged": true
+    },
+    "CH-06C_baseline": {
+      "commit": "f6b4c3c",
+      "merged": false,
+      "verified": true
+    }
+  },
+  "evidence_sha256": {
+    "reports/ch07a-compatibility.json": "51e1c2dfa43fcf1b07932649c96ad9ee8afb1e09e7b37e8353d93505d2e99158",
+    "reports/ch07a-host-final.log": "af6e12402eb6aaffe18a39cbb96c3316d3e4be6b14d3d7e96c1a6c3cd708bbd7",
+    "reports/ch07a-host-final.xml": "33313d9354936b917cd522a408b6ef6d8e8ea4836648f966ad03331798b5a68d",
+    "reports/ch07a-real-reproduction/reproduction-summary.json": "546fb150cb243b5667ff8358966157904529b9fd6f035d43541b3d4096c4cc7e",
+    "reports/ch07a-source-audit.json": "6996f51190fc449d5d49f9600d70ea9a39a3d8ec1887ada82bd2c8f58d1c45e5",
+    "reports/repopilot_ch07a_20261022_82289/api-source-hashes.json": "b84bbab4af3218f8bcde465f7e14d785e2371b26e260c89060e0f4f4be04add8",
+    "reports/repopilot_ch07a_20261022_82289/build.log": "86bf2a9319d8ab1fb2c2727a8b97797162258bad769de00c4fbfc34cc7f3a524",
+    "reports/repopilot_ch07a_20261022_82289/cleanup.json": "13d67fa6324699c127fca83e12a64a7c8f99973484e825b2978a818007643ce0",
+    "reports/repopilot_ch07a_20261022_82289/dependency-image-id.json": "5106b9189ccfcf8a359a4846623db4909931283be0d085a45791fe04d52c3afc",
+    "reports/repopilot_ch07a_20261022_82289/eval-asset-hashes.json": "c9211111a33d9a654e99194c80f57b5ea7d4a344a0cfbab19390106d562a2c4f",
+    "reports/repopilot_ch07a_20261022_82289/image-ids.jsonl": "fbbb4bca41de7822cc4f69cfe448bb570254070c1c599e1faeb5b0c0bb222f0a",
+    "reports/repopilot_ch07a_20261022_82289/installed-source-hashes.json": "b84bbab4af3218f8bcde465f7e14d785e2371b26e260c89060e0f4f4be04add8",
+    "reports/repopilot_ch07a_20261022_82289/integration.log": "2f26b0bbbfce5ac4a1435df5aa595b8178fb186fbb520fabf59d28c55991b54b",
+    "reports/repopilot_ch07a_20261022_82289/integration.xml": "1644503cb7be8d7837c06baf6fa332aa380d6fd8e4b8713f2f8f24ec80e0927b",
+    "reports/repopilot_ch07a_20261022_82289/mock-evaluation.json": "0512428599703ff6fcaf3bbeb314d40bbe67237fce1cc6086c35e2aa397eea50",
+    "reports/repopilot_ch07a_20261022_82289/mock-run.log": "0512428599703ff6fcaf3bbeb314d40bbe67237fce1cc6086c35e2aa397eea50",
+    "reports/repopilot_ch07a_20261022_82289/postgres-version.txt": "891e4fd21666e66b5362e2b13d1bda45cc4402505a2a1548fd6c5ca7cdaae9da",
+    "reports/repopilot_ch07a_20261022_82289/recovery.jsonl": "a5b012c40a23877ca792a5ac84e8964ffd2765be97231904b927e51745040108",
+    "reports/repopilot_ch07a_20261022_82289/runtime-versions.json": "7d7acb0008671a5c22708d33736da9dea96a0771ccff7ce265807eb6aa89b5bc",
+    "reports/repopilot_ch07a_20261022_82289/services.jsonl": "e10951d4f885346cc89a743fb5526435521179aa90e0c060fa65266e35e2c5e4",
+    "reports/repopilot_ch07a_20261022_82289/smoke.jsonl": "f9e3c911e8da84330c0df88da0d4cb092d65066154abc266116511b422a1d641",
+    "reports/repopilot_ch07a_20261022_82289/source-hashes.json": "bc5217a8cfd0db39b5aff7ebe89824488e931d455188206fe451199d42307be4"
+  },
+  "git_delivery": {
+    "merged": false,
+    "pr_created": false,
+    "pushed": false
+  },
+  "host": {
+    "coverage_percent": 85.66,
+    "errors": 0,
+    "failures": 0,
+    "python": "3.13.5",
+    "skipped": 42,
+    "tests": 392
+  },
+  "limits": [
+    "Python existing-source adapter only",
+    "No new real defect corpus or frozen holdout",
+    "No repeat statistics or adaptive routing",
+    "Recipe hashes are not build attestations",
+    "No new real-model repair-quality experiment"
+  ],
+  "linux": {
+    "checkpoint_postgres": "3.2.0",
+    "coverage_percent": 87.2,
+    "errors": 0,
+    "failures": 0,
+    "langgraph": "1.2.16",
+    "langsmith": "0.14.11",
+    "new_adapter_regressions": 40,
+    "new_docker_fixture_entries_executed": 2,
+    "pytest": "8.4.2",
+    "python": "3.12.15",
+    "service_entries_executed": 40,
+    "skipped": 0,
+    "tests": 392
+  },
+  "manifest": {
+    "current_sha256": "85a6a68344c4c6827b34406d6a6c42156ee148939ce7f8c4a740c27b0b6b974b",
+    "legacy_read_only": true,
+    "legacy_sha256": "6b54dc349ba8f493e9cfb2702bf6c227c6b5c3da781e3246620779fdc9984471",
+    "original_task_fingerprints_preserved": 20
+  },
+  "mock": {
+    "cases": 10,
+    "dataset_sha256": "6e5c1012e81c11d9a4cda4d2d5f761313398f5383bb0a3a71960e6569b25bdf7",
+    "model": "deterministic-mock-v1",
+    "provider": "mock",
+    "successful": 10
+  },
+  "next_card": "CH-07B",
+  "protocols": {
+    "acceptance": 4,
+    "adapter": "python-source-v1",
+    "evaluator_config": 9,
+    "manifest_schema": 2,
+    "model_call_record_schema": 4,
+    "test_evaluator": "withheld-junit-v2"
+  },
+  "quality_lift_claim": false,
+  "real_model_calls": 0,
+  "reproduction": {
+    "cases_selected": 20,
+    "identity": {
+      "evaluator_config_version": 9,
+      "manifest_schema_version": 2,
+      "projects": {
+        "thefuck": {
+          "adapter_fingerprint": "9b9eb5896268b4370ddc498db272fd8861820caa18ced0c4b82b4a649470ff72",
+          "adapter_version": "python-source-v1",
+          "cap_drop": [
+            "ALL"
+          ],
+          "image_id": "sha256:4488c6ee019a76b875dcbd99737dbeb5163c5bc5221c4ab491494a7890664e58",
+          "init": true,
+          "memory": "512m",
+          "network_disabled": true,
+          "no_new_privileges": true,
+          "pids_limit": 128,
+          "project": "thefuck",
+          "protocol_version": 4,
+          "pythonpath": [
+            "/workspace"
+          ],
+          "timeout_seconds": 120,
+          "user": "10001:10001"
+        }
+      }
+    },
+    "orchestrator_python": "3.13.5",
+    "real_model_calls": 0,
+    "verified": 20
+  },
+  "schema_version": 1,
+  "smoke": {
+    "model_calls_started": 3,
+    "model_calls_succeeded": 3,
+    "model_calls_unknown": 0,
+    "node_runs": {
+      "apply_policy": 1,
+      "approval": 1,
+      "coder": 1,
+      "finalize": 1,
+      "planner": 1,
+      "prepare": 1,
+      "researcher": 1,
+      "reviewer": 1,
+      "test_analyst": 1,
+      "test_runner": 1
+    },
+    "status": "completed"
+  },
+  "source_audit": {
+    "api_package_files_matched": 48,
+    "eval_image_asset_count": 37,
+    "evaluation_assets_matched": 37,
+    "historical_files_unchanged": {
+      "docs/evidence/2026-09-09-failure-ledger.json": "564d6b89ebb37040fe678e0e3267fe49820b61905c827201d8ee9ba405b7d0c0",
+      "docs/failure-analysis-2026-09-09.md": "ac73488492f83fbc275e42cd29c1fdd9d3007bad77ecdf53579ac4ad1496a7a2",
+      "docs/real-evaluation-results-2026-09-09.md": "38e2d49551a8e90249360641582cef353893a5299677c18297864efff0c6b3bb",
+      "evals/cases.jsonl": "6e5c1012e81c11d9a4cda4d2d5f761313398f5383bb0a3a71960e6569b25bdf7"
+    },
+    "installed_package_files_matched": 48,
+    "source_commit": "81dae390d218e9d973c629e9375c1fe55ed08300",
+    "source_test_files_matched": 91
+  },
+  "status": "VERIFIED",
+  "synthetic_fixture": {
+    "actual_docker": true,
+    "counts_as_real_defect": false,
+    "fail_to_pass_count": 2,
+    "hidden_metadata_absent_from_all_captured_model_inputs": true,
+    "kind": "synthetic",
+    "model": "deterministic owned fixture strategy",
+    "modes": [
+      "oneshot",
+      "workflow"
+    ],
+    "pass_to_pass_count": 1,
+    "project": "tinyledger",
+    "workflow_stopped_at_approval": true
+  },
+  "verified_source_commit": "81dae390d218e9d973c629e9375c1fe55ed08300",
+  "worker_restart": {
+    "model_calls_before": 3,
+    "model_calls_started": 3,
+    "model_calls_succeeded": 3,
+    "model_calls_unknown": 0,
+    "node_runs": {
+      "apply_policy": 1,
+      "approval": 1,
+      "coder": 1,
+      "finalize": 1,
+      "planner": 1,
+      "prepare": 1,
+      "researcher": 1,
+      "reviewer": 1,
+      "test_analyst": 1,
+      "test_runner": 1
+    },
+    "status": "completed"
+  }
+}

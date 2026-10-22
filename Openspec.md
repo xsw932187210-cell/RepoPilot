@@ -1,6 +1,6 @@
 # RepoPilot 项目规范与迭代验收
 
-> 更新日期：2026-10-22；本轮起始基线：`f6b4c3c`；CH-06A 已由 PR #9 合并；CH-06C 已完成隔离验收并推送，未合并；CH-07A 实现与验收中；最近完整真实模型评测：2026-09-09。
+> 更新日期：2026-10-22；本轮起始基线：`f6b4c3c`；CH-06A 已由 PR #9 合并；CH-06C 已完成隔离验收并推送，未合并；CH-07A 已完成验收，未合并；最近完整真实模型评测：2026-09-09。
 > 本文是现有项目的规范入口，记录当前行为、证据和后续变更的验收标准。
 > 本次建立的是单文件规范，尚未接入 OpenSpec CLI，也不代表已建立其提案、归档或自动校验流程。
 > 规划版本：Roadmap v3。CH-01～CH-08、CH-21 为主题编号，具体开发选带字母的子任务；新增的上下文与历史案例探索按需启动。
@@ -191,7 +191,7 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 - 每个 case-mode 独立原子落盘；相同配置续跑时复用 `completed` 与 `failed`，重试尚未完成或 `pending_quota` 的记录。schema 4 在每次预留/发起/结果后持久化计数，续跑保留预算并把未定响应转为 `unknown`。失败案例不会自动无限重跑。
 - 指纹覆盖数据集、案例选择、精确 provider/模型、配置、调用策略、实现和镜像等身份；`evaluation-call-budget-v2` 与旧 schema-3 记录不混用，fallback/模型切换使用新实验身份。
 - 限流和临时故障进行有上限的退避；所有 API 尝试计入预算，SDK 隐式重试关闭。配额耗尽保留已完成进度和独立 pending 状态。
-- 当前 evaluator 配置 v8 的模型案例记录去除原始 Diff、命令、进程输出、逐测试标识，保留聚合计数和脱敏失败原因；未执行的配额占位项不计入时延统计。
+- v8 引入的模型案例存储约束在当前 v9 保留：去除原始 Diff、命令、进程输出、逐测试标识，保留聚合计数和脱敏失败原因；未执行的配额占位项不计入时延统计。
 - 以上持久化约束不自动覆盖复现缓存、在线图状态和事件 payload；这些数据仍需按用途审查。未知 Token 或金额记录为缺失，不能估造。
 
 验证入口：[真实评测协议](docs/real-evaluation-protocol.md)、[test_eval_runtime.py](tests/test_eval_runtime.py)、[test_acceptance.py](tests/test_acceptance.py)、[test_eval_report.py](tests/test_eval_report.py)。
@@ -208,6 +208,7 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 | CH-03B 发布与对账 | 2026-10-22：Linux 281 passed / 0 skipped，83.55% coverage；27 项服务测试实跑，五阶段硬退出、Mock 10/10、smoke/Worker 重启和 80 文件来源核对通过 | GitHub 使用测试 transport；单执行者意图重放及取消/移动后对账，不是实际 GitHub 集成、fencing、外部事务或自动发布恢复 |
 | CH-06A 可确认取消与截止 | 2026-10-22：Linux 314 passed / 0 skipped，84.19% coverage；35 项服务入口全部实跑，真实容器/进程组停止及兄弟资源不受影响，Mock 10/10、smoke/Worker 重启通过；86 份源码与 46 份安装包来源一致 | 本地执行停止确认；不保证 provider 停止计费或远端回滚，清理失败/重启留待检查，无 Worker fencing/自动重领 |
 | CH-06C 数据出口与私有状态 | 2026-10-22：Linux 352 passed / 0 skipped，85.42%；40 项服务入口实跑，31 项边界/2 项评测/5 项服务新增回归，真实 PostgreSQL checkpoint、Mock 10/10、smoke/Worker 重启通过，90/48 文件来源一致 | 仅已知模式/字段投影，源码与证据摘要不重写；保留期人工管理，不是任意秘密发现、生产加密、多用户隔离或新真实模型效果 |
+| CH-07A 项目适配与评测身份 | 2026-10-22：Linux 392 passed / 0 skipped，87.20%；40 项服务与两个新增 Docker 路径实跑，Mock 10/10、smoke/Worker 重启通过；原 20 例元数据/4996 个文件实例权限/初始检索等价、Docker 复现 20/20；91/48/37 文件来源一致 | 第二项目是自有合成夹具；没有新增真实缺陷、保留集、路由收益或真实模型质量实验 |
 | CH-01A 离线诊断 | 2026-10-19：核对 40 个 case-mode，公开 12 个未通过项的观察分类与未知根因；lint、154 passed / 3 skipped、80.78% 行覆盖率 | 对 2026-09-09 v7 历史记录做离线分析；不是新真实模型实验，也不补足 CH-02B 集成验收 |
 | CH-02B 服务验收 | 2026-10-19：PostgreSQL 16.15 / Redis / Docker 下 6 项专项通过，容器内 Mock 10/10，API smoke 和实际 Worker 审批重启恢复通过，专属资源清理确认 | 中途 checkpoint 经测试入口显式恢复；未实现自动队列找回。离线套件 154 passed / 9 skipped，80.78%；6 项服务测试另行实跑，另外 3 项 PostgreSQL 条件入口未重跑 |
 | Mock 工作流回归 | 10/10 | 验证流程及确定性夹具，不代表 LLM 编码能力 |
@@ -227,7 +228,7 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 
 | 缺口 | 当前表现 | 对应后续变更 |
 | --- | --- | --- |
-| 项目级权限适配 | 已实现 schema-2 受信任 Python 项目 manifest、源码/只读路径和环境绑定，原 20 例口径保持；跨项目真实数据集尚未建立 | CH-07A 验收中；CH-07B 数据 |
+| 项目级权限适配 | 已验收 schema-2 受信任 Python 项目 manifest、源码/只读路径和环境绑定，原 20 例口径保持；跨项目真实数据集尚未建立 | CH-07B 数据 |
 | 任意外部 writer / 产物保留 | 已有私有暂存、OS 锁、完整代次 CAS 和改动检测；管理员可绕过应用边界，尚无回收/保留期策略 | CH-04B、CH-16 |
 | 发布与远端变化的原子性 | 已按获批 SHA/完整 artifact 构建并持久化意图/对账；基线检查与 GitHub 移动不原子，重验标记保留；尚无多 Worker fencing 或自动恢复调度 | CH-04B/C |
 | 队列出队后崩溃 / 锁到期 | 无自动回收或阻止过期 Worker 副作用的机制 | CH-04 |
@@ -307,7 +308,7 @@ S/M/L 表示相对范围：S 通常是独立诊断或小接口；M 是一组紧�
 
 2026-10-19 确认的质量迭代顺序：先做 CH-01A 失败归因，再通过 CH-07A/B/C 建立跨项目开发集和冻结保留集；按证据选择 CH-13 Reviewer 校准或 CH-01B 任务路由，每次只验证一个主要策略变化。CH-14 的片段检索、CH-21 的压缩/历史案例复用由大文件、长任务或重复仓库任务的瓶颈触发；CH-12 多用户权限由明确使用需求触发，不作为本轮前置功能。
 
-CH-01A、CH-02B、CH-03A 已于 2026-10-19、CH-05A 于 2026-10-21、CH-03B 于 2026-10-22 完成验收，依赖历史已由 PR #8 合并为 `main@554012e`。CH-06A 于 2026-10-22 验收并由 PR #9 合并为 `main@4d55a5b`。CH-02A、CH-09、CH-10 已合并。CH-06C 也已在独立分支通过验收，未合并。下一张建议 **CH-04A**，硬依赖 CH-09 已合并；质量数据方向可独立开展 **CH-07A**。执行顺序始终以各卡硬依赖为准。
+CH-01A、CH-02B、CH-03A 已于 2026-10-19、CH-05A 于 2026-10-21、CH-03B 于 2026-10-22 完成验收，依赖历史已由 PR #8 合并为 `main@554012e`。CH-06A 于 2026-10-22 验收并由 PR #9 合并为 `main@4d55a5b`。CH-02A、CH-09、CH-10 已合并。CH-06C 和 CH-07A 均已通过验收，尚未合并。用户于 2026-10-22 确认五卡质量路线 **CH-07A → CH-07B → CH-07C → CH-01B → CH-01C**；本轮交付 CH-07A，下一张 **CH-07B** 的适配实现/证据已具备。执行顺序以各卡硬依赖为准，未预设真实模型效果。
 
 ### 8.4 跨任务接口约定（已落实项与待实现设计）
 
@@ -574,7 +575,7 @@ CH-06C 接口映射（2026-10-22，已实现并验收）：public-data-v1 对公
 
 #### CH-07A：解除真实评测对单仓库的硬编码
 
-- **状态**：IN_PROGRESS（2026-10-22，从干净 `codex/ch-06c-data-boundaries@f6b4c3c` 建立 `codex/ch-07a-project-adapters`，保留未合并 CH-06C 历史；CH-02A 硬依赖已合并）。**优先级/规模**：P1 / M。**硬依赖**：CH-02A。
+- **状态**：VERIFIED（2026-10-22，固定源码 `81dae39`；Linux 392 passed / 0 skipped、87.20%，原 20 例兼容/复现与第二项目 Docker 路径、Mock/smoke/Worker 重启通过；保留未合并 CH-06C 基线历史，尚未合并）。**优先级/规模**：P1 / M。**硬依赖**：CH-02A。
 - **入口**：`real_tasks.py`、`real_evaluation.py`、`acceptance.py`、`evals/real/manifest.json`。
 - **实施步骤**：
   1. 在 manifest/schema 中显式记录 project、source roots、只读路径、buggy/fixed commit、可见/隐藏测试策略、runtime image 身份和许可。
@@ -584,6 +585,7 @@ CH-06C 接口映射（2026-10-22，已实现并验收）：public-data-v1 对公
 - **验收场景**：原 20 例加载/权限口径一致；第二个小型 Python 夹具能走全链路；不合法路径、错误 hash、缺少许可/环境信息被拒；隐藏 metadata 不出现在模型上下文。
 - **交付**：项目适配接口、schema 迁移说明与离线测试；不要求这一轮搜集 50 例。
 - **范围边界**：本卡只交付适配能力与夹具，不将第二个合成项目当作真实缺陷评测证据，也不改变旧实验的历史身份。
+- **本轮交付**：[项目适配与迁移契约](docs/project-adapters.md)、[专项验收](docs/ch07a-verification-2026-10-22.md)、[脱敏摘要](docs/evidence/2026-10-22-ch07a-verification.json)；原 manifest 按字节归档为 schema-1 只读记录，原 20 个 task/fingerprint 不变。真实模型修复率仍使用历史报告。
 
 #### CH-07B：固定跨项目开发集与保留评测集
 
@@ -1166,3 +1168,15 @@ smoke 使用已经运行的服务。若 `.env` 选择真实模型，应按 [READ
 - PR / 合并：CH-06C 已推送[独立分支](https://github.com/xsw932187210-cell/RepoPilot/tree/codex/ch-06c-data-boundaries)，首次推送 2624c48 包含实现/验收记录，未创建新 PR、未合并；后续仅回填实际推送元数据。PR #9 已合并。
 - 规范：RP-06/RP-07、8.4、README、架构/运行时/模型调用/评测协议及出口契约同步；CH-06C 为 VERIFIED。
 - 下一张建议：CH-04A（硬依赖 CH-09 已合并），质量方向可选 CH-07A；本轮不执行其他卡。
+
+### 2026-10-22 · CH-07A · 受信任项目适配与旧评测保护
+
+- 用户确认五卡质量路线 CH-07A → CH-07B → CH-07C → CH-01B → CH-01C，按依赖分卡实现/验收；当前交付第一张 CH-07A，不预设真实模型收益。
+- 接手基线 f6b4c3c 工作区干净，fetch 后 main 仍为 4d55a5b；CH-02A a2cb1d5 为祖先，CH-06C 已验收并推送但未合并。新分支 codex/ch-07a-project-adapters 保留其历史，固定验收源码 81dae390d218e9d973c629e9375c1fe55ed08300。
+- 范围：manifest schema 2、python-source-v1 适配、项目源码/只读/测试根与镜像/Python path 绑定、recipe/overlay 实际 hash 校验；evaluator 9 / acceptance 4 / withheld-junit-v2。源码缓存和镜像按项目映射，错误覆盖拒绝。旧 manifest 原字节保留为 manifest-v1.json，原 20 个任务/fingerprint 不变；旧目录和不同配置拒绝混写。
+- 验证：lint/diff/脚本语法通过；宿主 350 passed / 42 skipped、85.66%；独立 Linux 392 passed / 0 failed / 0 skipped、87.20%。原 40 个服务入口和两个新增 Docker 路径全部实跑；新增适配回归 40 项。Mock 10/10、smoke completed、实际 Worker 审批重启调用 3→3、unknown=0、test_runner/finalize 各 1 次。
+- 原语料：20/20 task metadata/fingerprint、4996 个导出文件实例的读写权限及初始 issue-only 检索与旧版相同；固定镜像 Docker buggy/fixed 复现 20/20。上游测试没有在宿主运行，没有真实模型调用。
+- 第二项目：tinyledger 为自有合成夹具，src/、checks/、源码中的显式只读文件和独立 Python path；确定性 one-shot/workflow 通过实际 Docker 测试、候选重放与隐藏验收，2 个 fail-to-pass/1 个 pass-to-pass，workflow 停在人审。所有模型输入中未发现 fixed commit、overlay hash、隐藏断言/验收 metadata；不计入真实缺陷或质量效果。
+- 环境与来源：project repopilot_ch07a_20261022_82289，端口 58100；Python 3.12.15、PostgreSQL 16.15、LangGraph 1.2.16、saver 3.2.0、LangSmith 0.14.11。复用已验收依赖后重装当前代码，91 份源码/测试、测试/API 各 48 份安装包和 37 份 eval 资产与工作区及固定提交一致。专属容器/卷/网络清理确认，镜像保留。
+- 证据见 docs/ch07a-verification-2026-10-22.md、docs/project-adapters.md 和 docs/evidence/2026-10-22-ch07a-verification.json。最初默认 Python 无 pytest/仓库无 venv、组合镜像查询失败与宿主中间版 346/42/84.73% 均保留说明，最终完整重跑不复用中间结果。原始日志仅在忽略的 reports/。
+- 历史与限制：2026-09-09 真实报告、失败分析/账本、Mock 数据集与 b7cf1c9 逐字节相同；没有新真实模型结果、跨项目保留集、重复统计、路由或修复率收益。配方 hash 不是构建证明，Docker 仍共享内核。本卡为 VERIFIED，CH-07B/07C/01B/01C 保持 TODO；下一卡 CH-07B 硬依赖已有实现和验收。

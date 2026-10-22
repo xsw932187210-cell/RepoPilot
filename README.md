@@ -207,6 +207,9 @@ source/read-only/test paths, immutable runtime images and verified evaluator rec
 Source caches are mapped per project; old manifests and experiment directories remain read-only.
 The real corpus still contains 20 The Fuck cases. The second project is a synthetic Docker
 fixture for adapter correctness and adds no model-quality claim.
+The [CH-07A verification](docs/ch07a-verification-2026-10-22.md) records 392 Linux tests
+with zero skips and 87.20% coverage, original-corpus compatibility/reproduction 20/20,
+two synthetic Docker evaluation paths, Mock 10/10 and approval restart recovery.
 
 Run `make eval-real-retrieval` to measure issue-only target-file ranking on the same commits without
 calling a model. Its local JSON report is separate from both repair quality and the mock workflow
