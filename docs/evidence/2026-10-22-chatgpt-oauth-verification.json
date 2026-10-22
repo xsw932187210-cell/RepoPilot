@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-22",
+  "scope": "local-chatgpt-authorization-preflight",
+  "source_commit": "9dfe7a78ae8ec5e71de949e713bd31a3bbba9b3f",
+  "branch": "codex/chatgpt-oauth-setup",
+  "authorization": {
+    "human_completed_browser_consent": true,
+    "identity_signature_verified": true,
+    "plan_usage_authorized": true,
+    "access_token_current_at_verification": true,
+    "model_catalog_read": true,
+    "visible_models": [
+      "gpt-6.1-sol", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna",
+      "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"
+    ],
+    "inference_requests": 0,
+    "workflow_adapter_connected": false,
+    "automatic_refresh_implemented": false,
+    "credential_directory_mode": "0700",
+    "credential_files_mode": "0600",
+    "credential_files_tracked": false
+  },
+  "deepseek": {"key_configured": true, "requests": 0},
+  "git_delivery": {
+    "pushed": true,
+    "pull_request": "https://github.com/xsw932187210-cell/RepoPilot/pull/11",
+    "draft": true,
+    "merged": false,
+    "base": "codex/ch-07a-project-adapters",
+    "base_sha": "d4353b992cfcd37e57137f2c170793d70cfb5cdb",
+    "ci_verified_head": "1307cea84c95875a2974047d5c18507c668cbeda",
+    "ci_run": 39808935536,
+    "ci_conclusion": "success"
+  },
+  "verification": {
+    "platform": "darwin",
+    "python": "3.13.5",
+    "focused_passed": 24,
+    "host_passed": 374,
+    "host_skipped": 42,
+    "host_failures": 0,
+    "host_errors": 0,
+    "host_seconds": 57.663,
+    "coverage_percent": 85.44621749408984,
+    "oauth_coverage_percent": 80.50541516245487,
+    "ruff": "passed",
+    "diff_check": "passed",
+    "mock_count": 10,
+    "mock_successful": 10,
+    "mock_model": "deterministic-mock-v1",
+    "mock_dataset_sha256": "6e5c1012e81c11d9a4cda4d2d5f761313398f5383bb0a3a71960e6569b25bdf7",
+    "docker_rerun": false,
+    "PyJWT": "2.15.1",
+    "cryptography": "50.0.2",
+    "httpx": "0.28.1",
+    "pytest": "8.4.2"
+  },
+  "source_sha256": {
+    ".gitignore": "ac4f1dd534797774509040743786196b4339fe70fa373453a24c2e6d88f3ac3f",
+    "README.md": "0a8869300849b07281bb2ce04d533e628a0c4d8221d942d8b612c84cb48f4707",
+    "docs/chatgpt-authorization.md": "9718b6e23d4e5fb3c61053b82de559a205adcde100b6bbd1e1d3304a32c93284",
+    "pyproject.toml": "0d02a8123991f3276761c3a217ac82299e8c38863bff7ce50b54dcd5de2f3ab6",
+    "src/repopilot/chatgpt_auth.py": "e184b3404d375507212761fff07d0e40b06b1713e70a65d913288d12e8d922b5",
+    "tests/test_chatgpt_auth.py": "c755eb91bf8dedb0f33c32a1bc040c6e2b483143c7fa9993a36a946fc3cb571e"
+  },
+  "evidence_sha256": {
+    "reports/chatgpt-oauth-host.xml": "f88135196993175d54df762217a3113ee1704f60479af5032fd37e00d212f6fc",
+    "reports/chatgpt-oauth-coverage.json": "d0d306a7f7f2909342c61512e466637509b68200caa1c63b4931a8156f8e463a",
+    "reports/chatgpt-oauth-mock.json": "10984f07df148cfb6665ddf08c57b4c8ed2f52b472601752e73fc74be4b1bc30"
+  }
+}
