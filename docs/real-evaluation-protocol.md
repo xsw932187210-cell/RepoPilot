@@ -1,8 +1,13 @@
 # Real-defect evaluation protocol
 
-This is a small, one-project pilot, **not** SWE-bench and not evidence of general
-repository repair performance. The corpus is 20 pinned BugsInPy defects from The Fuck.
+The original protocol is a small, one-project pilot, **not** SWE-bench or evidence of
+general repair performance: 20 pinned BugsInPy defects from The Fuck.
 Corpus metadata and third-party test licenses are under `evals/real/`.
+
+CH-07B separately freezes `python-pilot-v1`: 23 reproduced cases / three projects,
+with the original 20 as development and three project-disjoint holdout cases.
+See [freeze and contamination rules](real-task-corpus.md#frozen-cross-project-pilot-v1).
+This adds no model-quality result or replacement for the historical experiment identity.
 
 The current implementation uses manifest schema **2**, evaluator configuration **11**,
 acceptance protocol **4** and `withheld-junit-v2`. Trusted project adapters declare source

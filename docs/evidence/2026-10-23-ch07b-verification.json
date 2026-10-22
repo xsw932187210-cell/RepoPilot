@@ -1,0 +1,557 @@
+{
+  "schema_version": 1,
+  "card": "CH-07B",
+  "date": "2026-10-23",
+  "verified_source_commit": "1c5e61b4baa74d38eb8124829a9e3aa4b8a46e60",
+  "base_commit": "d7e9d21e7aa8f42b53fca73c0846d229edcd4810",
+  "freeze_fingerprint": "c616e16419a9313b46ff733dc201a8f0a8bd86de313301f1b9fae266099c2adf",
+  "contamination_sha256": "a3e3dab76ca40d6cad36e41f38bcad8d1beb45b5a56e865fb6ec2c05deb27495",
+  "real_model_calls": 0,
+  "host": {
+    "python": "3.13.5",
+    "passed": 445,
+    "skipped": 42,
+    "coverage_percent": 85.921926910299,
+    "duration_seconds": 60.04
+  },
+  "linux_boundaries": {
+    "python": "3.12",
+    "passed": 29,
+    "skipped": 0,
+    "network": "none",
+    "read_only_source_mounts": true,
+    "image": "repopilot_ch07a_models_20261023-test:local",
+    "image_id": "sha256:952e06f59889273d528f430f4db4023684033a342a82b59f1b45f68f1e74ee11"
+  },
+  "reproduction": {
+    "selected": 23,
+    "verified": 23,
+    "projects": 3,
+    "development": 20,
+    "holdout": 3,
+    "test_scope": "focused",
+    "public_symptom_checks": 3,
+    "files_checked": 5399,
+    "workspace_boundaries": [
+      {
+        "case_id": "thefuck-001",
+        "project": "thefuck",
+        "verified": true,
+        "workspace_boundary": {
+          "files_checked": 401,
+          "tree_sha256": "87fa54e623089f0173c8b3d7762db2d486255112170fa227aaaccf6dabe31225",
+          "history_free": true,
+          "original_tests_only": true,
+          "test_paths_readonly": true,
+          "reference_metadata_in_context": false,
+          "context_files": 12,
+          "context_chars": 50852
+        },
+        "fail_to_pass_count": 1,
+        "pass_to_pass_count": 1
+      },
+      {
+        "case_id": "thefuck-002",
+        "project": "thefuck",
+        "verified": true,
+        "workspace_boundary": {
+          "files_checked": 380,
+          "tree_sha256": "76a3045380c4444d1d0f34fa63bec2589477fbcbc6f4771b9f8d89aa3e1a483f",
+          "history_free": true,
+          "original_tests_only": true,
+          "test_paths_readonly": true,
+          "reference_metadata_in_context": false,
+          "context_files": 12,
+          "context_chars": 42941
+        },
+        "fail_to_pass_count": 1,
+        "pass_to_pass_count": 1
+      },
+      {
+        "case_id": "thefuck-005",
+        "project": "thefuck",
+        "verified": true,
+        "workspace_boundary": {
+          "files_checked": 359,
+          "tree_sha256": "b4128436e757965b271ff43fd8356b76711357acecaa8ba94fe34b5aa970621b",
+          "history_free": true,
+          "original_tests_only": true,
+          "test_paths_readonly": true,
+          "reference_metadata_in_context": false,
+          "context_files": 12,
+          "context_chars": 47533
+        },
+        "fail_to_pass_count": 1,
+        "pass_to_pass_count": 0
+      },
+      {
+        "case_id": "thefuck-006",
+        "project": "thefuck",
+        "verified": true,
+        "workspace_boundary": {
+          "files_checked": 359,
+          "tree_sha256": "2e11d5c6a9c8a1c6f4cb752b2b4946641cc3e5232d990c8a2b9d7f6716cff4cc",
+          "history_free": true,
+          "original_tests_only": true,
+          "test_paths_readonly": true,
+          "reference_metadata_in_context": false,
+          "context_files": 12,
+          "context_chars": 55453
+        },
+        "fail_to_pass_count": 1,
+        "pass_to_pass_count": 2
+      },
+      {
+        "case_id": "thefuck-007",
+        "project": "thefuck",
+        "verified": true,
+        "workspace_boundary": {
+          "files_checked": 346,
+          "tree_sha256": "d1e795cb460d6298c862a822def5c14e55272802d7cc7518a2045f3084efe3f1",
+          "history_free": true,
+          "original_tests_only": true,
+          "test_paths_readonly": true,
+          "reference_metadata_in_context": false,
+          "context_files": 12,
+          "context_chars": 54077
+        },
+        "fail_to_pass_count": 1,
+        "pass_to_pass_count": 1
+      },
+      {
+        "case_id": "thefuck-009",
+        "project": "thefuck",
+        "verified": true,
+        "workspace_boundary": {
+          "files_checked": 277,
+          "tree_sha256": "96dcbbf0cc266c63386d8e50ec3af90812f0f32dac075eb36f09133fcbce12ae",
+          "history_free": true,
+          "original_tests_only": true,
+          "test_paths_readonly": true,
+          "reference_metadata_in_context": false,
+          "context_files": 12,
+          "context_chars": 42289
+        },
+        "fail_to_pass_count": 1,
+        "pass_to_pass_count": 0
+      },
+      {
+        "case_id": "thefuck-010",
+        "project": "thefuck",
+        "verified": true,
+        "workspace_boundary": {
+          "files_checked": 275,
+          "tree_sha256": "136e8263072b87d4763c2548cb51a41a4bf010fdd29e272f6698e16007052961",
+          "history_free": true,
+          "original_tests_only": true,
+          "test_paths_readonly": true,
+          "reference_metadata_in_context": false,
+          "context_files": 12,
+          "context_chars": 54741
+        },
+        "fail_to_pass_count": 2,
+        "pass_to_pass_count": 6
+      },
+      {
+        "case_id": "thefuck-011",
+        "project": "thefuck",
+        "verified": true,
+        "workspace_boundary": {
+          "files_checked": 275,
+          "tree_sha256": "4fea80f238d3d85040ca3f20589445827f53d4f54df0cbe81e227322901ecc02",
+          "history_free": true,
+          "original_tests_only": true,
+          "test_paths_readonly": true,
+          "reference_metadata_in_context": false,
+          "context_files": 12,
+          "context_chars": 40552
+        },
+        "fail_to_pass_count": 1,
+        "pass_to_pass_count": 0
+      },
+      {
+        "case_id": "thefuck-012",
+        "project": "thefuck",
+        "verified": true,
+        "workspace_boundary": {
+          "files_checked": 242,
+          "tree_sha256": "678bdc9a09bf2c3e02f7391bb9eca6bd491c34e356c231037134903815555f71",
+          "history_free": true,
+          "original_tests_only": true,
+          "test_paths_readonly": true,
+          "reference_metadata_in_context": false,
+          "context_files": 12,
+          "context_chars": 56705
+        },
+        "fail_to_pass_count": 6,
+        "pass_to_pass_count": 0
+      },
+      {
+        "case_id": "thefuck-013",
+        "project": "thefuck",
+        "verified": true,
+        "workspace_boundary": {
+          "files_checked": 242,
+          "tree_sha256": "cfb218f3065a0086b54f4111050c7f82f5b9783fae727d549eb237deae78491a",
+          "history_free": true,
+          "original_tests_only": true,
+          "test_paths_readonly": true,
+          "reference_metadata_in_context": false,
+          "context_files": 12,
+          "context_chars": 31591
+        },
+        "fail_to_pass_count": 3,
+        "pass_to_pass_count": 1
+      },
+      {
+        "case_id": "thefuck-015",
+        "project": "thefuck",
+        "verified": true,
+        "workspace_boundary": {
+          "files_checked": 232,
+          "tree_sha256": "161e7060694c34027fb8ec0e2f766ba737150d5ec99d92b92a5266dadf35579a",
+          "history_free": true,
+          "original_tests_only": true,
+          "test_paths_readonly": true,
+          "reference_metadata_in_context": false,
+          "context_files": 12,
+          "context_chars": 47980
+        },
+        "fail_to_pass_count": 2,
+        "pass_to_pass_count": 0
+      },
+      {
+        "case_id": "thefuck-018",
+        "project": "thefuck",
+        "verified": true,
+        "workspace_boundary": {
+          "files_checked": 205,
+          "tree_sha256": "e258bdedcf82ce8bfe151a219085103756fa09c973fe57378daa96d5f3e6411d",
+          "history_free": true,
+          "original_tests_only": true,
+          "test_paths_readonly": true,
+          "reference_metadata_in_context": false,
+          "context_files": 12,
+          "context_chars": 39985
+        },
+        "fail_to_pass_count": 1,
+        "pass_to_pass_count": 0
+      },
+      {
+        "case_id": "thefuck-019",
+        "project": "thefuck",
+        "verified": true,
+        "workspace_boundary": {
+          "files_checked": 201,
+          "tree_sha256": "9beeffe91f98a097dc2e79ef4c07fe353c12c4c97ac52b289273e1fd9e8ed7d9",
+          "history_free": true,
+          "original_tests_only": true,
+          "test_paths_readonly": true,
+          "reference_metadata_in_context": false,
+          "context_files": 12,
+          "context_chars": 35205
+        },
+        "fail_to_pass_count": 3,
+        "pass_to_pass_count": 0
+      },
+      {
+        "case_id": "thefuck-021",
+        "project": "thefuck",
+        "verified": true,
+        "workspace_boundary": {
+          "files_checked": 198,
+          "tree_sha256": "17bc327defd704755dd290b0a89766468f17ff182c890da25b8ca6d9283db4a6",
+          "history_free": true,
+          "original_tests_only": true,
+          "test_paths_readonly": true,
+          "reference_metadata_in_context": false,
+          "context_files": 12,
+          "context_chars": 48501
+        },
+        "fail_to_pass_count": 1,
+        "pass_to_pass_count": 0
+      },
+      {
+        "case_id": "thefuck-022",
+        "project": "thefuck",
+        "verified": true,
+        "workspace_boundary": {
+          "files_checked": 197,
+          "tree_sha256": "19003d45028806199df0191b7d3bba85ebfaf71f144327d49a6bacebb27f809d",
+          "history_free": true,
+          "original_tests_only": true,
+          "test_paths_readonly": true,
+          "reference_metadata_in_context": false,
+          "context_files": 12,
+          "context_chars": 41489
+        },
+        "fail_to_pass_count": 1,
+        "pass_to_pass_count": 0
+      },
+      {
+        "case_id": "thefuck-025",
+        "project": "thefuck",
+        "verified": true,
+        "workspace_boundary": {
+          "files_checked": 179,
+          "tree_sha256": "5847d563a7a1d114f73bbbd328ce1615a715c0230746390609643dc227ad7bee",
+          "history_free": true,
+          "original_tests_only": true,
+          "test_paths_readonly": true,
+          "reference_metadata_in_context": false,
+          "context_files": 12,
+          "context_chars": 47493
+        },
+        "fail_to_pass_count": 2,
+        "pass_to_pass_count": 1
+      },
+      {
+        "case_id": "thefuck-026",
+        "project": "thefuck",
+        "verified": true,
+        "workspace_boundary": {
+          "files_checked": 181,
+          "tree_sha256": "c19cbb29d5aad45e76b5f0ab379e31fa0f8eda6056cfde690a3831fe0210b846",
+          "history_free": true,
+          "original_tests_only": true,
+          "test_paths_readonly": true,
+          "reference_metadata_in_context": false,
+          "context_files": 12,
+          "context_chars": 46738
+        },
+        "fail_to_pass_count": 4,
+        "pass_to_pass_count": 0
+      },
+      {
+        "case_id": "thefuck-027",
+        "project": "thefuck",
+        "verified": true,
+        "workspace_boundary": {
+          "files_checked": 177,
+          "tree_sha256": "a29c7396c1671e2f10f87769d0eae3a5c1adc32a86c134cbdeed88edc03566e7",
+          "history_free": true,
+          "original_tests_only": true,
+          "test_paths_readonly": true,
+          "reference_metadata_in_context": false,
+          "context_files": 12,
+          "context_chars": 46368
+        },
+        "fail_to_pass_count": 3,
+        "pass_to_pass_count": 6
+      },
+      {
+        "case_id": "thefuck-031",
+        "project": "thefuck",
+        "verified": true,
+        "workspace_boundary": {
+          "files_checked": 144,
+          "tree_sha256": "c4539b0341e9816dd37dc8a8eb4cc5338f3d1cd549be9a782f3002ba36d68738",
+          "history_free": true,
+          "original_tests_only": true,
+          "test_paths_readonly": true,
+          "reference_metadata_in_context": false,
+          "context_files": 12,
+          "context_chars": 29910
+        },
+        "fail_to_pass_count": 1,
+        "pass_to_pass_count": 1
+      },
+      {
+        "case_id": "thefuck-032",
+        "project": "thefuck",
+        "verified": true,
+        "workspace_boundary": {
+          "files_checked": 126,
+          "tree_sha256": "ce366a9a0ed0c8d3a92d5eb67478d76fd7c634c35ee1ece52570d8c3db0ba8b9",
+          "history_free": true,
+          "original_tests_only": true,
+          "test_paths_readonly": true,
+          "reference_metadata_in_context": false,
+          "context_files": 12,
+          "context_chars": 29215
+        },
+        "fail_to_pass_count": 1,
+        "pass_to_pass_count": 0
+      },
+      {
+        "case_id": "tqdm-003",
+        "project": "tqdm",
+        "verified": true,
+        "workspace_boundary": {
+          "files_checked": 46,
+          "tree_sha256": "161094903449afde2a5b986e97c30b17bd30754a902ba367141d2b0df62dccda",
+          "history_free": true,
+          "original_tests_only": true,
+          "test_paths_readonly": true,
+          "reference_metadata_in_context": false,
+          "context_files": 4,
+          "context_chars": 60095
+        },
+        "fail_to_pass_count": 1,
+        "pass_to_pass_count": 0
+      },
+      {
+        "case_id": "cookiecutter-003",
+        "project": "cookiecutter",
+        "verified": true,
+        "workspace_boundary": {
+          "files_checked": 215,
+          "tree_sha256": "7876ade3cc53fa04475d3ac2998850997c1727975712adddf81197966b5cb4d3",
+          "history_free": true,
+          "original_tests_only": true,
+          "test_paths_readonly": true,
+          "reference_metadata_in_context": false,
+          "context_files": 12,
+          "context_chars": 60910
+        },
+        "fail_to_pass_count": 4,
+        "pass_to_pass_count": 0
+      },
+      {
+        "case_id": "cookiecutter-004",
+        "project": "cookiecutter",
+        "verified": true,
+        "workspace_boundary": {
+          "files_checked": 142,
+          "tree_sha256": "756173de6d86243b1775c9f69f08595994ed8b29fbeebf0269a19b2e7287a583",
+          "history_free": true,
+          "original_tests_only": true,
+          "test_paths_readonly": true,
+          "reference_metadata_in_context": false,
+          "context_files": 12,
+          "context_chars": 59234
+        },
+        "fail_to_pass_count": 1,
+        "pass_to_pass_count": 4
+      }
+    ]
+  },
+  "cookiecutter_runtime": {
+    "python": "3.8.20",
+    "packages": {
+      "pytest": "6.2.5",
+      "pytest-cov": "2.10.0",
+      "coverage": "5.1",
+      "click": "7.1.2",
+      "Jinja2": "2.11.2",
+      "MarkupSafe": "2.0.1",
+      "future": "0.18.3",
+      "six": "1.16.0",
+      "ruamel.yaml": "0.16.13"
+    }
+  },
+  "source_files": {
+    "scripts/verify_frozen_corpus.py": "79ce6798181c3e41d4774283347f67e4e45bc756d42bb2f013cd3412c8c2573d",
+    "src/repopilot/__init__.py": "f37df0ff88ae0460083109dc5be44016b6d4590b27f3d65e1eaee7f67f4218fc",
+    "src/repopilot/acceptance.py": "01e3fbe186710dbbbc6034f245ebd4933314671de0226c415aebfd66e011f573",
+    "src/repopilot/api.py": "3b86a22d735550b08ebc25b875e562e5192abd6e399a0053f5f96b593bb73fbb",
+    "src/repopilot/approval_models.py": "d9230356b228d2c41d9005677ba16d71bddd60fa9a05354d67046729d5d97aed",
+    "src/repopilot/approvals.py": "ae6874867a1149998e53e815104351bbcfb8a3e9dea63231ffcfecc057a91c29",
+    "src/repopilot/candidates.py": "6f919c53f1ba14468edfe689e86c93b21cdff038ed071f312ba8f304c9de10e6",
+    "src/repopilot/capabilities.py": "243cb066e4ecf8c978e8aee97e714b08d097d10d1c0e5e3197553c9ffe477b6a",
+    "src/repopilot/chatgpt_auth.py": "d64f4744fee0386169ada3485cb8d4465df9548d21a1f43c4659f496b6db0cea",
+    "src/repopilot/chatgpt_model.py": "88045e5c639f8ef5f534414f5fd404ae0375448f1b65052b1b3c41a4eadb8511",
+    "src/repopilot/config.py": "17e9e16bf8214a0a93957a7bba977f13e064eb07c1ac2e617f0881fcb74835be",
+    "src/repopilot/data_boundary.py": "fdbeb694f66a2bbd62d1477a1a7354740ab8cc4379506cd55bae097ddaebff4b",
+    "src/repopilot/db.py": "9fb375e4cc87feac01c09972926c95d6419f7eda8d353d3d810327e028cf57ed",
+    "src/repopilot/eval_report.py": "612eb7e2114ece072e06b89050735d93eac6d9d92b97f1f3caeab99eed97e43f",
+    "src/repopilot/eval_runtime.py": "e10e97fdd3666ba2e53695c59f3cc0c2fdd3e7bc39d4932a285a174e8f80795e",
+    "src/repopilot/evaluation.py": "ac62c14c6a983602e15b766d5ac8a578e1141e57dd61a7e3f320b43c8a25f291",
+    "src/repopilot/events.py": "a0eea9822e5b1a684d6349c9eb2a36a63d0e80d4110f2eec44a9acb7f0998d75",
+    "src/repopilot/execution.py": "e2b51b22a7e639b1dc9fe8845be77ceb6a7337c483e3d7db1e6807ac57c10cd5",
+    "src/repopilot/failure_analysis.py": "480086c5cd2ee785e43ee3cb751541c889eef71ea4d386d5e2ef9930eefc14e4",
+    "src/repopilot/frozen_corpus.py": "3a0d9c9b6c01aeb1ca7e9e42a783157f207aace8c3a1819eec676de762838149",
+    "src/repopilot/generations.py": "82cce5152ba017bc2e5f7cd37354215d1439ad76f68eacd806fc9df6008c90f5",
+    "src/repopilot/github.py": "01e7ee9d7b6baaa816bb57c60b1b3e9c95f9bca8cf9bdf20da3ee8b265a04b9b",
+    "src/repopilot/google_cloud.py": "5ac958bcfa933baa2f9dde78e8c1c414b1ba548a7785a4e4a2cdd8cc51540ecd",
+    "src/repopilot/graph/__init__.py": "9de793791dea8a0881dd3cb1b233e7082cd9d636d79471e08ff0fa6a57902034",
+    "src/repopilot/graph/builder.py": "575a0eb10c7e5a3fee29f434bc81a3373a2cc8c9406573d5019fc1a1b6844f8a",
+    "src/repopilot/graph/privacy.py": "f2b16500e75270d766a1b1d87fafd0b886319eb59d30d3092c0484650dd6fd4b",
+    "src/repopilot/graph/state.py": "3c012885e6f46186c81eb37cf231419cecbf0b234f7ef151513fe827244a4731",
+    "src/repopilot/llm.py": "70cc7a547116a56f84d2e033e3ae8c447aa9765c8240f4124a5945ed70b84578",
+    "src/repopilot/migrations/__init__.py": "dece82309e5d2e07bd5021b31994917d38abc90ce88de9ba37941908c484bfd3",
+    "src/repopilot/migrations/__main__.py": "c4847e1e78185f38d0c6130d1c1196a5a8d5e1d1c796ebc2408f2a226d8856d0",
+    "src/repopilot/migrations/cli.py": "840d143bef408780284930716cade474697404cbb45a7a8201b5a64e78b58fbc",
+    "src/repopilot/migrations/env.py": "2a7945e828649e4daa4a15e534523c4d209f110019170cd45dc1440b994f7d09",
+    "src/repopilot/migrations/versions/20260921_0001_legacy_baseline.py": "3dfffc8135ded11c8a11d1e27f8a0b5483c0942d0aa1685fd2ec3a8a42edcc67",
+    "src/repopilot/migrations/versions/20260921_0002_versioned_state.py": "b5f8e039dd081016975e4ddf589736893e03142803bba9d483dd44b6091698e1",
+    "src/repopilot/migrations/versions/20260921_0003_model_call_ledger.py": "e087287775e45729c56d6a0209416a046843ac228ac0c0c83af368bec1b640c8",
+    "src/repopilot/migrations/versions/20261019_0004_candidate_approval.py": "e41d4bba956b2e9c43a95a474c8bbfc1f6a8c7ff359967aa6ed02de2ee13ab2d",
+    "src/repopilot/migrations/versions/20261021_0005_candidate_generations.py": "ef3af7fce7fbe2faa3680bb935bbeb5350191460dff813364a59e101b28d8866",
+    "src/repopilot/migrations/versions/20261022_0006_publish_intents.py": "5877dc2167cacbae3a96495e31fa916281f8809033e0171ce1a9f05adfc7eb4e",
+    "src/repopilot/migrations/versions/20261022_0007_execution_control.py": "8c2c52c77f3f08327ceb7cb1e380a2028982afb4dda23806265e03f8c0e8e8d0",
+    "src/repopilot/migrations/versions/__init__.py": "968ff1d75b4c0d4a99457be06ea732cc5dcabd46db559eadae2673441531a3dc",
+    "src/repopilot/model_calls.py": "d3b62e1686c978bf24330af1e16c14d7aff5b27ca0f23a90867a521dcba88d0c",
+    "src/repopilot/models.py": "576a267c84f511467000d0cf92d86c039326fd4f802afbc40b162efedf3ae60a",
+    "src/repopilot/policy_feedback.py": "e2767cff1f33150dbe840768df7323ad0605843e6f7c68ba16faa6cf44c1827a",
+    "src/repopilot/publication.py": "6381719f346ffe428dbf7a5490d220c57ceb744bb158805e84bca6eda05b2144",
+    "src/repopilot/publication_cli.py": "c0d35782a5c4faa58ce12fd8719070c91ea624546d4cef8c908d00695576139e",
+    "src/repopilot/real_evaluation.py": "eef5b6b4f16ff2ec5a5b2ca10dca23cb255bd61a9eed37fd22059a4030ae228c",
+    "src/repopilot/real_tasks.py": "371375652841e7480311e962edcaee4815ecf07dea12cc945ecb9a6f696ad659",
+    "src/repopilot/repository.py": "394f2f1b76ebcad1fffd38124b5e0100c65a9da91e487c1adb114bb012100145",
+    "src/repopilot/retrieval.py": "4ca70cc4733047f00ec7bc10e52932d031e1e6c5ff2b10189d8945db9dc65826",
+    "src/repopilot/sandbox.py": "351a3e862407f486007b0658a63ee82312a37ca6e28b4a5dccde07e73d5b3401",
+    "src/repopilot/security.py": "83526e04e86d04faaac5ecb4f833112b81e060cd28d2ee32f54ff5c25530616c",
+    "src/repopilot/task_timing.py": "76203264bfdb4e6b96302a6ffc5a593f3111386d62c7b2921c56ed220aea4880",
+    "src/repopilot/worker.py": "2f22cb45eb2b182c0bb53e9b93e259c1d0281dd5517af244b4fbdaa683304c7c",
+    "tests/approval_helpers.py": "89be1cc8bcbd67447aa4f7fc32a73022321a9c2b204a1fa401b4f68c69da7d5c",
+    "tests/generation_helpers.py": "9abb8cc8dfb2a5dd8747659fed073b4e27eb99d3ab2d01b7127c7b561ad3117e",
+    "tests/legacy_tasks.py": "161b9edefaa2b425dd880ab1a43ad31a21d612403b311dfbf4658557cb02ac14",
+    "tests/publication_helpers.py": "196abc6682e101246261de3c7fc9cebe82ea13f07295680fe1b3378bb8e19c07",
+    "tests/test_acceptance.py": "6348e745af118f831493bdab27a594e6fc8d18cff1e9e18b771b79e5c33296f0",
+    "tests/test_approvals.py": "f7b4eb3674406bdb39c7f3f33676e05ef2b6077b0907103d02998038648debb7",
+    "tests/test_approvals_postgres.py": "cc7cad27ce67c79f17ad57bc608cbb6346a2560da5f99b0a6d889c7e9fcec156",
+    "tests/test_candidates.py": "f994cda2b87923c1b5a84ad06db100b423ad6fde71d47b705e27ac540a0c5e66",
+    "tests/test_capabilities.py": "e055f5323ae3b5b9b7219d7958c9e13fda22cb25d04b554562c38c9c6bd3341e",
+    "tests/test_chatgpt_auth.py": "c3495ede7a6f260abc1af4c8903de77e8c5fcab14ce60285cd2ce1f1c4778333",
+    "tests/test_chatgpt_model.py": "c6f492c159f8b996f9ad968adf0c738cbb63478818ca589c68dd30241fb08c64",
+    "tests/test_data_boundary.py": "dd02e51c16412101d0ba9ea10936654d0cebbe6b90aa0684267d0790a69f0845",
+    "tests/test_data_boundary_postgres.py": "61766ec95e95c965d5af0b527997ac63f77e93e37410bf20f2a4a5fb7a0697a4",
+    "tests/test_eval_report.py": "7ec3ed0aa5a9c6ded7299a068efeb079bf8df28f614876cbb6d6d154ce245d60",
+    "tests/test_eval_runtime.py": "4b4ffde8617f67ce8ab4a6f1132b3fa7b6181f3ff25d38ba35ce00f226aeb29a",
+    "tests/test_evaluation.py": "6a51184b65054e9f78c20188d1a99cfc06effb38342891b6a4a8911e0c8d3fd0",
+    "tests/test_execution_control.py": "6b99ca8814c7d2066a2965b0909bcfb134bc20a601dbc066f41453a95837c0ad",
+    "tests/test_execution_integration.py": "35140f0700ddb0eb116185fe90c7f0ea5e2f3842e219f8d1ffaf6ed9be1c8d6a",
+    "tests/test_failure_analysis.py": "f1beb9ec7e16bf3cef8778d42d1792e37d0c3396419c85e2a70b5f36f0608493",
+    "tests/test_frozen_corpus.py": "9c56b04091892adf2cf1692943418eaa1f1e00ed8f3d65c9709717f24949f626",
+    "tests/test_generations.py": "083296bc10599b4bba509cb616ef546a7682454263a5f6380539ab688eeb9a18",
+    "tests/test_generations_postgres.py": "2060bf902ab4ee7cebff3f56a4b3471b31ec4031bf3c0d99c904312c982e4e15",
+    "tests/test_github.py": "d9d9a84578de3f844ee8ac448f002142c233e0d3aea44e2b6c594eaac2c83df6",
+    "tests/test_google_cloud.py": "cf677d050730f48a6bee9f3c33be08ecfa46b4036afe02ceba0c61e3d99b167c",
+    "tests/test_graph.py": "8bd3fc206294894243a456693ced6ca5185166306e5daaf05611e8f999f0197d",
+    "tests/test_llm.py": "367e68d8a35ff31a7013d912f6d2fb42decdeb9186c4f380f76d15652c3e4f4f",
+    "tests/test_metrics.py": "d4980a8412bd38ba0029fe40aca4a4d215bbbce93aa716c121d3f44d1d48acd1",
+    "tests/test_migrations.py": "24aee84ff0fc10fafb67e75b4ecbecea4e74e5c045eec20208f05a60931776fe",
+    "tests/test_migrations_postgres.py": "0a843421ef08c51ca3cb3d140f3a1613578b513265240e015ba32154ea47fea6",
+    "tests/test_model_calls.py": "c137f53e16d12ced9df41b5533f64a500cbb3c9ab14c93872b7863ebcf878158",
+    "tests/test_model_calls_postgres.py": "b43948b3b5bc4077e9e7fcd070caaa634a29fe376955cde2f2285840dc5e4712",
+    "tests/test_model_connection_checks.py": "a787275c3768e46760daedd2a18a8535d80731e2a5a220edce535bdacefdcc80",
+    "tests/test_models.py": "623fa2873d9ce4766fb880b9b757e4725ae7330a36befd70112fe781f224b057",
+    "tests/test_policy_recovery_postgres.py": "c6bf4ec681672c5b265a6859486659f8146a489b9d9331cfe1c40928d3ac5918",
+    "tests/test_project_adapters.py": "0a39d7131dc7d9d8993889f8c5c9dee7ee62164e4accd7de76cbb3017a989572",
+    "tests/test_publication.py": "f4f632e5086d92ad8bd853f7e19f3aeea871639af5c7c224939ec3d2465d1040",
+    "tests/test_publication_postgres.py": "f4b6023f8359c86a262b3e800e9e5e99d4eecef666a49d3b2d3d378cab11c5cf",
+    "tests/test_real_evaluation.py": "ecfd74d4e42085f6915c6798b31b0d5f3a64164e3687827b5e62aea0d5bd9cb4",
+    "tests/test_real_tasks.py": "ecef3693f293ad199dede60f258c2a6c211be867ce6bcd7b66aea2b15c4019bb",
+    "tests/test_reliability.py": "600d0e7e705c06c6b782fdc87b3e6307198b88020a816b62fb56b405f63c2eee",
+    "tests/test_retrieval.py": "c98daf71159a1d1558e51f1a3a10b0de313117619bc9bc9b66a8a183f122dc10",
+    "tests/test_runtime_boundaries.py": "851593259660fb519f96be7dcb30b958842120c41f6db476c660345cf2c8b791",
+    "tests/test_sandbox.py": "6d5efe255aef968560ef44b6239ffc570f39117a6321ed5096004b094b19d170",
+    "tests/test_security.py": "1d330de080281b0b5935ff41c846ad6254cd2d023823b352d05cec8e2645fea6"
+  },
+  "known_credential_matches": 0,
+  "initial_failures_retained": [
+    "Cookiecutter missing historical pytest-cov plugin",
+    "Incorrect visible selector test_work_in instead of top-level test_workin",
+    "tqdm explicit total already works in selected buggy revision; remaining no-total symptom verified",
+    "Host first pass: 444 passed / 1 loopback timeout / 42 skipped (85.37%); unrestricted loopback rerun passed"
+  ],
+  "limitations": [
+    "Focused tests, not upstream full suites",
+    "Curator knows reference changes; no holdout prompt/router tuning",
+    "Public training contamination unknown",
+    "Old 20 task records and historical quality reports unchanged",
+    "Database/Worker behavior unchanged; full service regression not repeated for this data-only runtime slice"
+  ],
+  "historical_artifacts_equal_to_b7cf1c9": true
+}
