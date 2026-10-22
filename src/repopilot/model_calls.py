@@ -518,9 +518,11 @@ class InMemoryCallLedger:
         *,
         initial_snapshot: Mapping[str, Any] | None = None,
         state_hook: StateHook | None = None,
+        reservation_hook: Callable[[Mapping[str, Any]], Awaitable[None]] | None = None,
     ) -> None:
         self.policy = policy
         self.state_hook = state_hook
+        self.reservation_hook = reservation_hook
         self._lock = asyncio.Lock()
         self._attempts: dict[str, dict[str, Any]] = {}
         self._values = _empty_snapshot(policy)
@@ -616,6 +618,14 @@ class InMemoryCallLedger:
                 raise TokenBudgetExceeded(observed, self.policy.max_total_tokens)
             attempt_id = str(uuid.uuid4())
             sequence = used + 1
+            # Evaluation cohorts reserve their shared durable ceiling first. A crash
+            # before this local snapshot is saved still consumes the shared reserve.
+            if self.reservation_hook is not None:
+                await self.reservation_hook({
+                    "attempt_id": attempt_id, "role": role,
+                    "provider": identity.provider, "model": identity.model,
+                    "retry_index": retry_index,
+                })
             self._attempts[attempt_id] = {
                 "status": CallStatus.RESERVED,
                 "logical_call_id": logical_call_id,
@@ -846,6 +856,7 @@ class ModelCallBudget:
         initial_snapshot: Mapping[str, Any] | None = None,
         state_hook: StateHook | None = None,
         policy_version: str = EVALUATION_BUDGET_VERSION,
+        reservation_hook: Callable[[Mapping[str, Any]], Awaitable[None]] | None = None,
     ) -> None:
         self.policy = CallPolicy(
             max_calls=max_calls,
@@ -863,6 +874,7 @@ class ModelCallBudget:
             self.policy,
             initial_snapshot=initial_snapshot,
             state_hook=state_hook,
+            reservation_hook=reservation_hook,
         )
         self._caller = ControlledModelCaller(
             self._ledger,

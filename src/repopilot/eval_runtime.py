@@ -196,7 +196,9 @@ class EvaluationRuntime:
         max_total_backoff_seconds: float = 60.0,
         request_timeout_seconds: float = 90.0,
         max_output_tokens: int = 4_096,
+        max_total_tokens: int | None = None,
         sleeper: Sleeper = asyncio.sleep,
+        reservation_hook: Callable[[str, str, Mapping[str, Any]], Awaitable[None]] | None = None,
     ) -> None:
         if max_rate_limit_retries < 0:
             raise ValueError("max_rate_limit_retries cannot be negative")
@@ -212,6 +214,8 @@ class EvaluationRuntime:
             raise ValueError("request_timeout_seconds must be positive")
         if max_output_tokens < 1:
             raise ValueError("max_output_tokens must be positive")
+        if max_total_tokens is not None and max_total_tokens < 1:
+            raise ValueError("max_total_tokens must be positive or disabled")
         self.config = config
         self.record_dir = record_dir
         self.max_rate_limit_retries = max_rate_limit_retries
@@ -221,14 +225,16 @@ class EvaluationRuntime:
         self.max_total_backoff_seconds = max_total_backoff_seconds
         self.request_timeout_seconds = request_timeout_seconds
         self.max_output_tokens = max_output_tokens
+        self.max_total_tokens = max_total_tokens
         self.sleeper = sleeper
+        self.reservation_hook = reservation_hook
 
     @property
     def manifest_path(self) -> Path:
         return self.record_dir / "run.json"
 
     @property
-    def runtime_policy(self) -> dict[str, int | float | str]:
+    def runtime_policy(self) -> dict[str, int | float | str | None]:
         return {
             "call_control_version": EVALUATION_BUDGET_VERSION,
             "public_data_version": PUBLIC_DATA_VERSION,
@@ -239,6 +245,7 @@ class EvaluationRuntime:
             "max_total_backoff_seconds": self.max_total_backoff_seconds,
             "request_timeout_seconds": self.request_timeout_seconds,
             "max_output_tokens": self.max_output_tokens,
+            "max_total_tokens": self.max_total_tokens,
         }
 
     @property
@@ -320,6 +327,13 @@ class EvaluationRuntime:
         started_clock = time.perf_counter()
         initial_usage = (existing or {}).get("usage")
         attempts = int((existing or {}).get("attempts") or 0) + 1
+        history = list((existing or {}).get("execution_history") or [])
+        if existing and attempts > 1 and len(history) < attempts - 1:
+            history.append({
+                "attempt": attempts - 1,
+                "status": existing.get("status", "interrupted"),
+                "duration_ms": existing.get("duration_ms"),
+            })
         running = {
             "schema_version": SCHEMA_VERSION,
             "fingerprint": self.fingerprint,
@@ -330,6 +344,7 @@ class EvaluationRuntime:
             "finished_at": None,
             "duration_ms": None,
             "attempts": attempts,
+            "execution_history": history,
             "result": None,
             "error": None,
             "usage": dict(initial_usage) if isinstance(initial_usage, Mapping) else {},
@@ -338,6 +353,10 @@ class EvaluationRuntime:
         async def persist_usage(snapshot: Mapping[str, Any]) -> None:
             running["usage"] = dict(snapshot)
             self._write_record(running)
+
+        async def reserve_shared(payload: Mapping[str, Any]) -> None:
+            if self.reservation_hook is not None:
+                await self.reservation_hook(case_id, mode, payload)
 
         budget = ModelCallBudget(
             self.config.max_model_calls,
@@ -348,13 +367,30 @@ class EvaluationRuntime:
             max_total_backoff_seconds=self.max_total_backoff_seconds,
             request_timeout_seconds=self.request_timeout_seconds,
             max_output_tokens=self.max_output_tokens,
+            max_total_tokens=self.max_total_tokens,
             sleeper=self.sleeper,
             initial_snapshot=initial_usage if isinstance(initial_usage, Mapping) else None,
             state_hook=persist_usage,
+            reservation_hook=reserve_shared if self.reservation_hook else None,
         )
         await budget.reconcile_incomplete()
         running["usage"] = budget.snapshot()
         self._write_record(running)
+
+        def finish(record: dict[str, Any]) -> dict[str, Any]:
+            entries = [*history, {
+                "attempt": attempts, "status": record["status"],
+                "duration_ms": record["duration_ms"],
+            }]
+            record["execution_history"] = entries
+            durations = [entry.get("duration_ms") for entry in entries]
+            record["observed_duration_ms"] = sum(n for n in durations if type(n) is int)
+            record["cumulative_duration_ms"] = (
+                sum(durations) if all(type(n) is int for n in durations) else None
+            )
+            self._write_record(record)
+            return record
+
         try:
             result = await execute(case, mode, budget)
             if not isinstance(result, Mapping):
@@ -368,8 +404,7 @@ class EvaluationRuntime:
                 "result": _json_value(_sanitize_evidence(result)),
                 "usage": budget.snapshot(),
             }
-            self._write_record(record)
-            return record, False
+            return finish(record), False
         except Exception as error:
             normalized = classify_rate_limit(error)
             if normalized is not None:
@@ -383,8 +418,7 @@ class EvaluationRuntime:
                     "error": _safe_error(normalized),
                     "usage": budget.snapshot(),
                 }
-                self._write_record(record)
-                return record, True
+                return finish(record), True
             record = {
                 **running,
                 "status": "failed",
@@ -395,8 +429,7 @@ class EvaluationRuntime:
                 "error": _safe_error(error),
                 "usage": budget.snapshot(),
             }
-            self._write_record(record)
-            return record, False
+            return finish(record), False
 
     def _pending_record(self, case_id: str, mode: str) -> dict[str, Any]:
         now = _utc_now()
@@ -421,6 +454,7 @@ class EvaluationRuntime:
                 max_total_backoff_seconds=self.max_total_backoff_seconds,
                 request_timeout_seconds=self.request_timeout_seconds,
                 max_output_tokens=self.max_output_tokens,
+                max_total_tokens=self.max_total_tokens,
             ).snapshot(),
         }
         self._write_record(record)
@@ -450,7 +484,9 @@ class EvaluationRuntime:
                     records.append(existing)
                     continue
                 if quota_stopped:
-                    record = self._pending_record(case_id, mode)
+                    # An earlier resumed unit can exhaust quota again. Never replace
+                    # the later unit's existing durable usage with an empty placeholder.
+                    record = existing or self._pending_record(case_id, mode)
                     records.append(record)
                     continue
                 record, quota_stopped = await self._execute_one(

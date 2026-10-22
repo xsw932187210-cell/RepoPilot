@@ -1,3 +1,4 @@
+import argparse
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -11,7 +12,7 @@ from repopilot.graph import GraphDependencies, build_graph
 from repopilot.llm import MockAgentModel
 from repopilot.models import CodeChangeOutput, FileEdit
 from repopilot.policy_feedback import content_sha256
-from repopilot.real_evaluation import OfflineWorkspace
+from repopilot.real_evaluation import OfflineWorkspace, run_experiment
 from repopilot.real_tasks import load_real_task_manifest
 from repopilot.repository import RepositoryContext, WorkspaceManager, run_process
 from repopilot.sandbox import LocalSandbox
@@ -133,3 +134,25 @@ async def test_frozen_workflow_supports_history_free_evaluation_export(tmp_path)
     assert all(
         ".git" not in item["path"].split("/") for item in result["candidate"]["manifest"]["entries"]
     )
+
+
+@pytest.mark.asyncio
+async def test_frozen_holdout_rejects_development_selection_before_docker(tmp_path):
+    root = Path(__file__).parents[1] / "evals/real"
+    args = argparse.Namespace(
+        manifest=root / "manifest.json", freeze=root / "freeze-pilot-v1.json",
+        partition="holdout", case=["thefuck-001"], output=tmp_path / "experiment",
+    )
+    with pytest.raises(ValueError, match="outside"):
+        await run_experiment(args)
+
+
+@pytest.mark.asyncio
+async def test_repetition_requires_a_run_identity_before_docker(tmp_path):
+    root = Path(__file__).parents[1] / "evals/real"
+    args = argparse.Namespace(
+        manifest=root / "manifest.json", case=None, output=tmp_path / "experiment",
+        repeats=2, run_id=None,
+    )
+    with pytest.raises(ValueError, match="run ID"):
+        await run_experiment(args)

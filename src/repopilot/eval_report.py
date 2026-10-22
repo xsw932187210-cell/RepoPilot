@@ -196,6 +196,8 @@ def _model_call_count(record: Mapping[str, Any], field: str) -> int:
 
 
 def _duration_ms(record: Mapping[str, Any]) -> int | None:
+    if "execution_history" in record:
+        return _number(record.get("cumulative_duration_ms"))
     duration = _number(record.get("duration_ms"))
     if duration is not None:
         return duration
@@ -381,6 +383,10 @@ def _summarize_records(records: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
 
 def build_eval_report(source: Any) -> dict[str, Any]:
     payload = _load_source(source)
+    if isinstance(payload, Mapping) and payload.get("metadata", {}).get("repeat_protocol"):
+        from repopilot.eval_repeat_report import build_repeated_report
+
+        return build_repeated_report(payload)
     metadata: dict[str, Any] = {}
     if isinstance(payload, Mapping):
         metadata = _collect_metadata(payload)
@@ -460,6 +466,23 @@ def render_markdown(report: Mapping[str, Any]) -> str:
                 f"{mode_summary['success_rate']['completed_rate']} | "
                 f"{mode_summary['duration_ms']['median']} | "
                 f"{mode_summary['duration_ms']['p95']} | {mode_summary['model_calls']['total']} |"
+            )
+    if repeated := report.get("repeat_statistics"):
+        lines.extend([
+            "", "## Repeated experiment", "",
+            f"Unique defects: {repeated['selected_unique_cases']}; "
+            f"projects: {repeated['selected_projects']}; "
+            f"scheduled strategy/repeat units: {repeated['selected_units']}.",
+            "", repeated["assumptions"], "",
+            "| Pair (second − first) | Complete cases | Mean difference | Project interval |",
+            "| --- | ---: | ---: | --- |",
+        ])
+        for pair in repeated["paired"]:
+            lines.append(
+                f"| {pair['second']} − {pair['first']} | "
+                f"{pair['eligible_unique_cases']}/{pair['selected_unique_cases']} | "
+                f"{pair['mean_case_rate_difference']} | "
+                f"{pair['project_cluster_interval']['interval']} |"
             )
     return "\n".join(lines) + "\n"
 
