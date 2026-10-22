@@ -20,15 +20,22 @@ database transaction can be made atomic.
 | `MODEL_MAX_RETRY_WAIT_SECONDS` | `30` | Maximum permitted delay for one retry |
 | `MODEL_MAX_TOTAL_BACKOFF_SECONDS` | `60` | Persisted cumulative wait ceiling for the task |
 | `MODEL_MAX_TOTAL_TOKENS` | `0` | Trusted provider-token ceiling; `0` disables it |
-| `MODEL_MAX_OUTPUT_TOKENS` | `4096` | Per-request provider output ceiling |
+| `MODEL_MAX_OUTPUT_TOKENS` | `4096` | Provider output ceiling where supported; see OAuth exception below |
 
 The call limit includes the initial Planner/Coder/Reviewer calls, policy-correction calls, graph
 remediation calls, and every provider transport retry. Retry limits do not grant calls beyond the
 task-wide limit. A trusted token limit is checked before the next reservation only while every
 previous outcome has complete provider-reported usage. One response can therefore cross the token
 threshold before later calls are stopped. Missing usage disables that exact token gate for the
-task; the call cap and provider output cap continue to bound requests. RepoPilot does not estimate
+task; the call cap and supported provider output cap continue to bound requests. RepoPilot does not estimate
 tokens, provider-specific billing units, or monetary cost.
+
+Google Cloud SDK and an optional ChatGPT OAuth Reviewer share this same budget. Each attempt records
+its actual role/provider/model. Google sends its output-token cap and disables SDK retries with
+`attempts=1`. ChatGPT plan usage requires streaming Responses with `store=false`; the route rejects
+`max_output_tokens` and `temperature`. Its `CHATGPT_MAX_RESPONSE_BYTES` and request timeout are local
+limits, not server generation or billing caps. Roles and capability differences are included in the
+evaluation identity; see [provider configuration](model-providers.md).
 
 CH-02B's `apply_policy` checkpoint records the one task-wide correction allowance before the next
 Coder request. It does not create a second call budget: a correction is another `coder` role call

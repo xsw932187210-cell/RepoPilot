@@ -64,7 +64,7 @@ python scripts/check_model_connections.py --run --max-calls <已确认上限>
 docker compose -f docker-compose.yml -f docker-compose.chatgpt.yml up --build -d
 ```
 
-先在宿主完成授权；override 只给 Worker 绑定私有凭据目录，允许其原子保存轮换后的令牌。部署者必须确认容器 UID 对该目录有正确读写权限，不能为方便改成公开可读。未绑定凭据或权限不足时停止 GPT 调用，不自动退回 Gemini。此前拒绝的容器构建未执行，本轮未据此声明新镜像/容器验收通过。
+先在宿主完成授权；override 只给 Worker 绑定私有凭据目录，允许其原子保存轮换后的令牌。部署者必须确认容器 UID 对该目录有正确读写权限，不能为方便改成公开可读。未绑定凭据或权限不足时停止 GPT 调用，不自动退回 Gemini。先前取消的构建未执行；用户随后允许构建后，隔离 Mock 容器回归已完成，见[验收](mixed-model-verification-2026-10-23.md)。没有使用真实凭据做 Docker 内推理验收。
 
 ## 官方资料
 

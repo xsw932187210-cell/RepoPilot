@@ -1,6 +1,6 @@
 # RepoPilot 项目规范与迭代验收
 
-> 更新日期：2026-10-22；本轮起始基线：`f6b4c3c`；CH-06A 已由 PR #9 合并；CH-06C 已完成隔离验收并推送，未合并；CH-07A 已完成验收，未合并；最近完整真实模型评测：2026-09-09。
+> 更新日期：2026-10-23；本轮接入基线：`dbef101`；CH-06A 已由 PR #9 合入 main。PR #10 已将 CH-07A 合入 CH-06C 分支，PR #11 已将 OAuth 预检合入 CH-07A 分支；最近核对 main 仍为 `4d55a5b`，这些依赖尚未整体合入 main。最近完整真实模型质量评测：2026-09-09。
 > 本文是现有项目的规范入口，记录当前行为、证据和后续变更的验收标准。
 > 本次建立的是单文件规范，尚未接入 OpenSpec CLI，也不代表已建立其提案、归档或自动校验流程。
 > 规划版本：Roadmap v3。CH-01～CH-08、CH-21 为主题编号，具体开发选带字母的子任务；新增的上下文与历史案例探索按需启动。
@@ -1182,3 +1182,13 @@ smoke 使用已经运行的服务。若 `.env` 选择真实模型，应按 [READ
 - 证据见 docs/ch07a-verification-2026-10-22.md、docs/project-adapters.md 和 docs/evidence/2026-10-22-ch07a-verification.json。最初默认 Python 无 pytest/仓库无 venv、组合镜像查询失败与宿主中间版 346/42/84.73% 均保留说明，最终完整重跑不复用中间结果。原始日志仅在忽略的 reports/。
 - 历史与限制：2026-09-09 真实报告、失败分析/账本、Mock 数据集与 b7cf1c9 逐字节相同；没有新真实模型结果、跨项目保留集、重复统计、路由或修复率收益。配方 hash 不是构建证明，Docker 仍共享内核。本卡为 VERIFIED，CH-07B/07C/01B/01C 保持 TODO；下一卡 CH-07B 硬依赖已有实现和验收。
 - 远端交付：已推送 4d76853 并创建草稿 [PR #10](https://github.com/xsw932187210-cell/RepoPilot/pull/10)，base codex/ch-06c-data-boundaries@f6b4c3c、head codex/ch-07a-project-adapters@4d76853，2 提交/39 文件，仅评审本卡；未合并。连接器写入 403 后经已登录浏览器创建，API 已核实 Draft/Open；依赖合入后再核对 main 基线。
+
+
+### 2026-10-23 · Gemini SDK 与 ChatGPT Reviewer 接入支撑
+
+- 用户确认 Gemini Planner/Coder + GPT Reviewer，保留五卡质量路线；本次接入不是 CH-07B 数据集或新的修复效果。基线 dbef101，最终验收源码 28cc88d80e79234306cd0f811cadec387fb5829d；前两次 GPT 请求暴露终帧不重复正文，285e762 修复为仅读取已完成输出项。
+- 角色共用一份持久化预算；Google SDK 明确 Cloud Key/Express endpoint/单次 SDK 尝试；GPT 使用套餐 OAuth 的公开 Responses 流式接口，串行轮换令牌，SDK 不重试。GPT 无服务端 output-token 硬上限，仅本地事件字节和请求时长限制；角色能力差异进入 evaluator v11 指纹。
+- 宿主 421 passed / 42 skipped、85.93%；隔离 Linux 463 passed / 0 skipped、87.41%。Mock 10/10、smoke、Worker 审批重启通过，调用 3→3、unknown=0；98 份源码/测试和 API/test 各 51 份安装源码与提交一致，专属资源清理。最初取消的构建未执行，用户随后明确允许后才完成本次容器验收。
+- 已确认的新真实连接预算两家合计 6 次全部使用：前两次适配失败，后四次（GPT 单独审查 + Gemini 规划/编码 + GPT 审查）通过。此前 Google 独立预检 3 次另计；合计 9 次，未运行批量真实修复评测。失败 usage 不完整，不报精确金额。真实生成在宿主进行，Docker 回归为无真实凭据的 Mock。
+- 证据：[接入契约](docs/model-providers.md)、[验收](docs/mixed-model-verification-2026-10-23.md)、[机器摘要](docs/evidence/2026-10-23-mixed-model-verification.json)。实际 Key/令牌、账号身份和券信息不上传；Git 历史与当前凭据匹配扫描为零。原历史报告和失败账本不变。
+- 接入支撑为 VERIFIED，PR 状态另按远端记录；CH-07B 持续筛选/复现中，CH-07C/01B/01C 尚未完成。新的真实实验须另确认预算，不能复用已耗尽的六次连接额度。

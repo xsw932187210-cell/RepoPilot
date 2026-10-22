@@ -4,7 +4,7 @@ This is a small, one-project pilot, **not** SWE-bench and not evidence of genera
 repository repair performance. The corpus is 20 pinned BugsInPy defects from The Fuck.
 Corpus metadata and third-party test licenses are under `evals/real/`.
 
-The current implementation uses manifest schema **2**, evaluator configuration **9**,
+The current implementation uses manifest schema **2**, evaluator configuration **11**,
 acceptance protocol **4** and `withheld-junit-v2`. Trusted project adapters declare source
 roots, read-only/test paths and immutable runtime images. The current real corpus still
 permits only existing `thefuck/**/*.py` source files. The separate `tinyledger` fixture is
