@@ -130,3 +130,11 @@ kernel-enforced policy plane based on these files.
 CH-06A publishes a separate [execution control contract](execution-control.md): task cancellation
 and attempt abort have different scopes, and a restarted Worker retains unconfirmed cleanup
 evidence rather than killing a possibly reused PID.
+
+## Data output and recovery
+
+[CH-06C](data-boundaries.md) applies the same public projection to event history and live
+notifications. Private code is retained under service storage, while known sensitive async graph
+input/proposals are refused before persistence. Legacy sensitive checkpoints require operator
+review; API reads do not rewrite them or their evidence digests. Retention is manual; known
+patterns do not provide arbitrary secret discovery or tenant isolation.

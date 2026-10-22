@@ -152,3 +152,8 @@ wait limit is at most the remaining task budget. Expiry/cancellation interrupts 
 and backoff, prevents a fresh reservation/transport, and retains STARTED calls as UNKNOWN.
 Closing a local request cannot prove provider computation or billing stopped. Offline evaluator
 call-budget identities and historical real-model reports are unchanged.
+
+CH-06C checks known sensitive model input before transport and disables automatic external
+tracing in the app graph/model scopes. Node exceptions are replaced with stable diagnostics
+before checkpoint error writes. Call reservations/usage semantics stay unchanged; no raw provider
+message is needed to retain failure classification. See [data boundaries](data-boundaries.md).

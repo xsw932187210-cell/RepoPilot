@@ -1,6 +1,6 @@
 # RepoPilot 项目规范与迭代验收
 
-> 更新日期：2026-10-22；本轮起始基线：`4d55a5b`；CH-06A 已由 PR #9 合并；CH-06C 开发中；最近完整真实模型评测：2026-09-09。
+> 更新日期：2026-10-22；本轮起始基线：`4d55a5b`；CH-06A 已由 PR #9 合并；CH-06C 已完成隔离验收，未合并；最近完整真实模型评测：2026-09-09。
 > 本文是现有项目的规范入口，记录当前行为、证据和后续变更的验收标准。
 > 本次建立的是单文件规范，尚未接入 OpenSpec CLI，也不代表已建立其提案、归档或自动校验流程。
 > 规划版本：Roadmap v3。CH-01～CH-08、CH-21 为主题编号，具体开发选带字母的子任务；新增的上下文与历史案例探索按需启动。
@@ -158,7 +158,7 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 
 ### RP-06：工具执行与发布边界
 
-- CH-06C 的公开诊断使用字段白名单与稳定错误码，原始 provider 异常/traceback 不进入日志或图错误记录。模型/checkpoint 前检查已知凭据，完整代码不作字符串替换；完整 Diff 要求配置 API Key。详见 [数据出口契约](docs/data-boundaries.md)，当前实现待隔离验收。
+- CH-06C 的公开诊断使用字段白名单与稳定错误码，原始 provider 异常/traceback 不进入日志或图错误记录。模型/checkpoint 前检查已知凭据，完整代码不作字符串替换；完整 Diff 要求配置 API Key。详见 [数据出口契约](docs/data-boundaries.md)，验收见 [CH-06C 记录](docs/ch06c-verification-2026-10-22.md)。
 
 - 测试命令解析为 argv，经过命令约束，不通过 shell 执行任意模型字符串。
 - Docker 接收一次性工作区快照，禁网、无宿主目录挂载、UID/GID 10001、移除 capabilities、禁止提权、限制内存与进程数，并在超时后尝试终止与清理。
@@ -205,6 +205,7 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 | CH-05A 暂存与代次 | 2026-10-21：Linux 全量 229 passed / 0 skipped，83.45% coverage；20 项服务条件测试全部实跑，Mock 10/10、API smoke、实际 Worker 重启、旧审批升级及 73 文件来源核对通过；专属资源清理确认 | 受控 POSIX writer 的私有暂存和完整代次可见性；显式重放与 orphan 核对成立，不等于文件系统/DB 事务、自动队列恢复、fencing 或端到端 GitHub 发布绑定 |
 | CH-03B 发布与对账 | 2026-10-22：Linux 281 passed / 0 skipped，83.55% coverage；27 项服务测试实跑，五阶段硬退出、Mock 10/10、smoke/Worker 重启和 80 文件来源核对通过 | GitHub 使用测试 transport；单执行者意图重放及取消/移动后对账，不是实际 GitHub 集成、fencing、外部事务或自动发布恢复 |
 | CH-06A 可确认取消与截止 | 2026-10-22：Linux 314 passed / 0 skipped，84.19% coverage；35 项服务入口全部实跑，真实容器/进程组停止及兄弟资源不受影响，Mock 10/10、smoke/Worker 重启通过；86 份源码与 46 份安装包来源一致 | 本地执行停止确认；不保证 provider 停止计费或远端回滚，清理失败/重启留待检查，无 Worker fencing/自动重领 |
+| CH-06C 数据出口与私有状态 | 2026-10-22：Linux 352 passed / 0 skipped，85.42%；40 项服务入口实跑，31 项边界/2 项评测/5 项服务新增回归，真实 PostgreSQL checkpoint、Mock 10/10、smoke/Worker 重启通过，90/48 文件来源一致 | 仅已知模式/字段投影，源码与证据摘要不重写；保留期人工管理，不是任意秘密发现、生产加密、多用户隔离或新真实模型效果 |
 | CH-01A 离线诊断 | 2026-10-19：核对 40 个 case-mode，公开 12 个未通过项的观察分类与未知根因；lint、154 passed / 3 skipped、80.78% 行覆盖率 | 对 2026-09-09 v7 历史记录做离线分析；不是新真实模型实验，也不补足 CH-02B 集成验收 |
 | CH-02B 服务验收 | 2026-10-19：PostgreSQL 16.15 / Redis / Docker 下 6 项专项通过，容器内 Mock 10/10，API smoke 和实际 Worker 审批重启恢复通过，专属资源清理确认 | 中途 checkpoint 经测试入口显式恢复；未实现自动队列找回。离线套件 154 passed / 9 skipped，80.78%；6 项服务测试另行实跑，另外 3 项 PostgreSQL 条件入口未重跑 |
 | Mock 工作流回归 | 10/10 | 验证流程及确定性夹具，不代表 LLM 编码能力 |
@@ -304,7 +305,7 @@ S/M/L 表示相对范围：S 通常是独立诊断或小接口；M 是一组紧�
 
 2026-10-19 确认的质量迭代顺序：先做 CH-01A 失败归因，再通过 CH-07A/B/C 建立跨项目开发集和冻结保留集；按证据选择 CH-13 Reviewer 校准或 CH-01B 任务路由，每次只验证一个主要策略变化。CH-14 的片段检索、CH-21 的压缩/历史案例复用由大文件、长任务或重复仓库任务的瓶颈触发；CH-12 多用户权限由明确使用需求触发，不作为本轮前置功能。
 
-CH-01A、CH-02B、CH-03A 已于 2026-10-19、CH-05A 于 2026-10-21、CH-03B 于 2026-10-22 完成验收，依赖历史已由 PR #8 合并为 `main@554012e`。CH-06A 于 2026-10-22 验收并由 PR #9 合并为 `main@4d55a5b`。CH-02A、CH-09、CH-10 已合并。本轮正在开发无硬依赖的 P0 **CH-06C**；质量数据方向也可独立开展 **CH-07A**。执行顺序始终以各卡硬依赖为准。
+CH-01A、CH-02B、CH-03A 已于 2026-10-19、CH-05A 于 2026-10-21、CH-03B 于 2026-10-22 完成验收，依赖历史已由 PR #8 合并为 `main@554012e`。CH-06A 于 2026-10-22 验收并由 PR #9 合并为 `main@4d55a5b`。CH-02A、CH-09、CH-10 已合并。CH-06C 也已在独立分支通过验收，未合并。下一张建议 **CH-04A**，硬依赖 CH-09 已合并；质量数据方向可独立开展 **CH-07A**。执行顺序始终以各卡硬依赖为准。
 
 ### 8.4 跨任务接口约定（已落实项与待实现设计）
 
@@ -341,6 +342,8 @@ CH-03B 接口映射（2026-10-22，已实现并验收）：`PublicationStore.ens
 `publish-receipt-v1` 保存 `pending/publishing/unknown/published/blocked/cancelled/revalidation_required`、每步发起/确认、远端 ID、取消及基线观测。Git 对象预先确定 ID；ref 只创建，PR 已可能发出而查询为空时不重复创建。先核对全部已发出步骤，再处理取消/基线变化，保留可能已存在的 PR。CLI 默认只读对账；没有自动调度器或多 Worker fencing。API `/publication` 只读 SQL，任务终态不抹去远端事实。详细契约见 [发布与恢复](docs/publication.md)。
 
 CH-06A 接口映射（2026-10-22，已实现并验收）：复用任务状态版本 CAS，运行中取消进入 `cancelling`，清理完成才进入 `cancelled`；停止失败保留资源 ID/清理证据，不补造确认。新任务默认 900 秒累计执行预算，排队/审批分别计时，是否计入由持久化策略显式配置；旧任务不回填期限或停止确认。统一 `ExecutionControl` 支持任务停止和仅 attempt 的 abort，后者不能把任务标为 cancelled。发布使用原 CH-03B 取消/对账，停止后允许有界只读对账。
+
+CH-06C 接口映射（2026-10-22，已实现并验收）：public-data-v1 对公开任务结果/事件执行字段投影，错误只保留稳定 code/type；API 历史读取不改写原始 SQL。新任务/审批文本先脱敏，代码/模型输入/异步 checkpoint 拒绝已知凭据，源码与 artifact 字节不替换；完整 Diff 要求配置 API Key，旧敏感 authority 返回 409 需重新验证。PR 元数据在新 POST 前检查，已存在效果仍只读对账。评测指纹增加 public_data_version，旧目录拒绝混跑。私有根目录 0700、保留期人工管理，自动 GC/加密/租户隔离仍未实现。
 
 四个全局约束：
 
@@ -552,7 +555,7 @@ CH-06A 接口映射（2026-10-22，已实现并验收）：复用任务状态版
 
 #### CH-06C：在线日志、事件与持久化数据审计
 
-- **状态**：IMPLEMENTED_UNVERIFIED（离线 309 passed / 38 skipped，84.89%；服务验收待执行）。**优先级/规模**：P0 / M。**硬依赖**：无。
+- **状态**：VERIFIED（2026-10-22，352 passed / 0 skipped，85.42% coverage；40 项服务入口、Mock/smoke/Worker 重启均通过，未合并）。**优先级/规模**：P0 / M。**硬依赖**：无。
 - **入口**：`security.py`、`events.py`、`worker.py`、`api.py`、`llm.py`、`eval_runtime.py`。
 - **实施步骤**：
   1. 枚举数据出口：logger/traceback、事件 message/payload、API error/result、checkpoint、模型输入和评测报告；分别定义可公开和私有执行数据。
@@ -562,6 +565,8 @@ CH-06A 接口映射（2026-10-22，已实现并验收）：复用任务状态版
 - **验收场景**：用伪造 token、带凭据 URL、嵌套 payload、换行错误和失败 traceback 验证各出口；公开结果不能还原秘密；脱敏后的诊断仍保留错误分类；恢复候选内容不被意外改写。
 - **交付**：数据出口清单、公共/私有字段规则、针对性测试和 RP-06/RP-07 更新。
 - **范围边界**：不向第三方上传原始日志作审查；生产加密和多用户访问控制由后续任务实现并单独验收。
+
+- **本轮交付**：d45cea3、52703d6；[出口契约](docs/data-boundaries.md)、[验收](docs/ch06c-verification-2026-10-22.md)、[机器证据](docs/evidence/2026-10-22-ch06c-verification.json)。已知模式与公开字段有界，源码/证据身份不改写；保留期手动管理，未实现自动 GC、生产加密或多用户隔离。
 
 ### CH-07：扩展任务集、重复实验与成本评估
 
@@ -902,6 +907,7 @@ smoke 使用已经运行的服务。若 `.env` 选择真实模型，应按 [READ
 - [CH-05A 隔离验收](docs/ch05a-verification-2026-10-21.md)：多文件中断、进程硬退出、精确重放、旧审批升级、来源核对与资源清理。
 - [发布意图与远端对账](docs/publication.md)：获批完整树/固定 parent、分阶段 receipt、取消与基线移动、只读 CLI 和升级边界。
 - [CH-03B 隔离验收](docs/ch03b-verification-2026-10-22.md)：五阶段 HTTP 丢响应/硬退出、SQL CAS、完整来源核对及中间失败记录。
+- [CH-06C 隔离验收](docs/ch06c-verification-2026-10-22.md)：公开出口、真实 PostgreSQL checkpoint、来源与重启检查。
 - [数据出口与私有执行数据](docs/data-boundaries.md)：公开字段、已知凭据、checkpoint/模型输入、私有 Diff 与手动保留规则。
 - [可确认取消与截止时间](docs/execution-control.md)：API 状态、时间口径、清理证据、发布及重启边界。
 - [CH-06A 隔离验收](docs/ch06a-verification-2026-10-22.md)：假时钟、真实容器/进程停止、迁移故障、发布取消和最终来源核对。
@@ -1144,3 +1150,17 @@ smoke 使用已经运行的服务。若 `.env` 选择真实模型，应按 [READ
 - 下一卡 CH-06C 无硬依赖，从干净 `origin/main@4d55a5b` 建立 `codex/ch-06c-data-boundaries`；本轮只开发该卡。
 - 实施约定：统一已知秘密模式、公开 JSON 字段及稳定诊断；日志不记录原始异常/traceback，事件在保存和发布时投影，API 历史读取再次投影。图/模型入口拒绝含已知凭据的代码，普通元数据脱敏；私有源码与 artifact 不做破坏性字符串替换，完整 Diff 仅在配置 API Key 后访问。私有 checkpoint/artifacts 留在服务存储，手动保留/备份与删除流程明确，自动 GC 与多用户加密仍属后续卡。
 - 计划验证：伪造 token、嵌套 header、带凭据/编码 URL、换行异常、历史记录/SSE、模型与 checkpoint 泄漏、恢复内容字节一致；离线全量、Mock 和隔离运行/重启回归。
+
+### 2026-10-22 · CH-06C · 在线日志、事件与持久化数据审计
+
+- 实现基线：干净 origin/main@4d55a5b，CH-06A PR #9 已授权合并；本卡无硬依赖。分支 codex/ch-06c-data-boundaries，代码 d45cea3、52703d6，最终验收固定源码 52703d6b81bf9451774451f58ca9120a2242a4f4。
+- 范围：公开诊断字段白名单、集中已知凭据处理、稳定错误码/类型、API 验证与历史/SSE 投影、checkpoint 错误/模型输入守卫、禁用自动 tracing、私有 Diff API Key 与原始字节、目录权限及手动保留规则；PR 元数据新写前检查，既有效果继续对账。源码与 canonical evidence 不作破坏性替换。
+- 验证：lint/diff/脚本语法通过；宿主 312 passed / 40 skipped，84.94%；隔离 Linux 352 passed / 0 skipped，85.42%，40 项服务入口实跑。Mock 10/10、smoke completed、实际 Worker 审批重启调用 3→3、unknown=0，完整审批/manifest/证据保持一致。
+- 故障：实际 API/Worker 11 个 PostgreSQL checkpoint、provider 失败 3 个、敏感路径/代码各 7 个均无伪凭据；旧 SQL GET 不改写，敏感旧 evidence 409 且摘要不变，模型 transport 前拒绝；完整 Diff 无配置 503/无 key 401/正确 key 字节相同。普通非法路径硬退出恢复与已知 token 提前拒绝分别覆盖。
+- 中间失败：首轮 346 passed / 1 failed（85.47%）是旧含 token 路径探针对 apply_policy 恢复位置的假定失效；保留普通路径恢复并补两个持久化敏感提案场景后完整重跑。新增遗留 PR 单测初版 task/intent 标题不一致也留档，授权一致性检查保留。
+- 实验身份与清理：仅 Mock/测试 transport；project repopilot_ch06c_20261022_72448、API 58090、Docker 29.5.3、PostgreSQL 16.15、Redis 7.4、LangGraph 1.2.16、saver 3.2.0、LangSmith 0.14.11。90 份源码、测试/API 各 48 份安装包与提交一致，两轮专属资源已确认移除。
+- 证据：[验收](docs/ch06c-verification-2026-10-22.md)、[机器记录](docs/evidence/2026-10-22-ch06c-verification.json)、[数据边界](docs/data-boundaries.md)；原始报告在忽略目录 reports/repopilot_ch06c_20261022_72448，宿主 reports/ch06c-host-verification.log/.xml。历史真实报告、失败账本和 Mock 数据集与 b7cf1c9 字节相同。
+- 兼容与限制：无需新增 SQL revision（仍为 0007）；客户端使用新的公开投影，完整 Diff 需 API Key，旧敏感 authority/checkpoint 需人工核对/重新验证。正则不是任意秘密发现器；保留期人工控制，生产加密/租户隔离/自动 GC 仍未实现。没有新真实模型质量评测。
+- PR / 合并：CH-06C 当前未推送、未创建新 PR、未合并，实际推送后回填；PR #9 已合并。
+- 规范：RP-06/RP-07、8.4、README、架构/运行时/模型调用/评测协议及出口契约同步；CH-06C 为 VERIFIED。
+- 下一张建议：CH-04A（硬依赖 CH-09 已合并），质量方向可选 CH-07A；本轮不执行其他卡。

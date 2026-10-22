@@ -145,3 +145,11 @@ SQL stores cancellation requests, phase timing, exact owned resource IDs and cle
 Only cleanup completion permits a stopped timestamp. Queue/approval expiry runs independently
 of active execution; publication uses the existing receipt reconciliation boundary.
 Attempt abort is a local stop interface for future ownership loss, not Worker fencing.
+
+## Public data boundary
+
+CH-06C adds [public projections and private execution data](data-boundaries.md).
+API/events use reviewed fields and classified errors; provider exceptions are replaced before
+LangGraph stores error writes. Async graph/model scopes disable automatic external tracing.
+Known credentials cause code/context rejection rather than code rewriting. Complete Diff access
+requires an API Key; canonical artifacts and evidence keep their identities.

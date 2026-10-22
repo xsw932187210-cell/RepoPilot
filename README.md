@@ -254,3 +254,7 @@ MIT
 CH-06C defines [public diagnostics and private execution data](docs/data-boundaries.md):
 allowlisted API/events, classified failures, guarded model/checkpoint input and private
 byte-exact Diff access requiring an API Key. Run `make ch06c-integration` for isolated verification.
+
+The [2026-10-22 CH-06C verification](docs/ch06c-verification-2026-10-22.md) records
+352 container tests with zero skips, 85.42% coverage, all 40 service probes, Mock 10/10
+and actual Worker restart recovery.

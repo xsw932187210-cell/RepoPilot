@@ -116,3 +116,8 @@ limits memory/processes. It still shares a kernel; it is not ActPlane/eBPF or VM
 isolation. Public benchmark tests and model-modified code execute only in this child.
 The reproduction validator may execute fixed upstream code but never sends it to
 the model. Local reports are ignored by Git; publish only deliberately reviewed data.
+
+CH-06C adds public_data_version=public-data-v1 to the runtime fingerprint. New configuration
+metadata rejects known credentials; structured evidence masks credential fields and drops headers.
+Failures keep code/type only. Use a new records directory for this policy; historical quality
+reports and datasets are unchanged and were not rerun. See [data boundaries](data-boundaries.md).

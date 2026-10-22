@@ -1,0 +1,203 @@
+{
+  "application_external_calls": {
+    "real_github_publication": false,
+    "real_model": false
+  },
+  "baseline": "4d55a5b5b83b617881b0b2bf9d2ea7dc94ef3785",
+  "branch": "codex/ch-06c-data-boundaries",
+  "cleanup": {
+    "repopilot_ch06c_20261022_69075": true,
+    "repopilot_ch06c_20261022_72448": true
+  },
+  "code_commits": [
+    "d45cea3",
+    "52703d6"
+  ],
+  "configuration_sha256": {
+    "Dockerfile.ch06a-cached": "bc2514504f0c0df5cc0d34ca0cf606c6f7c0a8e14c5a670974081ad7b9fa4608",
+    "Makefile": "b90363c89174ef6f5e8657b7e688b5446130ff1ce9b00350cec122b01ce4d800",
+    "docker-compose.ch06a-test.yml": "d27d6316b141cb5db0bf9571b3d5d79dcb8b6cb39fb6d6b5baeb5de42d942171",
+    "pyproject.toml": "9a28c4b5e7d821f5bc4d5a708ac45400d2affe7af653f11d74e3d228eb9b91a2",
+    "scripts/ch06a_integration.sh": "7c388cf9b13610f13972fcf2ee90bbe2c60f7e242a0cde8772d22f7b406e9635",
+    "scripts/ch06c_integration.sh": "4d3a90c14cde3aea042ac278f1a35497f94353bf1c405464670d0a3060f02f19",
+    "scripts/recovery_smoke.sh": "6556c1cb39ca3b6be52b65059f3146951a176890f5ae08a303ca21e593760629",
+    "tests/coverage.ch06a.ini": "2d5a503645ab51dd1ab0e3f70a03cae2aa839ba456278a7daf5e7e39714a266b"
+  },
+  "container": {
+    "api_port": 58090,
+    "coverage_percent": 85.42,
+    "docker_engine": "29.5.3",
+    "errors": 0,
+    "failures": 0,
+    "passed": 352,
+    "postgres": "16.15",
+    "project": "repopilot_ch06c_20261022_72448",
+    "redis_image": "redis:7.4-alpine",
+    "runtime": {
+      "checkpoint_postgres": "3.2.0",
+      "langgraph": "1.2.16",
+      "langsmith": "0.14.11",
+      "pytest": "8.4.2",
+      "python": "3.12.15"
+    },
+    "skipped": 0,
+    "tests": 352
+  },
+  "date": "2026-10-22",
+  "fault_probes": {
+    "actual_worker_postgres_checkpoints": 11,
+    "async_graph": "no_known_credentials_in_checkpoints",
+    "automatic_langsmith_tracing": false,
+    "canonical_legacy_evidence": "409_without_digest_rewrite",
+    "fake_tokens_encoded_urls_private_keys": "redacted_idempotently",
+    "full_diff": "requires_configured_api_key_exact_bytes",
+    "legacy_PR_metadata": "new_POST_blocked_existing_effect_reconciled",
+    "legacy_api_sse": "projected_without_SQL_rewrite",
+    "legacy_sensitive_checkpoint": "resume_refused_without_mutation",
+    "logs_tracebacks": "classification_only",
+    "model_transport": "guarded_before_transport",
+    "nested_public_fields": "allowlist_and_credential_mask",
+    "private_roots_mode": "0700",
+    "provider_failure_postgres_checkpoints": 3,
+    "recovery_source_bytes": "unchanged",
+    "sensitive_proposal_calls": 2,
+    "sensitive_proposal_postgres_checkpoints": {
+      "content": 7,
+      "path": 7
+    },
+    "validation": "input_and_context_not_echoed"
+  },
+  "hard_dependencies": [],
+  "historical_unchanged_sha256": {
+    "docs/evidence/2026-09-09-failure-ledger.json": "564d6b89ebb37040fe678e0e3267fe49820b61905c827201d8ee9ba405b7d0c0",
+    "docs/real-evaluation-results-2026-09-09.md": "38e2d49551a8e90249360641582cef353893a5299677c18297864efff0c6b3bb",
+    "evals/cases.jsonl": "6e5c1012e81c11d9a4cda4d2d5f761313398f5383bb0a3a71960e6569b25bdf7"
+  },
+  "host": {
+    "coverage_percent": 84.94,
+    "errors": 0,
+    "failures": 0,
+    "log": "reports/ch06c-host-verification.log",
+    "passed": 312,
+    "python": "3.13.5",
+    "skipped": 40,
+    "tests": 352
+  },
+  "host_evidence_sha256": {
+    "reports/ch06c-host-verification.log": "3b6cc5760227e23f85e879de5508fdfc6f50b26280746166e3c2d529771ccc92",
+    "reports/ch06c-host-verification.xml": "d2d06641f8663c3ae93fad0b29e02ac14490723268f3523b3ddf199689e7f249"
+  },
+  "images": {
+    "dependency": "sha256:956582d2f29657dc02d6ec3a665064a6e8af01aacf9b0512a9dc8a0c448f0ce0",
+    "dependency_tag": "repopilot_ch06a_20261022_51033-test:local",
+    "runtime": "sha256:14ff74ef8a0daefa0beb64746807dc24dc371473c01c74171e4d1bc283484100",
+    "sandbox": "sha256:37907b58fd91135c9c62b6b07eaab757a9e24aaa6f08f14e98d0c6eea97b76b7",
+    "test": "sha256:b76b7e77bc68cf47dc90da397c01036bfd1db454ef413ca6cd8a075cb4e5dd22"
+  },
+  "intermediate_host_runs": [
+    {
+      "coverage_percent": 84.39,
+      "failed": 1,
+      "passed": 310,
+      "reason": "legacy PR test initially changed intent title without matching task title; authorization conflict retained, fixture corrected to a consistent legacy snapshot",
+      "report": "reports/ch06c-host-release.log",
+      "skipped": 40
+    }
+  ],
+  "intermediate_runs": [
+    {
+      "coverage_percent": 85.47,
+      "errors": 0,
+      "failures": 1,
+      "mock_smoke_restart_executed": false,
+      "passed": 346,
+      "project": "repopilot_ch06c_20261022_69075",
+      "reason": "old token-bearing path probe expected apply_policy retry; now rejected before checkpoint; kept ordinary path replay and added two persistent secret-proposal probes",
+      "skipped": 0,
+      "source_commit": "d45cea3",
+      "tests": 347
+    }
+  ],
+  "limitations": [
+    "known patterns only; false positives and unknown secrets remain",
+    "service-owned plaintext storage; no tenant authorization or production encryption",
+    "manual retention; no automatic purge or artifact TTL",
+    "no Worker fencing, automatic reclaim or repaired SSE cursor protocol",
+    "no new real-model quality evaluation"
+  ],
+  "migration": {
+    "head": "20261022_0007",
+    "new_schema_required": false
+  },
+  "mock": {
+    "count": 10,
+    "dataset_sha256": "6e5c1012e81c11d9a4cda4d2d5f761313398f5383bb0a3a71960e6569b25bdf7",
+    "model": "deterministic-mock-v1",
+    "provider": "mock",
+    "successful": 10
+  },
+  "new_regressions": {
+    "evaluation": 2,
+    "offline_data_boundary": 31,
+    "services": 5,
+    "total": 38
+  },
+  "parent_delivery": {
+    "checks_successful": 2,
+    "ci_conclusion": "success",
+    "ci_run": 39748939113,
+    "head": "825262c770d8e5f9fe52433186d84ce5f07a97e2",
+    "merge_commit": "4d55a5b5b83b617881b0b2bf9d2ea7dc94ef3785",
+    "merged": true,
+    "pull_request": "https://github.com/xsw932187210-cell/RepoPilot/pull/9"
+  },
+  "public_data_version": "public-data-v1",
+  "raw_evidence_sha256": {
+    "api-source-hashes.json": "07071bbaee1d6ea2d6e300865352bfa885115bb4640cf23912878a3ad14a593a",
+    "cleanup.json": "d56c140f464137ef88141460bae5d1a75076fade1a1166e8663f176dd39cdfda",
+    "dependency-image-id.json": "e62eadfa94799a14d9abc7c1beffd296276143994c5e76c8b688e3f0133726e3",
+    "image-ids.jsonl": "16ff878f0b9849caa24a1431c7ac20d8f895dce89160567c7391282f6b522bb0",
+    "installed-source-hashes.json": "07071bbaee1d6ea2d6e300865352bfa885115bb4640cf23912878a3ad14a593a",
+    "integration.log": "b4757f23a3aa3a382e7e174fe7e2d43a2cf6c8dbe9b95d473f0df1a7210893f5",
+    "integration.xml": "8a13c004985e485b315b1e10bada67b734094557c66610b45bab691afe0684d5",
+    "mock-evaluation.json": "ef1462acf4572f2d5e2ce882385abc340eadd36662522cdff36506b27e25f408",
+    "recovery.jsonl": "fef751db4c863bf317783e1f70dc79ff32c1cb450058bc80aefcfc8c5116a55e",
+    "runtime-versions.json": "7d7acb0008671a5c22708d33736da9dea96a0771ccff7ce265807eb6aa89b5bc",
+    "smoke.jsonl": "da313b31dfca72145bec6a8854e6036dcfbc74844ff7213571ded0eac3d5bed4",
+    "source-hashes.json": "94cbfcdf370cc6fecd5c405f42f38c394585e77f87e68183ecdd7d3c1c9e4347"
+  },
+  "repository_delivery": {
+    "merged": false,
+    "pull_request_created": false,
+    "pushed": false
+  },
+  "schema_version": "ch06c-verification-v1",
+  "service_tests": {
+    "CH-06C": 5,
+    "previous": 35,
+    "total": 40
+  },
+  "smoke": {
+    "calls": 3,
+    "status": "completed",
+    "unknown_calls": 0
+  },
+  "source_verification": {
+    "api_installed_files": 48,
+    "api_test_packages_match": true,
+    "installed_files": 48,
+    "python_files": 90,
+    "workspace_commit_container_match": true
+  },
+  "status": "VERIFIED",
+  "verified_source_commit": "52703d6b81bf9451774451f58ca9120a2242a4f4",
+  "worker_restart": {
+    "approval_manifest_evidence_unchanged": true,
+    "calls_after": 3,
+    "calls_before": 3,
+    "finalize_runs": 1,
+    "status": "completed",
+    "test_runner_runs": 1,
+    "unknown_calls": 0
+  }
+}
