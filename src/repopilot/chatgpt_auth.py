@@ -8,6 +8,7 @@ not returned by status/models, and no existing Codex credentials are read.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import base64
 import contextlib
 import fcntl
@@ -171,13 +172,18 @@ def http_json(client: httpx.Client, method: str, url: str, **kwargs: Any) -> dic
 
 
 def verify_identity(
-    client: httpx.Client, id_token: str, client_id: str, nonce: str
+    client: httpx.Client, id_token: str, client_id: str, nonce: str | None
+) -> dict[str, Any]:
+    return decode_identity(http_json(client, "GET", JWKS), id_token, client_id, nonce)
+
+
+def decode_identity(
+    keys: dict[str, Any], id_token: str, client_id: str, nonce: str | None
 ) -> dict[str, Any]:
     try:
         import jwt
     except ImportError:
         raise AuthorizationError("install_oauth_dependency") from None
-    keys = http_json(client, "GET", JWKS)
     try:
         header = jwt.get_unverified_header(id_token)
         if header.get("alg") != "RS256" or not isinstance(header.get("kid"), str):
@@ -196,12 +202,14 @@ def verify_identity(
             audience=client_id,
             issuer=ISSUER,
             leeway=5,
-            options={"require": ["iss", "aud", "sub", "exp", "iat", "nonce"]},
+            options={"require": ["iss", "aud", "sub", "exp", "iat"] + (
+                ["nonce"] if nonce is not None else []
+            )},
         )
         returned_nonce = identity.get("nonce")
-        if not isinstance(returned_nonce, str) or not hmac.compare_digest(
+        if nonce is not None and (not isinstance(returned_nonce, str) or not hmac.compare_digest(
             returned_nonce.encode(), nonce.encode()
-        ):
+        )):
             raise AuthorizationError("invalid_identity")
         if not isinstance(identity["sub"], str) or not identity["sub"]:
             raise AuthorizationError("invalid_identity")
@@ -277,9 +285,121 @@ def safe_status(session: dict[str, Any]) -> dict[str, Any]:
         "connected": bool(session),
         "plan_usage_authorized": PLAN_SCOPE in session.get("scopes", []),
         "access_token_current": bool(session) and session.get("expires_at", 0) > time.time(),
-        "workflow_adapter_connected": False,
+        "workflow_adapter_connected": None,  # CLI status alone does not inspect worker config.
         "inference_requests": 0,
     }
+
+
+def renewable_session(store: PrivateStore) -> dict[str, Any]:
+    session = store.read("session.json")
+    if not session or not session.get("access_token"):
+        raise AuthorizationError("sign_in_required")
+    if (
+        session.get("client_id") != store.read("registration.json").get("client_id")
+        or session.get("ext_agent_host_id") != store.host_id()
+        or session.get("issuer") != ISSUER
+    ):
+        raise AuthorizationError("invalid_local_session")
+    if PLAN_SCOPE not in session.get("scopes", []):
+        raise AuthorizationError("plan_usage_not_authorized")
+    return session
+
+
+def refresh_data(session: dict[str, Any]) -> dict[str, str]:
+    if not session.get("refresh_token") or session.get("client_id") == "dynamic_agent_client":
+        raise AuthorizationError("sign_in_required")
+    return {
+        "grant_type": "refresh_token", "client_id": session["client_id"],
+        "refresh_token": session["refresh_token"], "resource": RESOURCE,
+    }
+
+
+def refresh_payload(
+    response: httpx.Response, store: PrivateStore, prior: dict[str, Any]
+) -> dict[str, Any]:
+    try:
+        value = response.json()
+    except ValueError:
+        raise AuthorizationError("invalid_token_response") from None
+    if not isinstance(value, dict):
+        raise AuthorizationError("invalid_token_response")
+    if response.status_code != 200:
+        if isinstance(value.get("error"), str) and value["error"] in {
+            "invalid_grant", "invalid_refresh_token", "token_expired", "refresh_token_expired",
+            "refresh_token_invalidated", "refresh_token_reused",
+        }:
+            store.write("session.json", {
+                key: item for key, item in prior.items()
+                if key not in {"access_token", "refresh_token", "id_token"}
+            })
+            raise AuthorizationError("sign_in_required")
+        raise AuthorizationError(f"provider_http_{response.status_code}")
+    expires = value.get("expires_in")
+    if (
+        any(not isinstance(value.get(k), str) or not value[k]
+            for k in ("access_token", "refresh_token"))
+        or value.get("token_type", "").lower() != "bearer"
+        or not isinstance(expires, int) or isinstance(expires, bool) or expires <= 0
+        or ("scope" in value and not isinstance(value["scope"], str))
+        or ("id_token" in value and not isinstance(value["id_token"], str))
+    ):
+        raise AuthorizationError("invalid_token_response")
+    return value
+
+
+def save_refresh(
+    store: PrivateStore, prior: dict[str, Any], tokens: dict[str, Any],
+    identity: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if identity is not None and identity["sub"] != prior.get("subject"):
+        raise AuthorizationError("account_mismatch")
+    session = {
+        **prior, "access_token": tokens["access_token"], "refresh_token": tokens["refresh_token"],
+        "saved_at": time.time(), "expires_at": time.time() + tokens["expires_in"],
+        "scopes": tokens["scope"].split() if "scope" in tokens else prior["scopes"],
+    }
+    if "id_token" in tokens:
+        session["id_token"] = tokens["id_token"]
+    store.write("session.json", session)
+    if PLAN_SCOPE not in session["scopes"]:
+        raise AuthorizationError("plan_usage_not_authorized")
+    return session
+
+
+def refresh_session(client: httpx.Client, store: PrivateStore) -> dict[str, Any]:
+    """Caller holds the store lock, including across rotation and durable replace."""
+    prior = renewable_session(store)
+    response = client.post(TOKEN, data=refresh_data(prior))
+    tokens = refresh_payload(response, store, prior)
+    identity = verify_identity(client, tokens["id_token"], prior["client_id"], None) if (
+        "id_token" in tokens
+    ) else None
+    return save_refresh(store, prior, tokens, identity)
+
+
+async def current_session(store: PrivateStore, client: httpx.AsyncClient) -> dict[str, Any]:
+    """Serialize rotating tokens across processes; cancellation releases the lock."""
+    while True:
+        try:
+            with store.lock():
+                prior = renewable_session(store)
+                if prior.get("expires_at", 0) > time.time() + 60:
+                    return prior
+                response = await client.post(TOKEN, data=refresh_data(prior))
+                tokens = refresh_payload(response, store, prior)
+                identity = None
+                if "id_token" in tokens:
+                    keys = await client.get(JWKS)
+                    if keys.status_code != 200:
+                        raise AuthorizationError("identity_keys_unavailable")
+                    identity = decode_identity(
+                        keys.json(), tokens["id_token"], prior["client_id"], None
+                    )
+                return save_refresh(store, prior, tokens, identity)
+        except AuthorizationError as error:
+            if str(error) != "authorization_busy":
+                raise
+            await asyncio.sleep(0.05)
 
 
 def available_models(client: httpx.Client, session: dict[str, Any]) -> list[dict[str, str]]:
@@ -394,7 +514,7 @@ def login(client: httpx.Client, store: PrivateStore, port: int, timeout: int) ->
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["login", "status", "models"])
+    parser.add_argument("command", choices=["login", "status", "models", "refresh"])
     parser.add_argument("--storage-dir", type=Path, default=Path(".local/chatgpt"))
     parser.add_argument("--port", type=int, default=0)
     parser.add_argument("--timeout", type=int, default=600)
@@ -413,6 +533,8 @@ def main() -> None:
             if arguments.command == "login":
                 session = login(client, store, arguments.port, arguments.timeout)
                 result = safe_status(session)
+            elif arguments.command == "refresh":
+                result = safe_status(refresh_session(client, store))
             elif arguments.command == "models":
                 result = {"models": available_models(client, session), "inference_requests": 0}
             else:

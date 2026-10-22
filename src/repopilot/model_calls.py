@@ -357,7 +357,15 @@ def parse_retry_after(value: object | None, *, now: datetime | None = None) -> f
 def _provider_status(error: BaseException) -> object | None:
     response = getattr(error, "response", None)
     status = getattr(error, "status_code", None)
-    return _mapping_value(response, "status_code") if status is None else status
+    if status is None:
+        status = _mapping_value(response, "status_code")
+    if status is None:
+        # The native Google SDK exposes HTTP status as an integer `code` even
+        # when it does not retain the HTTP response. Symbolic codes stay opaque.
+        code = getattr(error, "code", None)
+        if isinstance(code, int) and not isinstance(code, bool) and 100 <= code <= 599:
+            status = code
+    return status
 
 
 def _provider_retry_after(error: BaseException) -> float | None:

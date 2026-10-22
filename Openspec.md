@@ -136,6 +136,7 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 - API 的 `max_iterations` 可设置为 1～5；“审查最多返工一次”仅适用于默认两轮配置，目前没有独立于总迭代数的单次审查返工计数器。
 - 在线 Worker 的 Planner、Coder、Reviewer、策略纠正、返工与 provider transport retry 共用每任务持久化总预算；默认 12 次，未获预留时不发 transport。Coder 轮数仍不等于模型调用次数。
 - `provider-call-control-v1` 限制单请求超时、各类重试、单次等待、累计退避和输出上限；SDK 隐式重试关闭。只有 provider 返回可信完整 usage 时才启用 Token 门槛，不估算金额。
+- 可选 Google Cloud SDK 主模型 + ChatGPT OAuth 只读 Reviewer；角色共用一份任务预算并记录实际模型身份。GPT 套餐流式路径不接受服务端 max_output_tokens/temperature，只施加本地响应字节和请求时长限制，不能声称限制服务端生成或计费。令牌私有存储、串行刷新，不自动切换计费路径；详见 [接入契约](docs/model-providers.md)。
 
 验证入口：[test_graph.py](tests/test_graph.py)、[test_reliability.py](tests/test_reliability.py)、[test_model_calls.py](tests/test_model_calls.py)、[模型调用控制契约](docs/model-call-control.md)。
 
@@ -173,7 +174,7 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 
 ### RP-07：可持续的真实评测
 
-- CH-07A 新运行采用 manifest schema 2 / evaluator config 9 / acceptance protocol 4；项目适配绑定 source/read-only/test roots、可见/隐藏策略、固定镜像、Python path 与可信依赖准备。配置/recipe/overlay 指纹校验后才执行；来源不能取自模型或候选。原 manifest 字节保留为 manifest-v1.json，只能显式只读加载；新旧实验目录拒绝混跑。
+- CH-07A 新运行采用 manifest schema 2 / acceptance protocol 4；模型接入更新后 evaluator config 为 11，角色 provider/model 与实际输出限制纳入身份，旧 v9 验收记录不改写。项目适配绑定 source/read-only/test roots、可见/隐藏策略、固定镜像、Python path 与可信依赖准备。配置/recipe/overlay 指纹校验后才执行；来源不能取自模型或候选。原 manifest 字节保留为 manifest-v1.json，只能显式只读加载；新旧实验目录拒绝混跑。
 
 - 新评测运行指纹包含 public_data_version；结构化授权字段统一处理，失败仅保存 code/type，不保存原始异常消息。既有真实实验文件保持原样，不在旧目录混跑新口径。
 
@@ -191,7 +192,7 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 - 每个 case-mode 独立原子落盘；相同配置续跑时复用 `completed` 与 `failed`，重试尚未完成或 `pending_quota` 的记录。schema 4 在每次预留/发起/结果后持久化计数，续跑保留预算并把未定响应转为 `unknown`。失败案例不会自动无限重跑。
 - 指纹覆盖数据集、案例选择、精确 provider/模型、配置、调用策略、实现和镜像等身份；`evaluation-call-budget-v2` 与旧 schema-3 记录不混用，fallback/模型切换使用新实验身份。
 - 限流和临时故障进行有上限的退避；所有 API 尝试计入预算，SDK 隐式重试关闭。配额耗尽保留已完成进度和独立 pending 状态。
-- v8 引入的模型案例存储约束在当前 v9 保留：去除原始 Diff、命令、进程输出、逐测试标识，保留聚合计数和脱敏失败原因；未执行的配额占位项不计入时延统计。
+- v8 引入的模型案例存储约束在当前 v11 保留：去除原始 Diff、命令、进程输出、逐测试标识，保留聚合计数和脱敏失败原因；未执行的配额占位项不计入时延统计。
 - 以上持久化约束不自动覆盖复现缓存、在线图状态和事件 payload；这些数据仍需按用途审查。未知 Token 或金额记录为缺失，不能估造。
 
 验证入口：[真实评测协议](docs/real-evaluation-protocol.md)、[test_eval_runtime.py](tests/test_eval_runtime.py)、[test_acceptance.py](tests/test_acceptance.py)、[test_eval_report.py](tests/test_eval_report.py)。

@@ -44,7 +44,7 @@ known limitations, and acceptance criteria for the next iterations (Chinese).
   resumable per-case real-model evaluation, one-shot baseline comparison, and sanitized
   failure/latency reports; this is a one-project pilot, not a broad benchmark claim.
 - Automated lint, test, and 70% line-coverage quality gates on every push and pull request.
-- OpenAI-compatible model adapter for real repository tasks.
+- OpenAI-compatible and Google Cloud SDK adapters, with an optional ChatGPT OAuth Reviewer.
 
 ## Quick start
 
@@ -97,12 +97,15 @@ Never commit `.env`. The file is ignored by Git.
 For a local ChatGPT subscription authorization check, install `.[oauth]` and run
 `python -m repopilot.chatgpt_auth login`. The separate operator CLI verifies browser
 authorization and can list account models without sending inference requests. Credentials
-stay in the ignored, private `.local/chatgpt/` directory. This preflight does not connect
-ChatGPT OAuth to the workflow model adapter; see [authorization setup](docs/chatgpt-authorization.md).
+stay in the ignored, private `.local/chatgpt/` directory. The CLI also supports `refresh`.
+For Gemini Planner/Coder with a ChatGPT Reviewer, see [provider configuration](docs/model-providers.md).
+Each role records its actual provider and shares the task's durable budget. Mock mode stays offline.
 
 Every online Planner, Coder, policy-correction, Reviewer, and controlled transport retry consumes
 the same durable task budget. `MODEL_MAX_TOTAL_TOKENS=0` disables the optional trusted-token gate;
-call and output caps still apply. Provider usage is never estimated, so missing usage or special
+call caps still apply. Google/OpenAI-compatible adapters send output-token caps; ChatGPT plan usage
+does not support that field and uses a local stream-byte limit and request timeout, which do not cap
+server-side generation or billing. Provider usage is never estimated, so missing usage or special
 billing prevents an exact monetary guarantee. See
 [model-call budgets and provider failures](docs/model-call-control.md) for error states, recovery,
 fallback identity, and deployment rules.

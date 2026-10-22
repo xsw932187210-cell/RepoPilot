@@ -20,6 +20,7 @@ python -m repopilot.chatgpt_auth login
 ```bash
 python -m repopilot.chatgpt_auth status
 python -m repopilot.chatgpt_auth models
+python -m repopilot.chatgpt_auth refresh
 ```
 
 `status` 只返回连接、套餐授权和本地令牌有效期的布尔状态。
@@ -41,13 +42,14 @@ python -m repopilot.chatgpt_auth models
 - 权限以 token 响应实际返回的 scope 为准；模型目录请求前校验套餐授权和剩余有效期。
 - HTTP 回调禁用请求日志；异常只输出固定错误码或 HTTP 状态，不回显 provider 内容。
 
-当前工具只实现连接预检，不自动刷新令牌、不调用 Responses、不提供生产工作流模型适配。
-访问令牌过期后，使用同一存储目录重新登录。刷新令牌保存在同一私有文件内，尚不被工具消费。
+授权 CLI 本身不发送推理；`refresh` 用原 client/host 续期并原子保存轮换令牌。
+2026-10-23 新增可选只读 Reviewer 适配与调用前自动刷新，详见[角色接入契约](model-providers.md)。
+`status` 不探测 Worker，`workflow_adapter_connected=null` 表示未检测，不是工作流连接结论。
 可在 [ChatGPT 设置 → Usage](https://chatgpt.com/settings/usage) 管理额度和撤销该应用的授权。
 
 ## 后续接入评测的条件
 
-工作流需增加单独的 OAuth Responses 适配，保持调用预留、失败分类、总预算和实验身份记录。
+工作流使用单独的 OAuth Responses 适配，保持调用预留、失败分类、总预算和实验身份记录。
 官方当前要求 `store=false`、`stream=true`；此路径不接受现有适配中的 `temperature`、
 `max_output_tokens` 等参数。应独立记录模型、接入方式与预算语义，不能直接把 OAuth 令牌填入
 现有 `OPENAI_API_KEY` 后视为兼容，也不能未经确认在配额不足时切换到付费模型。
