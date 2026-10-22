@@ -94,6 +94,12 @@ MODEL_MAX_OUTPUT_TOKENS=4096
 
 Never commit `.env`. The file is ignored by Git.
 
+For a local ChatGPT subscription authorization check, install `.[oauth]` and run
+`python -m repopilot.chatgpt_auth login`. The separate operator CLI verifies browser
+authorization and can list account models without sending inference requests. Credentials
+stay in the ignored, private `.local/chatgpt/` directory. This preflight does not connect
+ChatGPT OAuth to the workflow model adapter; see [authorization setup](docs/chatgpt-authorization.md).
+
 Every online Planner, Coder, policy-correction, Reviewer, and controlled transport retry consumes
 the same durable task budget. `MODEL_MAX_TOTAL_TOKENS=0` disables the optional trusted-token gate;
 call and output caps still apply. Provider usage is never estimated, so missing usage or special

@@ -33,7 +33,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+oauth = ["PyJWT[crypto]>=2.10,<3"]
 dev = [
+  "PyJWT[crypto]>=2.10,<3",
   "pytest>=8.4,<9",
   "pytest-asyncio>=1.1,<2",
   "pytest-cov>=6.2,<7",
@@ -45,6 +47,7 @@ repopilot-worker = "repopilot.worker:main"
 repopilot-eval = "repopilot.evaluation:main"
 repopilot-migrate = "repopilot.migrations.cli:main"
 repopilot-publish = "repopilot.publication_cli:main"
+repopilot-chatgpt = "repopilot.chatgpt_auth:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/repopilot"]
