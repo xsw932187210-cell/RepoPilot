@@ -1,6 +1,6 @@
 # RepoPilot 项目规范与迭代验收
 
-> 更新日期：2026-10-22；本轮起始基线：`4d55a5b`；CH-06A 已由 PR #9 合并；CH-06C 已完成隔离验收，未合并；最近完整真实模型评测：2026-09-09。
+> 更新日期：2026-10-22；本轮起始基线：`4d55a5b`；CH-06A 已由 PR #9 合并；CH-06C 已完成隔离验收并推送，未合并；最近完整真实模型评测：2026-09-09。
 > 本文是现有项目的规范入口，记录当前行为、证据和后续变更的验收标准。
 > 本次建立的是单文件规范，尚未接入 OpenSpec CLI，也不代表已建立其提案、归档或自动校验流程。
 > 规划版本：Roadmap v3。CH-01～CH-08、CH-21 为主题编号，具体开发选带字母的子任务；新增的上下文与历史案例探索按需启动。
@@ -1161,6 +1161,6 @@ smoke 使用已经运行的服务。若 `.env` 选择真实模型，应按 [READ
 - 实验身份与清理：仅 Mock/测试 transport；project repopilot_ch06c_20261022_72448、API 58090、Docker 29.5.3、PostgreSQL 16.15、Redis 7.4、LangGraph 1.2.16、saver 3.2.0、LangSmith 0.14.11。90 份源码、测试/API 各 48 份安装包与提交一致，两轮专属资源已确认移除。
 - 证据：[验收](docs/ch06c-verification-2026-10-22.md)、[机器记录](docs/evidence/2026-10-22-ch06c-verification.json)、[数据边界](docs/data-boundaries.md)；原始报告在忽略目录 reports/repopilot_ch06c_20261022_72448，宿主 reports/ch06c-host-verification.log/.xml。历史真实报告、失败账本和 Mock 数据集与 b7cf1c9 字节相同。
 - 兼容与限制：无需新增 SQL revision（仍为 0007）；客户端使用新的公开投影，完整 Diff 需 API Key，旧敏感 authority/checkpoint 需人工核对/重新验证。正则不是任意秘密发现器；保留期人工控制，生产加密/租户隔离/自动 GC 仍未实现。没有新真实模型质量评测。
-- PR / 合并：CH-06C 当前未推送、未创建新 PR、未合并，实际推送后回填；PR #9 已合并。
+- PR / 合并：CH-06C 已推送[独立分支](https://github.com/xsw932187210-cell/RepoPilot/tree/codex/ch-06c-data-boundaries)，首次推送 2624c48 包含实现/验收记录，未创建新 PR、未合并；后续仅回填实际推送元数据。PR #9 已合并。
 - 规范：RP-06/RP-07、8.4、README、架构/运行时/模型调用/评测协议及出口契约同步；CH-06C 为 VERIFIED。
 - 下一张建议：CH-04A（硬依赖 CH-09 已合并），质量方向可选 CH-07A；本轮不执行其他卡。

@@ -167,9 +167,12 @@
     "source-hashes.json": "94cbfcdf370cc6fecd5c405f42f38c394585e77f87e68183ecdd7d3c1c9e4347"
   },
   "repository_delivery": {
+    "branch_url": "https://github.com/xsw932187210-cell/RepoPilot/tree/codex/ch-06c-data-boundaries",
+    "first_pushed_commit": "2624c48fe9c36a95a6fc04b1eb88fbba8ad6022c",
     "merged": false,
     "pull_request_created": false,
-    "pushed": false
+    "push_date": "2026-10-22",
+    "pushed": true
   },
   "schema_version": "ch06c-verification-v1",
   "service_tests": {

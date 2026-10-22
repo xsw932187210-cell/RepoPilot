@@ -101,6 +101,6 @@ Diff 预览，旧敏感 authority/checkpoint 需人工核对并重新验证。�
 可能误报；私有存储保留期仍由操作者管理。未实现生产加密、多用户隔离、自动清理、
 Worker fencing、自动重领或 SSE 游标修复。
 
-本验收记录提交时 CH-06C 未推送、未创建新 PR、未合并；实际推送后回填元数据。
+CH-06C 已推送到[独立分支](https://github.com/xsw932187210-cell/RepoPilot/tree/codex/ch-06c-data-boundaries)，首次推送 2624c48 包含实现与验收记录；后续仅回填实际推送元数据。尚未创建新 PR、未合并。
 下一张建议为 CH-04A（硬依赖 CH-09 已合并），质量方向可选 CH-07A；
 本轮在 CH-06C 交付后停止。
