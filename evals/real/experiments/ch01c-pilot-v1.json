@@ -1,0 +1,71 @@
+{
+  "protocol": "ch01c-pilot-v1",
+  "run_id": "ch01c-holdout-20261023-v1",
+  "strategy_version": "visible-rules-v1",
+  "freeze": "evals/real/freeze-pilot-v1.json",
+  "partition": "holdout",
+  "cases": [
+    "tqdm-003",
+    "cookiecutter-003",
+    "cookiecutter-004"
+  ],
+  "strategies": [
+    "oneshot",
+    "workflow",
+    "auto"
+  ],
+  "repeats": 2,
+  "max_calls_per_unit": 6,
+  "max_api_attempts": 108,
+  "output": "reports/ch01c-holdout-20261023-v1",
+  "primary": {
+    "provider": "google_cloud",
+    "model": "gemini-3.5-flash"
+  },
+  "reviewer": {
+    "provider": "chatgpt",
+    "model": "gpt-6.1-sol"
+  },
+  "temperature": 1.0,
+  "gemini_max_output_tokens": 32768,
+  "chatgpt_local_max_stream_bytes": 65536,
+  "request_timeout_seconds": 90,
+  "sdk_versions": {
+    "google-genai": "2.32.0",
+    "openai": "3.35.1"
+  },
+  "routing_policy": {
+    "version": "visible-rules-v1",
+    "max_editable_files": 2,
+    "max_context_chars": 20000,
+    "min_issue_chars": 40,
+    "max_issue_chars": 1500
+  },
+  "implementation_sha256": "271bafdd373e12431465ef706b09de306ada30be647c2f58e4fa4bf6655ef3de",
+  "primary_metric": "withheld acceptance resolved without pass-to-pass regressions",
+  "secondary_metrics": [
+    "approval reached",
+    "regressions",
+    "runtime failures",
+    "pending",
+    "API attempts",
+    "observed tokens",
+    "duration",
+    "routing decisions"
+  ],
+  "order": "rotating-v1",
+  "provider_seed": null,
+  "difficulty": "unlabeled; no independently established difficulty labels",
+  "hypothesis": "Evaluate whether the predeclared visible-input router reduces requests while retaining repair success; no improvement is assumed.",
+  "interpretation": "Three purposively selected defects across two held-out projects. Repeats are not new defects. Project-cluster intervals are descriptive; incomplete pairs do not establish a winner. Unknown usage and money remain null.",
+  "change_scope": "Execution strategy only. Primary/reviewer profiles, retrieval budgets, Coder/Reviewer prompts, source permissions, visible tests and withheld acceptance remain fixed across arms. The single-Coder arm omits LLM planning/review by definition and still requires visible test and human approval gates. This does not isolate individual role effects.",
+  "output_limit_rationale": "A generic complete-file JSON edit can exceed 4096 output tokens for an allowed 120KB source file. Choose 32768 before inference, equally for all Gemini roles/arms, without hidden-result tuning. ChatGPT supports only the existing local byte/time limit, not a server output-token cap.",
+  "execution_limits": {
+    "max_context_files": 12,
+    "max_context_chars": 70000,
+    "max_file_bytes": 120000,
+    "sandbox_timeout_seconds": 120,
+    "sandbox_memory": "512m",
+    "max_iterations": 2
+  }
+}

@@ -1,5 +1,12 @@
 # Architecture
 
+The workflow diagram below describes the default strategy. CH-01B also supports
+one-shot with one Coder generation, a deterministic test gate, and explicit
+`review_performed=false` before bound human approval. Auto selects a route from
+visible first-retrieval features and can upgrade once on the same model ledger.
+All strategies retain candidate/evidence binding and publication opt-in; see
+[task routing](task-routing.md).
+
 RepoPilot deliberately separates agentic decisions from deterministic controls.
 
 ```mermaid
@@ -145,3 +152,17 @@ SQL stores cancellation requests, phase timing, exact owned resource IDs and cle
 Only cleanup completion permits a stopped timestamp. Queue/approval expiry runs independently
 of active execution; publication uses the existing receipt reconciliation boundary.
 Attempt abort is a local stop interface for future ownership loss, not Worker fencing.
+
+## Public data boundary
+
+CH-06C adds [public projections and private execution data](data-boundaries.md).
+
+CH-07A moves evaluation source rules and runtime selection into [trusted project adapters](project-adapters.md).
+Each project binds literal source/read-only/test roots, a pinned image and Python path, while
+task metadata and hidden overlays remain in the trusted evaluator. Candidate changes are replayed
+into a fresh buggy export before acceptance; graph/model inputs retain only buggy context and
+visible tests. Schema-1 manifests and old run directories remain historical read-only evidence.
+API/events use reviewed fields and classified errors; provider exceptions are replaced before
+LangGraph stores error writes. Async graph/model scopes disable automatic external tracing.
+Known credentials cause code/context rejection rather than code rewriting. Complete Diff access
+requires an API Key; canonical artifacts and evidence keep their identities.

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.errors import GraphBubbleUp
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 from pydantic import ValidationError
@@ -16,19 +17,26 @@ from repopilot.approval_models import TestEvidence, evidence_identity
 from repopilot.approvals import ApprovalConflict, ApprovalStore
 from repopilot.candidates import ArtifactStore, Candidate, capture_manifest
 from repopilot.config import Settings
+from repopilot.data_boundary import (
+    PublicExecutionError,
+    SensitiveExecutionData,
+    require_secret_free,
+)
 from repopilot.events import EventBus, JobQueue
 from repopilot.execution import ExecutionStopped, current_control
 from repopilot.generations import GenerationCoordinator, MemoryGenerationStore, SQLGenerationStore
 from repopilot.github import GitHubPublisher, PublishResult
+from repopilot.graph.privacy import PrivateExecutionGraph
 from repopilot.graph.state import RepoPilotState
-from repopilot.llm import AgentModel
-from repopilot.model_calls import ModelCallControlError
+from repopilot.llm import AgentModel, remaining_model_calls
+from repopilot.model_calls import ModelCallControlError, RateLimitError
 from repopilot.models import CodeChangeOutput, FileEdit, PlanOutput, ReviewOutput, SandboxResult
 from repopilot.policy_feedback import normalized_policy_feedback, validate_modification_intent
 from repopilot.publication import PublicationStore
 from repopilot.repository import RepositoryContext, WorkspaceManager
+from repopilot.routing import WORKFLOW_MIN_CALLS, RoutingPolicy, decide_route
 from repopilot.sandbox import DockerSandbox, LocalSandbox
-from repopilot.security import SecurityError
+from repopilot.security import SecurityError, redact_secrets
 
 MAX_POLICY_RETRIES = 1
 
@@ -121,6 +129,11 @@ class GraphDependencies:
             control.check()
         if not control and self.queue and await self.queue.is_cancelled(state["task_id"]):
             raise TaskCancelled("Task cancellation was requested")
+        routing = state.get("routing")
+        if routing and routing["policy_fingerprint"] != RoutingPolicy.from_settings(
+            self.settings
+        ).fingerprint:
+            raise SecurityError("routing_policy_mismatch")
         if check_generation and self.generations and state.get("candidate"):
             await self.generations.assert_current(Candidate.model_validate(state["candidate"]))
 
@@ -134,6 +147,13 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
             else MemoryGenerationStore()
         )
     generations = GenerationCoordinator(artifacts, deps.generations, deps.workspaces)
+
+    async def remaining(state: RepoPilotState) -> int:
+        used = sum(
+            metric["node"] in {"planner", "coder", "reviewer"}
+            for metric in state.get("node_metrics", [])
+        )
+        return await remaining_model_calls(deps.model, deps.settings.model_max_calls, used)
 
     def inspect_candidate(state: RepoPilotState, search_terms: list[str]) -> RepositoryContext:
         candidate = Candidate.model_validate(state["candidate"])
@@ -188,6 +208,90 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
             "node_metrics": [node_metric("planner", duration_ms)],
         }
 
+    async def route(state: RepoPilotState) -> dict[str, Any]:
+        started = time.perf_counter()
+        await deps.ensure_active(state)
+        context = inspect_candidate(state, [])
+        requested = state.get("execution_strategy", "workflow")
+        decision = decide_route(
+            requested, state["issue_title"], state["issue_body"], context,
+            await remaining(state), RoutingPolicy.from_settings(deps.settings),
+        )
+        duration_ms = elapsed_ms(started)
+        await deps.emit(state, "route", "Selected deterministic execution route", {
+            "routing": decision,
+        }, duration_ms)
+        return {
+            **context_state(context), "execution_strategy": requested,
+            "routing": decision, "routing_history": [decision],
+            "route_error_code": (
+                decision["reasons"][0] if decision["selected"] == "stop" else None
+            ),
+            "initial_retrieval": {
+                "selected_files": list(context.files), "query_terms": context.query_terms,
+                "strategy": context.strategy, "candidate_count": context.candidate_count,
+                "selected_chars": context.selected_chars,
+                "skipped_for_budget": context.skipped_for_budget,
+                "editable_files": list(context.editable_paths or ()),
+                "capability_policy_version": context.capability_policy_version,
+                "evidence": context.evidence,
+            },
+            "plan": PlanOutput(
+                summary="Generate one minimal candidate",
+                steps=["Fix the described behavior"],
+            ).model_dump(),
+            "node_metrics": [node_metric("route", duration_ms)],
+        }
+
+    def after_route(state: RepoPilotState) -> str:
+        return {"oneshot": "coder", "workflow": "planner", "stop": "failed"}[
+            state["routing"]["selected"]
+        ]
+
+    def oneshot(state: RepoPilotState) -> bool:
+        return (state.get("routing") or {}).get("selected") == "oneshot"
+
+    async def route_failure(state: RepoPilotState) -> dict[str, Any]:
+        started = time.perf_counter()
+        await deps.ensure_active(state)
+        decision = dict(state["routing"])
+        calls = await remaining(state)
+        error = state.get("policy_error_code") or "oneshot_validation_failed"
+        safe_to_upgrade = error in {
+            "oneshot_validation_failed", "invalid_modification_intent",
+            "model_invalid_response", "policy_retry_exhausted",
+        }
+        can_upgrade = (
+            decision["requested"] == "auto" and not decision["upgrades"]
+            and safe_to_upgrade and state.get("iteration", 0) < state.get("max_iterations", 2)
+            and calls >= WORKFLOW_MIN_CALLS
+        )
+        reason = (
+            "oneshot_failed_upgrade_to_workflow" if can_upgrade else
+            "insufficient_upgrade_budget" if decision["requested"] == "auto"
+            and calls < WORKFLOW_MIN_CALLS else "oneshot_stopped"
+        )
+        decision.update(
+            selected="workflow" if can_upgrade else "stop", reasons=[reason],
+            remaining_calls=calls, upgrades=int(can_upgrade), trigger=error,
+        )
+        duration_ms = elapsed_ms(started)
+        await deps.emit(state, "route_failure", "Resolved failed one-shot route", {
+            "routing": decision,
+        }, duration_ms)
+        return {
+            "routing": decision,
+            "routing_history": [*state.get("routing_history", []), decision],
+            "route_error_code": None if can_upgrade else reason,
+            "policy_error_code": None if can_upgrade else state.get("policy_error_code"),
+            "pending_changes": None,
+            "reviewer_feedback": [
+                *state.get("reviewer_feedback", []),
+                "The first candidate did not pass visible validation. Inspect and correct it.",
+            ],
+            "node_metrics": [node_metric("route_failure", duration_ms, state.get("iteration", 0))],
+        }
+
     async def researcher(state: RepoPilotState) -> dict[str, Any]:
         started = time.perf_counter()
         await deps.ensure_active(state)
@@ -214,7 +318,7 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
         )
         return {
             **context_state(context),
-            "initial_retrieval": retrieval,
+            "initial_retrieval": state.get("initial_retrieval", retrieval),
             "node_metrics": [node_metric("researcher", duration_ms, state.get("iteration", 0))],
         }
 
@@ -255,6 +359,10 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
                     model_feedback[-10:],
                 )
             )
+        except RateLimitError:
+            # The evaluation runtime must preserve quota-pending, including when
+            # quota is encountered by Coder rather than Planner/Reviewer.
+            raise
         except ModelCallControlError as error:
             duration_ms = elapsed_ms(started)
             await deps.emit(
@@ -283,6 +391,19 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
                 "policy_error_code": "invalid_modification_intent",
                 "node_metrics": [node_metric("coder", duration_ms, state.get("iteration", 0))],
             }
+        try:
+            require_secret_free(changes.model_dump())
+        except SensitiveExecutionData:
+            duration_ms = elapsed_ms(started)
+            await deps.emit(
+                state, "coder", "Modification intent contains sensitive execution data",
+                {"error_code": "sensitive_execution_data"}, duration_ms,
+            )
+            return {
+                "pending_changes": None,
+                "policy_error_code": "sensitive_execution_data",
+                "node_metrics": [node_metric("coder", duration_ms, state.get("iteration", 0))],
+            }
         duration_ms = elapsed_ms(started)
         await deps.emit(
             state,
@@ -299,7 +420,9 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
         }
 
     def after_coder(state: RepoPilotState) -> str:
-        return "failed" if state.get("policy_error_code") else "apply_policy"
+        if state.get("policy_error_code"):
+            return "route_failure" if oneshot(state) else "failed"
+        return "apply_policy"
 
     async def apply_policy(state: RepoPilotState) -> dict[str, Any]:
         started = time.perf_counter()
@@ -377,6 +500,10 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
         }
 
     def after_apply_policy(state: RepoPilotState) -> str:
+        if oneshot(state) and (
+            state.get("policy_error_code") or state.get("policy_feedback") is not None
+        ):
+            return "route_failure"
         if state.get("policy_error_code"):
             return "failed"
         return "coder" if state.get("policy_feedback") is not None else "test_runner"
@@ -387,6 +514,11 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
         candidate = Candidate.model_validate(state["candidate"])
         with artifacts.materialize(candidate) as snapshot:
             result = await deps.sandbox.run(snapshot, state["test_command"])
+        # Diagnostic output is sanitized before binding evidence or checkpointing.
+        result = result.model_copy(update={
+            "stdout": redact_secrets(result.stdout),
+            "stderr": redact_secrets(result.stderr),
+        })
         await deps.generations.assert_current(candidate)
         evidence = TestEvidence(
             evidence_digest="",
@@ -482,9 +614,35 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
         )
         return {
             "review": review.model_dump(),
+            "review_performed": True,
             "reviewer_feedback": review.feedback,
             "node_metrics": [node_metric("reviewer", duration_ms, state.get("iteration", 0))],
         }
+
+    async def oneshot_gate(state: RepoPilotState) -> dict[str, Any]:
+        started = time.perf_counter()
+        await deps.ensure_active(state)
+        result = SandboxResult.model_validate(state["test_result"])
+        passed = result.passed and bool(state.get("diff", "").strip())
+        feedback = [] if passed else [
+            "Deterministic gate: visible tests failed or no repository diff was produced."
+        ]
+        return {
+            "review_performed": False,
+            "review": ReviewOutput(
+                approved=False,
+                summary="LLM review was not run. Human review of the tested candidate is required.",
+                feedback=feedback, risk_level="low" if passed else "medium",
+            ).model_dump(),
+            "reviewer_feedback": feedback,
+            "node_metrics": [node_metric("oneshot_gate", elapsed_ms(started), state["iteration"])],
+        }
+
+    def after_oneshot_gate(state: RepoPilotState) -> str:
+        return "approval" if (
+            SandboxResult.model_validate(state["test_result"]).passed
+            and bool(state.get("diff", "").strip())
+        ) else "route_failure"
 
     def after_review(state: RepoPilotState) -> str:
         tests_passed = SandboxResult.model_validate(state["test_result"]).passed
@@ -533,6 +691,8 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
                 ),
                 "changed_files": state.get("changed_files", []),
                 "review": state.get("review", {}),
+                "review_performed": state.get("review_performed"),
+                "routing": state.get("routing"),
                 "test_result": state.get("test_result", {}),
                 "diff_preview": state.get("diff", "")[:8_000],
             }
@@ -657,7 +817,7 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
         )
         return {
             "status": "failed",
-            "error": state.get("policy_error_code")
+            "error": state.get("route_error_code") or state.get("policy_error_code")
             or "Candidate failed deterministic or reviewer validation within the retry budget",
             "node_metrics": [node_metric("failed", duration_ms, state.get("iteration", 0))],
         }
@@ -677,17 +837,37 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
             "node_metrics": [node_metric("cancelled", duration_ms, state.get("iteration", 0))],
         }
 
-    def interruptible(node):
+    def interruptible(node, *, cancellable=True):
         async def execute(state):
-            control = current_control()
-            if control:
-                return await control.run(node(state))
-            return await node(state)
+            try:
+                control = current_control()
+                if control and cancellable:
+                    result = await control.run(node(state))
+                else:
+                    result = await node(state)
+            except GraphBubbleUp:
+                raise
+            except Exception as error:
+                if type(error).__module__.startswith("repopilot."):
+                    # Preserve application control-flow types only when their
+                    # checkpoint representation contains no known credentials.
+                    try:
+                        require_secret_free(str(error))
+                    except SecurityError:
+                        pass
+                    else:
+                        raise
+                raise PublicExecutionError(error) from None
+            require_secret_free(result)
+            return result
 
         return execute
 
     graph = StateGraph(RepoPilotState)
     graph.add_node("prepare", interruptible(prepare))
+    graph.add_node("route", interruptible(route))
+    graph.add_node("route_failure", interruptible(route_failure))
+    graph.add_node("oneshot_gate", interruptible(oneshot_gate))
     graph.add_node("planner", interruptible(planner))
     graph.add_node("researcher", interruptible(researcher))
     graph.add_node("test_analyst", interruptible(test_analyst))
@@ -696,24 +876,41 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
     graph.add_node("test_runner", interruptible(test_runner))
     graph.add_node("reviewer", interruptible(reviewer))
     graph.add_node("approval", interruptible(approval))
-    graph.add_node("finalize", finalize)
+    # Publication retains its bounded reconciliation window after a stop.
+    graph.add_node("finalize", interruptible(finalize, cancellable=False))
     graph.add_node("failed", interruptible(failed))
     graph.add_node("cancelled", interruptible(cancelled))
 
     graph.add_edge(START, "prepare")
-    graph.add_edge("prepare", "planner")
+    graph.add_edge("prepare", "route")
+    graph.add_conditional_edges(
+        "route", after_route, {"coder": "coder", "planner": "planner", "failed": "failed"}
+    )
+    graph.add_conditional_edges(
+        "route_failure", lambda state: "planner" if state["routing"]["selected"] == "workflow"
+        else "failed", {"planner": "planner", "failed": "failed"},
+    )
     graph.add_edge("planner", "researcher")
     graph.add_edge("planner", "test_analyst")
     graph.add_edge(["researcher", "test_analyst"], "coder")
     graph.add_conditional_edges(
-        "coder", after_coder, {"apply_policy": "apply_policy", "failed": "failed"}
+        "coder", after_coder,
+        {"apply_policy": "apply_policy", "failed": "failed", "route_failure": "route_failure"},
     )
     graph.add_conditional_edges(
         "apply_policy",
         after_apply_policy,
-        {"coder": "coder", "test_runner": "test_runner", "failed": "failed"},
+        {"coder": "coder", "test_runner": "test_runner", "failed": "failed",
+         "route_failure": "route_failure"},
     )
-    graph.add_edge("test_runner", "reviewer")
+    graph.add_conditional_edges(
+        "test_runner", lambda state: "oneshot_gate" if oneshot(state) else "reviewer",
+        {"oneshot_gate": "oneshot_gate", "reviewer": "reviewer"},
+    )
+    graph.add_conditional_edges(
+        "oneshot_gate", after_oneshot_gate,
+        {"approval": "approval", "route_failure": "route_failure"},
+    )
     graph.add_conditional_edges(
         "reviewer",
         after_review,
@@ -725,4 +922,4 @@ def build_graph(deps: GraphDependencies, checkpointer: BaseCheckpointSaver):
     graph.add_edge("finalize", END)
     graph.add_edge("failed", END)
     graph.add_edge("cancelled", END)
-    return graph.compile(checkpointer=checkpointer)
+    return PrivateExecutionGraph(graph.compile(checkpointer=checkpointer))

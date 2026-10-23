@@ -62,7 +62,9 @@ async def run(args: argparse.Namespace) -> None:
                         path = next(path for path in context.files if path.startswith("tests/"))
                         content = context.files[path]
                         if args.scenario == "redaction":
-                            path = "/untrusted-host/sk-fixture-private-marker/source.py"
+                            # Known tokens now stop before checkpointing (CH-06C).
+                            # Keep the old hard-exit probe focused on path policy.
+                            path = "/untrusted-host/private-marker/source.py"
                         changes.edits.append(
                             FileEdit(
                                 path=path,

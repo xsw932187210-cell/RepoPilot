@@ -1,0 +1,14 @@
+{
+  "protocol": "repeat-evaluation-v1",
+  "run_id": "choose-a-new-run-id",
+  "freeze": "evals/real/freeze-pilot-v1.json",
+  "partition": "holdout",
+  "modes": ["oneshot", "workflow"],
+  "repeats": 2,
+  "strategy_version": "choose-and-freeze-before-running",
+  "max_calls_per_case_strategy_repeat": 6,
+  "max_total_calls": 72,
+  "provider_seed": null,
+  "order": "rotating-v1",
+  "note": "Configuration example only; not authorization to call a model. The three-strategy CH-01C experiment adds auto only after CH-01B is verified and uses the separately approved 108-attempt ceiling. Freeze exact providers/models, settings and output limits before any inference."
+}

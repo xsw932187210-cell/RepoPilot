@@ -10,7 +10,6 @@ from pathlib import Path
 import pytest
 
 from repopilot.real_tasks import (
-    HiddenOverlayFile,
     export_git_tree,
     load_real_task_manifest,
     materialize_hidden_overlay,
@@ -172,18 +171,9 @@ def test_hidden_overlay_rejects_checksum_mismatch_and_symlink_escape(
 
     outside = tmp_path / "outside"
     outside.mkdir()
+    (outside / "rules").mkdir()
     escaping = tmp_path / "escaping"
     escaping.mkdir()
     (escaping / "tests").symlink_to(outside, target_is_directory=True)
-    shallow_overlay = HiddenOverlayFile(
-        source=overlay.source,
-        destination="tests/escaped.py",
-        sha256=overlay.sha256,
-        replaces_sha256=overlay.replaces_sha256,
-    )
-    escaping_task = replace(
-        task,
-        test=replace(task.test, hidden_overlay=(shallow_overlay,)),
-    )
     with pytest.raises(ValueError, match="escapes workspace"):
-        materialize_hidden_overlay(escaping_task, MANIFEST.parent, escaping)
+        materialize_hidden_overlay(task, MANIFEST.parent, escaping)

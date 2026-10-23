@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "dataset_id": "python-pilot-v1",
+  "public_training_contamination": "unknown",
+  "policy": "Curators inspected reference changes and tests solely for provenance, environment preparation and reproduction. No prompt/router tuning or reference-solution examples use the holdout. A frozen-protocol issue-only evaluation is not tuning; using reference answers, hidden feedback or observed outcomes to adapt prompts/routing requires reclassification in a new freeze.",
+  "events": [
+    {
+      "kind": "prompt_tuning",
+      "recorded_at": "2026-10-23",
+      "task_ids": [
+        "thefuck-001",
+        "thefuck-002",
+        "thefuck-005",
+        "thefuck-006",
+        "thefuck-007",
+        "thefuck-009",
+        "thefuck-010",
+        "thefuck-011",
+        "thefuck-012",
+        "thefuck-013",
+        "thefuck-015",
+        "thefuck-018",
+        "thefuck-019",
+        "thefuck-021",
+        "thefuck-022",
+        "thefuck-025",
+        "thefuck-026",
+        "thefuck-027",
+        "thefuck-031",
+        "thefuck-032"
+      ],
+      "details": "These 20 historical cases and failures were previously analyzed; all remain development/regression, never unseen holdout."
+    },
+    {
+      "kind": "curation",
+      "recorded_at": "2026-10-23",
+      "task_ids": [
+        "tqdm-003",
+        "cookiecutter-003",
+        "cookiecutter-004"
+      ],
+      "details": "The same coding assistant inspected source/test reference differences and public issues for dataset QA. Added independent Docker symptom checks, corrected an invalid visible selector, and narrowed tqdm to the remaining no-total symptom. No model-generated repair, prompt revision, retrieval tuning or router tuning used these tasks."
+    },
+    {
+      "kind": "curation",
+      "recorded_at": "2026-10-23",
+      "task_ids": [
+        "tqdm-003",
+        "cookiecutter-003",
+        "cookiecutter-004"
+      ],
+      "details": "The predeclared v13 pilot reserved 30 requests before rate limiting; Cookiecutter case 3 exposed an artifact-base mismatch due to an upstream documentation gitlink. Runtime debugging corrects the private artifact baseline to match the existing history-free export. Observed v13 results are retained separately. No repair prompt, router threshold, retrieval budget, model profile, expected answer or hidden-test criterion was tuned."
+    }
+  ]
+}

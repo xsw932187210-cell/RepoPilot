@@ -1,0 +1,12 @@
+# Opt in explicitly. Authorize on the host first; never COPY credentials into an image.
+# Ensure the worker's UID can read/write this private directory on the target host.
+services:
+  worker:
+    environment:
+      CHATGPT_STORAGE_DIR: /auth/chatgpt
+    volumes:
+      - type: bind
+        source: ./.local/chatgpt
+        target: /auth/chatgpt
+        bind:
+          create_host_path: false

@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from repopilot.security import CapabilityReason
+from repopilot.security import CapabilityReason, redact_secrets
 
 
 class TaskStatus(StrEnum):
@@ -54,10 +54,16 @@ class TaskCreate(BaseModel):
     base_branch: str = Field(default="main", min_length=1, max_length=120)
     test_command: str = Field(default="python -m pytest -q", max_length=300)
     max_iterations: int = Field(default=2, ge=1, le=5)
+    execution_strategy: Literal["oneshot", "workflow", "auto"] = "workflow"
 
     execution_timeout_seconds: int | None = Field(default=None, ge=1, le=86_400)
     deadline_includes_queue: bool | None = None
     deadline_includes_approval: bool | None = None
+
+    @field_validator("issue_title", "issue_body")
+    @classmethod
+    def redact_issue_metadata(cls, value: str) -> str:
+        return redact_secrets(value)
 
     @field_validator("repository_url")
     @classmethod
@@ -76,6 +82,7 @@ class TaskView(BaseModel):
     base_branch: str
     test_command: str
     max_iterations: int
+    execution_strategy: Literal["oneshot", "workflow", "auto"] = "workflow"
     graph_thread_id: str
     state_version: int = Field(ge=1)
     result: dict[str, Any] | None = None
@@ -178,6 +185,11 @@ class TaskMetrics(BaseModel):
     node_duration_ms: dict[str, int]
     iterations: int = Field(ge=0)
     sandbox_time_ms: int = Field(ge=0)
+    execution_strategy: str = "workflow"
+    selected_route: str | None = None
+    routing_policy_version: str | None = None
+    route_upgrades: int = Field(default=0, ge=0)
+    review_performed: bool | None = None
     retrieval_strategy: str | None = None
     retrieval_candidate_files: int = Field(default=0, ge=0)
     retrieval_selected_files: int = Field(default=0, ge=0)

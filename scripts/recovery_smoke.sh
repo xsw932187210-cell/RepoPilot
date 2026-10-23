@@ -4,10 +4,17 @@ set -eu
 api_url="${REPOPILOT_API_URL:-http://localhost:8000}"
 compose_file="${REPOPILOT_COMPOSE_FILE:-docker-compose.yml}"
 compose_project="${REPOPILOT_COMPOSE_PROJECT:-}"
+strategy="${REPOPILOT_EXECUTION_STRATEGY:-workflow}"
+case "$strategy" in
+  workflow) expected_minimum=3 ;;
+  oneshot|auto) expected_minimum=1 ;;
+  *) printf 'Unsupported recovery strategy\n' >&2; exit 1 ;;
+esac
+create_payload=$(python3 -c 'import json,sys; print(json.dumps({"repository_url":"demo://buggy-calculator","issue_title":"Fix add returning the wrong result","issue_body":"The add function subtracts instead of adding. Make the smallest safe correction.","test_command":"python -m pytest -q","execution_strategy":sys.argv[1]}))' "$strategy")
 
 task_json=$(curl -fsS -X POST "$api_url/api/v1/tasks" \
   -H 'Content-Type: application/json' \
-  -d '{"repository_url":"demo://buggy-calculator","issue_title":"Fix add returning the wrong result","issue_body":"The add function subtracts instead of adding. Make the smallest safe correction.","test_command":"python -m pytest -q"}')
+  -d "$create_payload")
 
 task_id=$(printf '%s' "$task_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
 printf 'Created recovery task %s\n' "$task_id"
@@ -32,7 +39,7 @@ if [ "$status" != "awaiting_approval" ]; then
 fi
 
 before_metrics=$(curl -fsS "$api_url/api/v1/tasks/$task_id/metrics")
-before_calls=$(printf '%s' "$before_metrics" | python3 -c 'import json,sys; data=json.load(sys.stdin); assert data["model_calls_reserved"] >= 3; assert data["model_calls_pending_reservation"] == data["model_calls_pending_response"] == 0; print(data["model_calls_reserved"])')
+before_calls=$(printf '%s' "$before_metrics" | python3 -c 'import json,sys; data=json.load(sys.stdin); assert data["model_calls_reserved"] >= int(sys.argv[1]); assert data["model_calls_pending_reservation"] == data["model_calls_pending_response"] == 0; print(data["model_calls_reserved"])' "$expected_minimum")
 
 printf 'Restarting the worker at the durable approval checkpoint\n'
 before_approval=$(curl -fsS "$api_url/api/v1/tasks/$task_id/approval")

@@ -20,6 +20,9 @@ from sqlalchemy import (
     text,
     update,
 )
+from sqlalchemy import (
+    event as sql_event,
+)
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -29,6 +32,7 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+from repopilot.data_boundary import public_event_payload, public_text
 from repopilot.execution import CleanupFailed
 from repopilot.migrations import ensure_database_schema
 from repopilot.model_calls import (
@@ -108,6 +112,9 @@ class TaskRecord(Base):
     base_branch: Mapped[str] = mapped_column(String(120))
     test_command: Mapped[str] = mapped_column(String(300))
     max_iterations: Mapped[int] = mapped_column(Integer, default=2)
+    execution_strategy: Mapped[str] = mapped_column(
+        String(16), default="workflow", server_default=text("'workflow'")
+    )
     graph_thread_id: Mapped[str] = mapped_column(String(80), unique=True, index=True)
     state_version: Mapped[int] = mapped_column(Integer, default=1, server_default=text("1"))
     result: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
@@ -161,6 +168,7 @@ class TaskRecord(Base):
             base_branch=self.base_branch,
             test_command=self.test_command,
             max_iterations=self.max_iterations,
+            execution_strategy=self.execution_strategy,
             graph_thread_id=self.graph_thread_id,
             state_version=self.state_version,
             result=self.result,
@@ -214,6 +222,15 @@ class EventRecord(Base):
             payload_schema_version=self.payload_schema_version,
             created_at=self.created_at,
         )
+
+
+@sql_event.listens_for(EventRecord, "before_insert")
+def _protect_new_event(mapper, connection, target: EventRecord) -> None:
+    # Includes control/approval events written inside their authority transaction.
+    target.kind = public_text(target.kind, 60).replace("\r", "").replace("\n", "")
+    target.node = public_text(target.node, 80).replace("\r", "").replace("\n", "")
+    target.message = public_text(target.message)
+    target.payload = public_event_payload(target.payload or {})
 
 
 class ModelCallBudgetRecord(Base):
@@ -338,6 +355,7 @@ class Database:
             base_branch=data.base_branch,
             test_command=data.test_command,
             max_iterations=data.max_iterations,
+            execution_strategy=data.execution_strategy,
             graph_thread_id=f"task-{task_id}",
             execution_timeout_seconds=data.execution_timeout_seconds
             if data.execution_timeout_seconds is not None

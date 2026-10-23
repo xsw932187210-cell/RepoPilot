@@ -17,10 +17,13 @@ dependencies = [
   "docker>=7.1,<8",
   "fastapi>=0.116,<1",
   "httpx>=0.28,<1",
+  "google-genai>=2.32,<3",
   "langchain-openai>=1.0,<2",
   "langgraph>=1.2,<2",
   "langgraph-checkpoint-postgres>=3.0,<4",
+  "langsmith>=0.14,<1",
   "orjson>=3.10,<4",
+  "openai>=3.35,<4",
   "psycopg[binary,pool]>=3.2,<4",
   "pydantic>=2.11,<3",
   "pydantic-settings>=2.10,<3",
@@ -32,7 +35,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+oauth = ["PyJWT[crypto]>=2.10,<3"]
 dev = [
+  "PyJWT[crypto]>=2.10,<3",
   "pytest>=8.4,<9",
   "pytest-asyncio>=1.1,<2",
   "pytest-cov>=6.2,<7",
@@ -44,6 +49,7 @@ repopilot-worker = "repopilot.worker:main"
 repopilot-eval = "repopilot.evaluation:main"
 repopilot-migrate = "repopilot.migrations.cli:main"
 repopilot-publish = "repopilot.publication_cli:main"
+repopilot-chatgpt = "repopilot.chatgpt_auth:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/repopilot"]

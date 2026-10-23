@@ -16,6 +16,10 @@ known limitations, and acceptance criteria for the next iterations (Chinese).
 ## What it demonstrates
 
 - Explicit LangGraph state machine with Planner, Researcher, Test Analyst, Coder, and Reviewer roles.
+- [Budgeted routing](docs/task-routing.md): explicit `oneshot / workflow / auto`,
+  deterministic visible-input rules, one bounded upgrade on the same call ledger,
+  and persisted route explanations. Omitted strategy retains workflow; one-shot
+  explicitly omits model review and still requires Docker test evidence and human approval.
 - Parallel research/test-analysis fan-out, deterministic-failure retries, one bounded remediation
   for concrete reviewer findings, and reviewer-risk escalation to the human approval gate.
 - Single graph writer with a versioned read/write/create policy, full-batch edit preflight,
@@ -43,8 +47,11 @@ known limitations, and acceptance criteria for the next iterations (Chinese).
 - Twenty pinned BugsInPy defects from The Fuck with a Docker reproduction validator,
   resumable per-case real-model evaluation, one-shot baseline comparison, and sanitized
   failure/latency reports; this is a one-project pilot, not a broad benchmark claim.
+- A separate [frozen corpus pilot](docs/real-task-corpus.md#frozen-cross-project-pilot-v1)
+  with 23 reproduced defects across three projects: the historical 20 are development,
+  and three new tqdm/Cookiecutter cases form a project-disjoint holdout. No new repair-rate result.
 - Automated lint, test, and 70% line-coverage quality gates on every push and pull request.
-- OpenAI-compatible model adapter for real repository tasks.
+- OpenAI-compatible and Google Cloud SDK adapters, with an optional ChatGPT OAuth Reviewer.
 
 ## Quick start
 
@@ -94,9 +101,18 @@ MODEL_MAX_OUTPUT_TOKENS=4096
 
 Never commit `.env`. The file is ignored by Git.
 
+For a local ChatGPT subscription authorization check, install `.[oauth]` and run
+`python -m repopilot.chatgpt_auth login`. The separate operator CLI verifies browser
+authorization and can list account models without sending inference requests. Credentials
+stay in the ignored, private `.local/chatgpt/` directory. The CLI also supports `refresh`.
+For Gemini Planner/Coder with a ChatGPT Reviewer, see [provider configuration](docs/model-providers.md).
+Each role records its actual provider and shares the task's durable budget. Mock mode stays offline.
+
 Every online Planner, Coder, policy-correction, Reviewer, and controlled transport retry consumes
 the same durable task budget. `MODEL_MAX_TOTAL_TOKENS=0` disables the optional trusted-token gate;
-call and output caps still apply. Provider usage is never estimated, so missing usage or special
+call caps still apply. Google/OpenAI-compatible adapters send output-token caps; ChatGPT plan usage
+does not support that field and uses a local stream-byte limit and request timeout, which do not cap
+server-side generation or billing. Provider usage is never estimated, so missing usage or special
 billing prevents an exact monetary guarantee. See
 [model-call budgets and provider failures](docs/model-call-control.md) for error states, recovery,
 fallback identity, and deployment rules.
@@ -202,6 +218,30 @@ The real-model protocol uses the same pinned manifest and Docker image identity,
 case/mode pairs, and keeps quota-pending pairs separate from ordinary failures; see
 [docs/real-evaluation-protocol.md](docs/real-evaluation-protocol.md).
 
+CH-07A adds [trusted project adapters](docs/project-adapters.md): schema-2 manifests bind
+source/read-only/test paths, immutable runtime images and verified evaluator recipes/overlays.
+Source caches are mapped per project; old manifests and experiment directories remain read-only.
+The original corpus contains 20 The Fuck cases. CH-07A used a second, synthetic Docker
+fixture for adapter correctness; that fixture adds no model-quality claim.
+The [CH-07A verification](docs/ch07a-verification-2026-10-22.md) records 392 Linux tests
+with zero skips and 87.20% coverage, original-corpus compatibility/reproduction 20/20,
+two synthetic Docker evaluation paths, Mock 10/10 and approval restart recovery.
+
+CH-07B subsequently froze [python-pilot-v1](docs/real-task-corpus.md): the historical
+20 development defects plus three held-out defects from tqdm and Cookiecutter,
+with 23/23 buggy/fixed focused reproductions. CH-07C adds
+[independent repeats and descriptive paired reports](docs/repeated-evaluations.md).
+The [CH-01B Docker acceptance](docs/ch01b-verification-2026-10-23.md) records 538 tests,
+Mock 10/10, smoke and both strategy approval-restart paths. These engineering and
+corpus checks do not establish a repair-quality improvement.
+
+The [2026-10-23 corrected three-strategy pilot](docs/real-evaluation-results-2026-10-23.md)
+finished 18 units on three held-out defects from two projects: one-shot, workflow
+and auto each observed 0/6 independently accepted repairs. They used 14, 27 and 30
+API attempts respectively; two auto units failed at the call layer. This is a small
+negative result, with no quality-lift claim. Original and corrected attempts total
+101/108; quota resumes preserved records, and a completed resume sent zero requests.
+
 Run `make eval-real-retrieval` to measure issue-only target-file ranking on the same commits without
 calling a model. Its local JSON report is separate from both repair quality and the mock workflow
 regression.
@@ -250,3 +290,11 @@ claimed as done.
 ## License
 
 MIT
+
+CH-06C defines [public diagnostics and private execution data](docs/data-boundaries.md):
+allowlisted API/events, classified failures, guarded model/checkpoint input and private
+byte-exact Diff access requiring an API Key. Run `make ch06c-integration` for isolated verification.
+
+The [2026-10-22 CH-06C verification](docs/ch06c-verification-2026-10-22.md) records
+352 container tests with zero skips, 85.42% coverage, all 40 service probes, Mock 10/10
+and actual Worker restart recovery.

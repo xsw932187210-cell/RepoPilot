@@ -7,9 +7,9 @@ from typing import Any
 
 from redis.asyncio import Redis
 
+from repopilot.data_boundary import public_event_payload, public_text
 from repopilot.db import Database
 from repopilot.models import EventView
-from repopilot.security import redact_secrets
 
 
 class EventBus:
@@ -30,13 +30,13 @@ class EventBus:
         message: str,
         payload: dict[str, Any] | None = None,
     ) -> EventView:
-        safe_message = redact_secrets(message)
+        safe_message = public_text(message)
         event = await self.database.add_event(
             task_id,
             kind=kind,
             node=node,
             message=safe_message,
-            payload=payload or {},
+            payload=public_event_payload(payload or {}),
         )
         await self.redis.publish(self.channel(task_id), event.model_dump_json())
         return event
@@ -57,6 +57,10 @@ class EventBus:
         """Notify already-committed stop events without creating duplicate audit rows."""
         try:
             for event in await self.database.stop_events(task_id):
+                event = event.model_copy(update={
+                    "message": public_text(event.message),
+                    "payload": public_event_payload(event.payload),
+                })
                 await self.redis.publish(self.channel(task_id), event.model_dump_json())
         except Exception as error:
             logging.getLogger(__name__).info(

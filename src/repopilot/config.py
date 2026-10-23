@@ -17,17 +17,22 @@ class Settings(BaseSettings):
 
     app_name: str = "RepoPilot"
     environment: str = "development"
-    api_key: str = ""
+    api_key: str = Field(default="", repr=False)
 
-    database_url: str = "sqlite+aiosqlite:///./repopilot.db"
-    langgraph_database_url: str = ""
-    redis_url: str = "redis://localhost:6379/0"
+    database_url: str = Field(default="sqlite+aiosqlite:///./repopilot.db", repr=False)
+    langgraph_database_url: str = Field(default="", repr=False)
+    redis_url: str = Field(default="redis://localhost:6379/0", repr=False)
     queue_name: str = "repopilot:jobs"
 
     model_provider: str = "mock"
     model_name: str = "gpt-4.1-mini"
-    openai_api_key: str = ""
-    openai_base_url: str = ""
+    openai_api_key: str = Field(default="", repr=False)
+    openai_base_url: str = Field(default="", repr=False)
+    google_cloud_api_key: str = Field(default="", repr=False)
+    review_model_provider: str = ""
+    review_model_name: str = "gpt-6.1-sol"
+    chatgpt_storage_dir: Path = Path(".local/chatgpt")
+    chatgpt_max_response_bytes: int = Field(default=65_536, ge=1_024, le=1_000_000)
     model_temperature: float = 0.0
     model_max_calls: int = Field(default=12, ge=1, le=100)
     model_request_timeout_seconds: float = Field(default=90.0, gt=0, le=900)
@@ -51,6 +56,10 @@ class Settings(BaseSettings):
     max_context_chars: int = Field(default=70_000, ge=10_000, le=500_000)
     max_file_bytes: int = Field(default=120_000, ge=1_000, le=500_000)
     max_iterations: int = Field(default=2, ge=1, le=5)
+    routing_max_editable_files: int = Field(default=2, ge=1, le=30)
+    routing_max_context_chars: int = Field(default=20_000, ge=1, le=500_000)
+    routing_min_issue_chars: int = Field(default=40, ge=1, le=12_240)
+    routing_max_issue_chars: int = Field(default=1_500, ge=1, le=12_240)
 
     sandbox_backend: str = "local"
     sandbox_image: str = "repopilot-sandbox:local"
@@ -59,7 +68,7 @@ class Settings(BaseSettings):
     running_in_container: bool = False
 
     github_write_enabled: bool = False
-    github_token: str = ""
+    github_token: str = Field(default="", repr=False)
     github_allowed_owners: str = "xsw932187210-cell"
 
     @property
@@ -69,7 +78,10 @@ class Settings(BaseSettings):
         }
 
     def ensure_directories(self) -> None:
-        self.workspace_root.mkdir(parents=True, exist_ok=True)
+        self.workspace_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if self.workspace_root.is_symlink():
+            raise ValueError("Workspace storage cannot be a symlink")
+        self.workspace_root.chmod(0o700)
 
 
 @lru_cache

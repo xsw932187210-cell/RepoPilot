@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "dataset_id": "python-pilot-v1",
+  "curated_at": "2026-10-23",
+  "scope": "Candidates inspected for this small pilot; not an exhaustive BugsInPy survey. About 50 cases remains an expansion target.",
+  "cases": [
+    {
+      "case_id": "cookiecutter-001",
+      "reason": "The fixed regression adds tests/test-generate-context/non_ascii.json, which is absent in the buggy tree. The existing replacement-only overlay contract cannot materialize that new fixture.",
+      "source": "https://github.com/soarsmu/BugsInPy/tree/11c5f1eea954a42132cfd06bf257766a7963e0fd/projects/cookiecutter/bugs/1"
+    },
+    {
+      "case_id": "cookiecutter-002",
+      "reason": "Upstream issue #973 requests the ability to run both shell and Python hooks. Treat this as a feature request rather than count it as an existing behavior defect.",
+      "source": "https://github.com/cookiecutter/cookiecutter/issues/973"
+    },
+    {
+      "case_id": "pysnooper-001",
+      "reason": "The selected fixed test file is absent in the buggy tree; requires an overlay contract change. No installation failure is counted as a reproduced defect.",
+      "source": "https://github.com/soarsmu/BugsInPy/tree/11c5f1eea954a42132cfd06bf257766a7963e0fd/projects/pysnooper/bugs/1"
+    },
+    {
+      "case_id": "pysnooper-002",
+      "reason": "Available focused and visible tests share the sole upstream test file. The current policy requires a visible file distinct from every hidden overlay destination.",
+      "source": "https://github.com/soarsmu/BugsInPy/tree/11c5f1eea954a42132cfd06bf257766a7963e0fd/projects/pysnooper/bugs/2"
+    },
+    {
+      "case_id": "pysnooper-003",
+      "reason": "Same single-test-file separation limitation as pysnooper-002. The leakage boundary was retained.",
+      "source": "https://github.com/soarsmu/BugsInPy/tree/11c5f1eea954a42132cfd06bf257766a7963e0fd/projects/pysnooper/bugs/3"
+    },
+    {
+      "case_id": "tqdm-005",
+      "reason": "Near-duplicate boolean behavior in the same source region as tqdm-003. Keep one case for the pilot; do not inflate the independent defect count.",
+      "source": "https://github.com/soarsmu/BugsInPy/tree/11c5f1eea954a42132cfd06bf257766a7963e0fd/projects/tqdm/bugs/5"
+    },
+    {
+      "case_id": "youtube-dl-002",
+      "reason": "The candidate source file common.py is 122986 bytes, exceeding the unchanged 120000-byte whole-file context limit. Requires a separately declared large-file protocol.",
+      "source": "https://github.com/soarsmu/BugsInPy/tree/11c5f1eea954a42132cfd06bf257766a7963e0fd/projects/youtube-dl/bugs/2"
+    },
+    {
+      "case_id": "youtube-dl-004",
+      "reason": "PR #11122 links issue #10408 for a later extractor change. That report does not establish the exact zero-argument JavaScript interpreter symptom selected by the benchmark. Exclude from this issue-grounded pilot.",
+      "source": "https://github.com/ytdl-org/youtube-dl/pull/11122"
+    }
+  ]
+}

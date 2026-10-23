@@ -4,10 +4,11 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
 
 from repopilot.candidates import Candidate, digest_json
 from repopilot.models import SandboxResult, TaskStatus
+from repopilot.security import redact_secrets
 
 Digest = str
 
@@ -43,6 +44,11 @@ class ApprovalRequest(BaseModel):
     evidence_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     approved: StrictBool
     feedback: str = Field(default="", max_length=2_000)
+
+    @field_validator("feedback")
+    @classmethod
+    def redact_feedback(cls, value: str) -> str:
+        return redact_secrets(value)
 
 
 class ApprovalDecision(BaseModel):

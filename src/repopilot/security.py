@@ -5,7 +5,7 @@ import shlex
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 
 class SecurityError(ValueError):
@@ -81,16 +81,43 @@ _BRANCH = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,119}$")
 _ALLOWED_TEST_COMMANDS = {"python", "python3", "pytest", "ruff"}
 _ALLOWED_PYTHON_MODULES = {"pytest", "unittest"}
 _DEMO_REPOSITORIES = {"buggy-calculator", "benchmark-suite"}
-_SENSITIVE_PATTERNS = [
+_TOKEN_PATTERNS = [
     re.compile(r"gh[pousr]_[A-Za-z0-9_]{20,}"),
     re.compile(r"github_pat_[A-Za-z0-9_]{20,}"),
     re.compile(r"sk-[A-Za-z0-9_-]{20,}"),
     re.compile(r"AIza[A-Za-z0-9_-]{25,}"),
-    re.compile(r"(?i)(authorization:\s*bearer\s+)[^\s]+"),
-    re.compile(r"(?i)((?:api[_-]?key|access[_-]?token)\s*[:=]\s*)[^\s&,;]+"),
-    re.compile(r"(?i)([?&](?:api[_-]?key|access[_-]?token|token)=)[^&#\s]+"),
-    re.compile(r"(?i)(https?://)[^/@\s]+@"),
+    re.compile(r"-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----.*?"
+               r"-----END (?:[A-Z ]+ )?PRIVATE KEY-----", re.DOTALL),
 ]
+_CREDENTIAL_NAMES = (
+    r"(?:api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|token|"
+    r"password|passwd|client[_-]?secret|secret[_-]?key|github[_-]?token|"
+    r"openai[_-]?api[_-]?key|authorization|proxy[_-]authorization|cookie|set[_-]cookie)"
+)
+_AUTH_HEADER = re.compile(
+    r"(?im)((?:proxy-)?authorization[\"']?[ \t]*[:=][ \t]*)"
+    r"(?:\r?\n[ \t]*)?[^\r\n]+(?:\r?\n[ \t]+[^\r\n]+)*"
+)
+_FOLDED_AUTH = re.compile(
+    r"(?im)((?:proxy-)?authorization[\"']?[ \t]*[:=][ \t]*)"
+    r"(?:\r?\n[ \t]*)?(?:bearer|basic)[ \t]*\r?\n[ \t]*[^\r\n]+"
+)
+_ASSIGNMENT = re.compile(
+    r"(?i)([\"']?" + _CREDENTIAL_NAMES + r"[\"']?[ \t]*[:=][ \t]*)"
+    r'(?:\[REDACTED\]|"[^"\r\n]*"|\'[^\'\r\n]*\'|[^\s&,;}\]"\']+)'
+)
+_QUERY_CREDENTIAL = re.compile(
+    r"(?i)([?&]" + _CREDENTIAL_NAMES + r"=)[^&#\s]+"
+)
+_URL_USERINFO = re.compile(r"(?i)([a-z][a-z0-9+.-]*://)[^/\s@]+@")
+_URL = re.compile(r"(?i)\b[a-z][a-z0-9+.-]*://[^\s<>\"']+")
+_LITERAL_CREDENTIAL = re.compile(
+    r"(?i)[\"']?" + _CREDENTIAL_NAMES
+    + r"[\"']?[ \t]*[:=][ \t]*(?:\"[^\"\r\n]+\"|'[^'\r\n]+')"
+)
+_BARE_CREDENTIAL = re.compile(
+    r"(?i)\b" + _CREDENTIAL_NAMES + r"[ \t]*=[ \t]*[A-Za-z0-9_.-]{6,}"
+)
 
 
 def validate_repository_url(url: str) -> tuple[str, str]:
@@ -196,10 +223,36 @@ def parse_test_command(command: str) -> list[str]:
 
 
 def redact_secrets(value: str) -> str:
-    redacted = value
-    for pattern in _SENSITIVE_PATTERNS:
-        if pattern.groups:
-            redacted = pattern.sub(r"\1[REDACTED]", redacted)
-        else:
-            redacted = pattern.sub("[REDACTED]", redacted)
+    # Redact an encoded credential URL as a unit; never expose a decoded secret.
+    def encoded_url(match: re.Match[str]) -> str:
+        original = match.group()
+        decoded = original
+        for _ in range(2):
+            decoded = unquote(decoded)
+        if decoded != original and (
+            _QUERY_CREDENTIAL.search(decoded) or _URL_USERINFO.search(decoded)
+        ):
+            return "[REDACTED_URL]"
+        return original
+
+    redacted = _URL.sub(encoded_url, value)
+    for pattern in _TOKEN_PATTERNS:
+        redacted = pattern.sub("[REDACTED]", redacted)
+    for pattern in (_FOLDED_AUTH, _AUTH_HEADER, _QUERY_CREDENTIAL, _URL_USERINFO, _ASSIGNMENT):
+        redacted = pattern.sub(r"\1[REDACTED]", redacted)
     return redacted
+
+
+def contains_known_secret(value: str) -> bool:
+    """Conservative known-pattern guard, not an arbitrary secret detector."""
+    if any(pattern.search(value) for pattern in _TOKEN_PATTERNS):
+        return True
+    for pattern in (
+        _FOLDED_AUTH, _AUTH_HEADER, _QUERY_CREDENTIAL, _URL_USERINFO,
+        _LITERAL_CREDENTIAL, _BARE_CREDENTIAL,
+    ):
+        if any(redact_secrets(match.group()) != match.group() for match in pattern.finditer(value)):
+            return True
+    return any(
+        "[REDACTED_URL]" == redact_secrets(match.group()) for match in _URL.finditer(value)
+    )

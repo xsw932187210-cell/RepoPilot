@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from repopilot.config import Settings
+from repopilot.data_boundary import SensitiveExecutionData
 from repopilot.eval_runtime import (
     CallBudgetExceeded,
     EvaluationConfig,
@@ -412,7 +413,35 @@ async def test_failed_checkpoint_uses_central_secret_redaction(tmp_path: Path) -
     assert "sk-" not in serialized
     assert "ghp_" not in serialized
     assert "query-secret" not in serialized
-    assert serialized.count("[REDACTED]") == 3
+    # CH-06C records classification only, including for unknown token formats.
+    assert report["records"][0]["error"] == {"type": "RuntimeError", "code": "execution_failed"}
+
+
+@pytest.mark.asyncio
+async def test_structured_evaluation_credentials_are_removed_without_mutating_input(tmp_path):
+    original = {
+        "success": False, "safe_count": 3,
+        "nested": {"Authorization": "opaque-eval-credential", "api_key": "opaque-eval-key"},
+        "headers": {"custom-auth": "opaque-eval-header"},
+    }
+    before = json.dumps(original, sort_keys=True)
+
+    async def execute(case, mode, budget):
+        return original
+
+    report = await EvaluationRuntime(config(modes=("workflow",)), tmp_path / "records").run(
+        [{"id": "a"}], execute
+    )
+    rendered = json.dumps(report)
+    assert "opaque-eval" not in rendered
+    assert report["records"][0]["result"]["safe_count"] == 3
+    assert report["metadata"]["runtime_policy"]["public_data_version"] == "public-data-v1"
+    assert json.dumps(original, sort_keys=True) == before
+
+
+def test_evaluation_metadata_cannot_persist_credential_fields():
+    with pytest.raises(SensitiveExecutionData):
+        config(evaluator_config={"nested": {"Authorization": "opaque-eval-key"}})
 
 
 @pytest.mark.asyncio

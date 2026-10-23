@@ -5,8 +5,10 @@ from dataclasses import dataclass
 from typing import Any, Protocol, TypeVar
 
 from langchain_openai import ChatOpenAI
+from langsmith import tracing_context
 
 from repopilot.config import Settings
+from repopilot.data_boundary import require_secret_free
 from repopilot.model_calls import (
     CALL_CONTROL_VERSION,
     CallIdentity,
@@ -23,6 +25,8 @@ _StructuredOutput = TypeVar("_StructuredOutput", PlanOutput, CodeChangeOutput, R
 _CallControl = ControlledModelCaller | ModelCallBudget
 
 OPENAI_STRUCTURED_ADAPTER_VERSION = "langchain-openai-structured-v1"
+GOOGLE_CLOUD_ADAPTER_VERSION = "google-genai-vertex-express-structured-v1"
+CHATGPT_ADAPTER_VERSION = "chatgpt-responses-stream-local-byte-cap-v1"
 MOCK_ADAPTER_VERSION = "deterministic-mock-v1"
 
 
@@ -245,7 +249,10 @@ class MockAgentModel:
         )
 
 
-class OpenAICompatibleAgentModel:
+class _StructuredAgentModel:
+    provider: str
+    adapter_version: str
+
     def __init__(
         self,
         settings: Settings,
@@ -253,8 +260,6 @@ class OpenAICompatibleAgentModel:
         *,
         call_control: ControlledModelCaller | None = None,
     ):
-        if not settings.openai_api_key:
-            raise ValueError("OPENAI_API_KEY is required when MODEL_PROVIDER=openai")
         if budget is not None and call_control is not None:
             raise ValueError("provide either budget or call_control, not both")
         if budget is None and call_control is None:
@@ -271,26 +276,17 @@ class OpenAICompatibleAgentModel:
                 max_output_tokens=policy.max_output_tokens,
                 policy_version=policy.version,
             )
-        kwargs: dict[str, object] = {
-            "model": settings.model_name,
-            "api_key": settings.openai_api_key,
-            "temperature": settings.model_temperature,
-            # The controlled boundary owns every retry so SDK attempts cannot evade the
-            # persistent call budget.
-            "max_retries": 0,
-            "timeout": settings.model_request_timeout_seconds,
-            "max_tokens": settings.model_max_output_tokens,
-        }
-        if settings.openai_base_url:
-            kwargs["base_url"] = settings.openai_base_url
-        self.model = ChatOpenAI(**kwargs)
+        self.model = self._transport(settings)
         self.call_control: _CallControl = call_control or budget
         self.identity = CallIdentity(
-            provider="openai",
+            provider=self.provider,
             model=settings.model_name,
-            adapter_version=OPENAI_STRUCTURED_ADAPTER_VERSION,
+            adapter_version=self.adapter_version,
             request_schema_version="assigned-per-request",
         )
+
+    def _transport(self, settings: Settings) -> Any:
+        raise NotImplementedError
 
     async def _structured_invoke(
         self,
@@ -298,6 +294,7 @@ class OpenAICompatibleAgentModel:
         messages: list[dict[str, Any]],
         role: str,
     ) -> _StructuredOutput:
+        require_secret_free(messages)
         structured = self.model.with_structured_output(schema, include_raw=True)
 
         def validate_response(response: object) -> None:
@@ -318,13 +315,14 @@ class OpenAICompatibleAgentModel:
                 else f"{schema.__name__}-v1"
             ),
         )
-        envelope = await self.call_control.call(
-            structured.ainvoke,
-            messages,
-            call_identity=identity,
-            call_role=role,
-            response_validator=validate_response,
-        )
+        with tracing_context(enabled=False):
+            envelope = await self.call_control.call(
+                structured.ainvoke,
+                messages,
+                call_identity=identity,
+                call_role=role,
+                response_validator=validate_response,
+            )
         parsed = envelope["parsed"]
         return parsed
 
@@ -425,6 +423,112 @@ class OpenAICompatibleAgentModel:
         )
 
 
+class OpenAICompatibleAgentModel(_StructuredAgentModel):
+    provider = "openai"
+    adapter_version = OPENAI_STRUCTURED_ADAPTER_VERSION
+
+    def _transport(self, settings: Settings) -> ChatOpenAI:
+        if not settings.openai_api_key:
+            raise ValueError("OPENAI_API_KEY is required when MODEL_PROVIDER=openai")
+        kwargs: dict[str, object] = {
+            "model": settings.model_name,
+            "api_key": settings.openai_api_key,
+            "temperature": settings.model_temperature,
+            "max_retries": 0,
+            "timeout": settings.model_request_timeout_seconds,
+            "max_tokens": settings.model_max_output_tokens,
+        }
+        if settings.openai_base_url:
+            kwargs["base_url"] = settings.openai_base_url
+        return ChatOpenAI(**kwargs)
+
+
+class GoogleCloudAgentModel(_StructuredAgentModel):
+    provider = "google_cloud"
+    adapter_version = GOOGLE_CLOUD_ADAPTER_VERSION
+
+    def _transport(self, settings: Settings) -> Any:
+        from repopilot.google_cloud import GoogleCloudTransport
+
+        return GoogleCloudTransport(settings)
+
+
+class ChatGPTReviewerModel(_StructuredAgentModel):
+    provider = "chatgpt"
+    adapter_version = CHATGPT_ADAPTER_VERSION
+
+    def _transport(self, settings: Settings) -> Any:
+        from repopilot.chatgpt_model import ChatGPTTransport
+
+        return ChatGPTTransport(settings)
+
+
+@dataclass
+class ReviewerRoutedModel:
+    primary: AgentModel
+    reviewer: AgentModel
+
+    async def plan(self, issue_title: str, issue_body: str) -> PlanOutput:
+        return await self.primary.plan(issue_title, issue_body)
+
+    async def propose_changes(
+        self, issue_title: str, issue_body: str, plan: PlanOutput,
+        context: RepositoryContext, reviewer_feedback: list[str],
+    ) -> CodeChangeOutput:
+        return await self.primary.propose_changes(
+            issue_title, issue_body, plan, context, reviewer_feedback,
+        )
+
+    async def review(
+        self, issue_title: str, diff: str, test_result: SandboxResult,
+    ) -> ReviewOutput:
+        return await self.reviewer.review(issue_title, diff, test_result)
+
+
+async def remaining_model_calls(model: AgentModel, fallback_limit: int, used: int = 0) -> int:
+    """Read the existing shared ledger; routing never creates or resets a budget."""
+    primary = model.primary if isinstance(model, ReviewerRoutedModel) else model
+    control = getattr(primary, "call_control", None)
+    if control is None:
+        # Unwrapped deterministic test doubles only. Production/evaluation models
+        # always expose the task's existing controlled caller.
+        return max(0, fallback_limit - used)
+    snapshot = (
+        control.snapshot() if isinstance(control, ModelCallBudget)
+        else await control.ledger.snapshot()
+    )
+    return max(0, int(snapshot["max_model_calls"]) - int(snapshot["reserved_calls"]))
+
+
+def model_role_profile(settings: Settings) -> dict[str, dict[str, object]]:
+    """Public, credential-free model identity and the actual provider capabilities."""
+    provider = settings.model_provider
+    version = {
+        "mock": MOCK_ADAPTER_VERSION, "openai": OPENAI_STRUCTURED_ADAPTER_VERSION,
+        "google_cloud": GOOGLE_CLOUD_ADAPTER_VERSION,
+    }.get(provider)
+    if version is None:
+        raise ValueError(f"Unknown model provider: {provider}")
+    primary = {
+        "provider": provider, "model": settings.model_name, "adapter_version": version,
+        "temperature": settings.model_temperature,
+        "server_max_output_tokens": (
+            settings.model_max_output_tokens if provider != "mock" else None
+        ),
+    }
+    roles = {role: dict(primary) for role in ("planner", "coder", "reviewer")}
+    if provider != "mock" and settings.review_model_provider:
+        if settings.review_model_provider != "chatgpt" or not settings.review_model_name.strip():
+            raise ValueError("Reviewer override requires chatgpt and a named account model")
+        roles["reviewer"] = {
+            "provider": "chatgpt", "model": settings.review_model_name,
+            "adapter_version": CHATGPT_ADAPTER_VERSION, "temperature": None,
+            "server_max_output_tokens": None,
+            "local_max_stream_bytes": settings.chatgpt_max_response_bytes,
+        }
+    return roles
+
+
 class BudgetedAgentModel:
     """Count calls for models that do not expose a lower-level response envelope."""
 
@@ -511,10 +615,24 @@ def build_agent_model(
     if settings.model_provider == "mock":
         model: AgentModel = MockAgentModel()
         return BudgetedAgentModel(model, control) if control is not None else model
+    model_role_profile(settings)  # Validate operator configuration before constructing transports.
     if settings.model_provider == "openai":
-        return OpenAICompatibleAgentModel(
+        primary = OpenAICompatibleAgentModel(
             settings,
             budget=budget,
             call_control=call_control,
         )
-    raise ValueError(f"Unknown model provider: {settings.model_provider}")
+    elif settings.model_provider == "google_cloud":
+        primary = GoogleCloudAgentModel(settings, budget=budget, call_control=call_control)
+    else:
+        raise ValueError(f"Unknown model provider: {settings.model_provider}")
+    if not settings.review_model_provider:
+        return primary
+    reviewer_settings = settings.model_copy(update={"model_name": settings.review_model_name})
+    shared = primary.call_control
+    reviewer = ChatGPTReviewerModel(
+        reviewer_settings,
+        budget=shared if isinstance(shared, ModelCallBudget) else None,
+        call_control=shared if isinstance(shared, ControlledModelCaller) else None,
+    )
+    return ReviewerRoutedModel(primary, reviewer)

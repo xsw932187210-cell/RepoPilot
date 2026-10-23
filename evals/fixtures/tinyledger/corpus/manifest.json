@@ -1,0 +1,116 @@
+{
+  "schema_version": 2,
+  "projects": {
+    "tinyledger": {
+      "version": "python-source-v1",
+      "source_roots": [
+        "src"
+      ],
+      "readonly_paths": [
+        "checks",
+        "src/tinyledger/read_only.py",
+        "LICENSE"
+      ],
+      "test_roots": [
+        "checks"
+      ],
+      "visible_test_policy": "buggy-tree-only-v1",
+      "acceptance_test_policy": "withheld-overlay-v1",
+      "runtime": {
+        "image": "sha256:4488c6ee019a76b875dcbd99737dbeb5163c5bc5221c4ab491494a7890664e58",
+        "python_version": "3.8",
+        "pythonpath": [
+          "src",
+          "."
+        ],
+        "base_image": "python:3.8-slim@sha256:1d52838af602b4b5a831beb13a0e4d073280665ea7be7f69ce2382f29c5a613f",
+        "recipe_sha256": "bc0d927b388975110302c62c7717fbd24a384ce4cecd45debe762464e418ce17",
+        "preparation": "Trusted operator builds Dockerfile.real-tasks before evaluation; its existing cached image ID is pinned here. No dependency installation or network access is allowed in candidate containers.",
+        "install_argv": [
+          [
+            "python",
+            "-m",
+            "pip",
+            "install",
+            "pip==23.0.1",
+            "setuptools==68.2.2",
+            "wheel==0.41.3"
+          ],
+          [
+            "python",
+            "-m",
+            "pip",
+            "install",
+            "psutil==5.9.8",
+            "colorama==0.4.6",
+            "six==1.16.0",
+            "decorator==4.4.2",
+            "pyte==0.8.2",
+            "pytest==6.2.5",
+            "pytest-mock==3.6.1",
+            "mock==4.0.3"
+          ]
+        ],
+        "recipe": "environments/python38.Dockerfile"
+      },
+      "fingerprint": "1068c32e40173893fd532dea880f5985d7f5a313128b2861f08540f554d65acf"
+    }
+  },
+  "tasks": [
+    {
+      "id": "tinyledger-001",
+      "project": "tinyledger",
+      "corpus": {
+        "name": "RepoPilot owned synthetic fixture",
+        "url": "fixture://tinyledger",
+        "revision": "0d262b0fb4f55d9be021a8082168c626a70ec802",
+        "case": "tinyledger/1",
+        "kind": "synthetic"
+      },
+      "source": {
+        "repository_url": "fixture://tinyledger",
+        "buggy_commit": "93418ae67ce3765baeb3b8e802286f7381058961",
+        "fixed_commit": "0d262b0fb4f55d9be021a8082168c626a70ec802",
+        "license_spdx": "MIT",
+        "license_file": "LICENSE"
+      },
+      "python_version": "3.8",
+      "issue": {
+        "title": "Include refunds in net_total",
+        "body": "net_total incorrectly drops negative amounts. Refunds must reduce the total; positive and empty inputs must retain their behavior."
+      },
+      "test": {
+        "hidden_overlay": [
+          {
+            "source": "overlays/tinyledger-001/checks/test_hidden.py",
+            "destination": "checks/test_hidden.py",
+            "sha256": "f4d6808c506afc0f253e4fd6107acd9b4b5cfa4436451a8d5ef98f6e06f8c535",
+            "replaces_sha256": "f2d27fac7a242ad569c0ae91f17822ae114b3e11342419e4d077b38da49538eb"
+          }
+        ],
+        "visible_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "checks/test_visible.py"
+        ],
+        "acceptance_argv": [
+          "python",
+          "-m",
+          "pytest",
+          "-q",
+          "checks/test_hidden.py"
+        ]
+      },
+      "expected_fix_files": [
+        "src/tinyledger/totals.py"
+      ],
+      "verification": {
+        "status": "assembled",
+        "details": "Synthetic adapter fixture only; not a real upstream defect or model-quality result."
+      },
+      "fingerprint": "00c021bb89f84b1314e20a537af65bb471dd6fe7409e8abe39588ba9c3cfa197"
+    }
+  ]
+}

@@ -164,8 +164,11 @@
   },
   "repository_delivery": {
     "ch06a_branch_url": "https://github.com/xsw932187210-cell/RepoPilot/tree/codex/ch-06a-confirmed-cancellation",
-    "ch06a_pull_request_created": false,
+    "ch06a_pull_request": "https://github.com/xsw932187210-cell/RepoPilot/pull/9",
+    "ch06a_pull_request_created": true,
     "ch06a_pushed": true,
+    "ci_conclusion": "success",
+    "ci_run": 39748939113,
     "dependency_merge_commit": "554012eb1f4dc895cec9a42452d52eb9e5389344",
     "dependency_merge_tree_matches_baseline": true,
     "dependency_pr_ci_conclusion": "success",
@@ -176,7 +179,8 @@
     "dependency_pr_state": "closed",
     "dependency_pull_request": "https://github.com/xsw932187210-cell/RepoPilot/pull/8",
     "first_pushed_commit": "6daad100d7a6b2e6f6b2e4b9aafac1e56caf01f4",
-    "merged": false,
+    "merge_commit": "4d55a5b5b83b617881b0b2bf9d2ea7dc94ef3785",
+    "merged": true,
     "push_date": "2026-10-22"
   },
   "schema_version": "ch06a-verification-v1",
@@ -192,7 +196,7 @@
     "python_files": 86,
     "workspace_and_commit_match": true
   },
-  "status": "VERIFIED",
+  "status": "MERGED",
   "verified_source_commit": "83e0c735814ebca376e81f432d084f64e5397730",
   "worker_restart": {
     "approval_object_unchanged": true,

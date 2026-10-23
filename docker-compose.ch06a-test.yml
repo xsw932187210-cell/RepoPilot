@@ -113,6 +113,10 @@ services:
       <<: *probe-environment
       REPOPILOT_CH03B_POSTGRES_TEST_URL: postgresql+asyncpg://repopilot:repopilot@postgres:5432/repopilot_ch03b_test
       REPOPILOT_CH06A_POSTGRES_TEST_URL: postgresql+asyncpg://repopilot:repopilot@postgres:5432/repopilot_ch06a_test
+      REPOPILOT_CH06C_POSTGRES_TEST_URL: ${CH06C_POSTGRES_TEST_URL:-}
+      REPOPILOT_CH06C_API_URL: ${CH06C_API_URL:-}
+      REPOPILOT_CH07A_DOCKER_TEST: ${CH07A_DOCKER_TEST:-0}
+      REPOPILOT_CH01B_DOCKER_TEST: ${CH01B_DOCKER_TEST:-0}
       REPOPILOT_CH05A_POSTGRES_TEST_URL: postgresql+asyncpg://repopilot:repopilot@postgres:5432/repopilot_ch05a_test
       REPOPILOT_CH05A_API_URL: http://api:8000
       REPOPILOT_CH05A_LEGACY_SOURCE: /legacy-approval/src

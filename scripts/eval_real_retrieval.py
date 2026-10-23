@@ -10,7 +10,8 @@ import tempfile
 from pathlib import Path
 
 from repopilot.config import Settings
-from repopilot.real_tasks import export_git_tree, load_real_task_manifest
+from repopilot.real_evaluation import project_arguments
+from repopilot.real_tasks import load_real_task_manifest, prepare_agent_workspace
 from repopilot.repository import WorkspaceManager
 
 
@@ -29,8 +30,11 @@ def score_selection(selected: list[str], expected: tuple[str, ...]) -> dict[str,
     }
 
 
-def evaluate(manifest_path: Path, source: Path) -> dict[str, object]:
+def evaluate(manifest_path: Path, source: Path | list[str]) -> dict[str, object]:
     manifest = load_real_task_manifest(manifest_path)
+    manifest.require_executable()
+    projects = tuple(dict.fromkeys(task.project for task in manifest.tasks))
+    sources = project_arguments(source, projects, field="source", required=True)
     settings = Settings(
         _env_file=None,
         max_context_files=12,
@@ -40,8 +44,10 @@ def evaluate(manifest_path: Path, source: Path) -> dict[str, object]:
     with tempfile.TemporaryDirectory(prefix="repopilot-retrieval-") as temporary:
         root = Path(temporary)
         for task in manifest.tasks:
-            workspace = export_git_tree(source, task.source.buggy_commit, root / task.id)
-            context = WorkspaceManager(settings).inspect(
+            workspace = prepare_agent_workspace(task, Path(sources[task.project]), root / task.id)
+            context = WorkspaceManager(
+                settings, capability_policy=task.adapter.capability_policy(settings.max_file_bytes)
+            ).inspect(
                 workspace,
                 f"{task.issue.title}\n{task.issue.body}",
                 [],
@@ -50,6 +56,7 @@ def evaluate(manifest_path: Path, source: Path) -> dict[str, object]:
             records.append(
                 {
                     "case_id": task.id,
+                    "project": task.project,
                     "expected_fix_files": list(task.expected_fix_files),
                     "selected_files": selected,
                     "selected_chars": context.selected_chars,
@@ -65,6 +72,7 @@ def evaluate(manifest_path: Path, source: Path) -> dict[str, object]:
     return {
         "metadata": {
             "dataset": str(manifest_path),
+            "manifest_schema_version": manifest.schema_version,
             "task_count": len(records),
             "retrieval_phase": "buggy-commit issue-only before edits",
             "max_context_files": 12,
@@ -84,7 +92,7 @@ def evaluate(manifest_path: Path, source: Path) -> dict[str, object]:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, default=Path("evals/real/manifest.json"))
-    parser.add_argument("--source", type=Path, required=True)
+    parser.add_argument("--source", action="append", required=True)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     report = evaluate(args.manifest, args.source)

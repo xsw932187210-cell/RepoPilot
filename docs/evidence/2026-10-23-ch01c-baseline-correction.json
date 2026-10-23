@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-23",
+  "card": "CH-01C",
+  "implementation_sha256": "f5a3797ec788a19b7889d40847c1f8f56bbe679d6ec648ba75f81e4d0e9c1952",
+  "new_real_model_calls": 0,
+  "prior_reserved_api_attempts": 30,
+  "maximum_additional_attempts_pending_confirmation": 78,
+  "original_total_ceiling": 108,
+  "corrected_cases": [
+    {
+      "case_id": "tqdm-003",
+      "verified": true,
+      "baseline_version": "exported-buggy-tree-v1",
+      "upstream_buggy_commit": "c2599e3cd6087429f48bae34347ec5d2473c8392",
+      "exported_baseline_commit": "782d2b45fc70d3bc349a5bcc01fdefd5a7dc3df7",
+      "manifest_digest": "e54560b4ec60c0496ca32f462a60b693f347d631e6d3a60b5a1a37f3e2550366",
+      "initial_diff_empty": true,
+      "mock_calls": 1,
+      "real_model_calls": 0,
+      "no_edit_gate_rejected": true,
+      "buggy_acceptance_exit_code": 1
+    },
+    {
+      "case_id": "cookiecutter-003",
+      "verified": true,
+      "baseline_version": "exported-buggy-tree-v1",
+      "upstream_buggy_commit": "5c282f020a8db7e5e7c4e7b51b010556ca31fb7f",
+      "exported_baseline_commit": "163a82516b1300d0dfb429c94ddfb4efd6c98079",
+      "manifest_digest": "cbff5161537c7f7bdd8d8762a893cadf136d6d55e089ba3324f40adaaa68307e",
+      "initial_diff_empty": true,
+      "mock_calls": 1,
+      "real_model_calls": 0,
+      "no_edit_gate_rejected": true,
+      "buggy_acceptance_exit_code": 1
+    },
+    {
+      "case_id": "cookiecutter-004",
+      "verified": true,
+      "baseline_version": "exported-buggy-tree-v1",
+      "upstream_buggy_commit": "9568ab6ecd2d6836646006c59473c4a4ac0dee04",
+      "exported_baseline_commit": "fa5acd17be40b213b8ae779151ca58a7596daf92",
+      "manifest_digest": "a6b24d09742819db66e1cf518014c9aaf497b13b6f8a517991bbffec4bb3e9b3",
+      "initial_diff_empty": true,
+      "mock_calls": 1,
+      "real_model_calls": 0,
+      "no_edit_gate_rejected": true,
+      "buggy_acceptance_exit_code": 1
+    }
+  ],
+  "offline_boundaries": {
+    "passed": 29,
+    "scope": "real-evaluation/exported-baseline, artifact controls and protocol authorization",
+    "host_python": "3.13.5"
+  },
+  "artifact_sha256": {
+    "reports/ch01c-corrected-baseline.json": "ff027471aa37b367a2ff1fa2de2ff3b7bf4b58d0c8b89f5aa8a9e39ac29812e4",
+    "reports/ch01c-corrected-baseline.log": "e8fdd92aa3221d44d3381257743fe7d97ea7d5dd325386dc694569dfff1bfdd7",
+    "reports/ch01c-baseline-correction-final.log": "1cfa09f19354c6d4b3b0e8d9264ac3bab37b7d525b671bbd5ffc132d032ce9d5"
+  },
+  "online_artifact_restrictions_changed": false,
+  "model_prompts_or_router_thresholds_changed": false,
+  "limitations": [
+    "No corrected real-model run has started",
+    "The earlier incomplete v13 pilot is retained as diagnostic evidence, not mixed into v14 statistics",
+    "Snapshot/mock validation does not establish repair quality"
+  ]
+}
