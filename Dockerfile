@@ -36,6 +36,7 @@ FROM runtime AS integration-test
 USER root
 COPY tests ./tests
 COPY scripts ./scripts
+COPY Dockerfile.sandbox ./
 COPY docs/evidence ./docs/evidence
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked --no-build-isolation --no-editable --extra dev --extra oauth --group build
 USER repopilot
