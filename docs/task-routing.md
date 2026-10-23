@@ -55,7 +55,8 @@ one-shot results retain their old identity/meaning; the added visible gate does 
 retroactively turn historical one-shot runs into approval-reaching runs. This card
 adds engineering behavior, with repair quality left for CH-01C.
 
-Verification is pending the consolidated Docker run. The harness is
+The [consolidated Docker verification](ch01b-verification-2026-10-23.md) passed
+538 cases, Mock 10/10, smoke and both approval-restart paths. The harness is
 `sh scripts/ch01b_integration.sh`; it includes API/Worker/Docker strategy tests and
 separate workflow and one-shot approval-checkpoint restart probes. Cached dependency
 images can be reused while the current package is reinstalled and hashed.

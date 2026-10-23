@@ -1,5 +1,12 @@
 # Architecture
 
+The workflow diagram below describes the default strategy. CH-01B also supports
+one-shot with one Coder generation, a deterministic test gate, and explicit
+`review_performed=false` before bound human approval. Auto selects a route from
+visible first-retrieval features and can upgrade once on the same model ledger.
+All strategies retain candidate/evidence binding and publication opt-in; see
+[task routing](task-routing.md).
+
 RepoPilot deliberately separates agentic decisions from deterministic controls.
 
 ```mermaid
