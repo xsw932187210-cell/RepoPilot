@@ -6,6 +6,7 @@ case "$verification_card" in
   CH-06A) project_prefix=repopilot_ch06a_ ;;
   CH-06C) project_prefix=repopilot_ch06c_ ;;
   CH-07A) project_prefix=repopilot_ch07a_ ;;
+  CH-07C) project_prefix=repopilot_ch07c_ ;;
   *) printf 'Unsupported verification card\n' >&2; exit 1 ;;
 esac
 project="${CH06A_COMPOSE_PROJECT:-${project_prefix}$(date +%Y%m%d)_$$}"
@@ -97,7 +98,7 @@ compose exec -T postgres createdb -U repopilot repopilot_ch06a_test
 compose exec -T postgres createdb -U repopilot repopilot_ch03b_test
 compose exec -T postgres createdb -U repopilot repopilot_ch09_test
 compose exec -T postgres createdb -U repopilot repopilot_ch10_test
-if [ "$verification_card" = CH-06C ] || [ "$verification_card" = CH-07A ]; then
+if [ "$verification_card" = CH-06C ] || [ "$verification_card" = CH-07A ] || [ "$verification_card" = CH-07C ]; then
   compose exec -T postgres createdb -U repopilot repopilot_ch06c_test
 fi
 if ! compose run --rm --no-deps probe python -m pytest \

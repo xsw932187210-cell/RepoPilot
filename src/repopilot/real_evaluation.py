@@ -30,8 +30,10 @@ from repopilot.acceptance import (
 from repopilot.candidates import ArtifactStore, Candidate
 from repopilot.config import Settings
 from repopilot.data_boundary import require_secret_free, safe_error
+from repopilot.eval_repeats import RepeatConfig, RepeatedEvaluationRuntime
 from repopilot.eval_report import build_eval_report, render_markdown
 from repopilot.eval_runtime import EvaluationConfig, EvaluationRuntime, ModelCallBudget
+from repopilot.frozen_corpus import load_frozen_corpus
 from repopilot.github import GitHubPublisher
 from repopilot.graph.builder import GraphDependencies, build_graph
 from repopilot.llm import build_agent_model, model_role_profile
@@ -54,7 +56,7 @@ from repopilot.security import (
     safe_workspace_path,
 )
 
-EVALUATOR_CONFIG_VERSION = 11
+EVALUATOR_CONFIG_VERSION = 12
 
 
 def save_json(path: Path, value: object) -> None:
@@ -384,14 +386,27 @@ def protect_experiment_directory(output: Path, identity: dict[str, Any] | None =
 
 
 async def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
-    manifest = load_real_task_manifest(args.manifest)
+    frozen = load_frozen_corpus(args.freeze) if getattr(args, "freeze", None) else None
+    manifest_path = frozen.manifest_path if frozen else args.manifest
+    manifest = frozen.manifest if frozen else load_real_task_manifest(manifest_path)
     manifest.require_executable()
     protect_experiment_directory(args.output)
-    tasks = list(manifest.tasks)
+    tasks = list(frozen.select(args.partition)) if frozen else list(manifest.tasks)
     if args.case:
         if len(args.case) != len(set(args.case)):
             raise ValueError("Selected case IDs must be unique")
-        tasks = [manifest.by_id(case_id) for case_id in args.case]
+        allowed = {task.id: task for task in tasks}
+        if any(case_id not in allowed for case_id in args.case):
+            raise ValueError("Selected case is outside the declared frozen partition")
+        tasks = [allowed[case_id] for case_id in args.case]
+    run_id = getattr(args, "run_id", None)
+    repeats = getattr(args, "repeats", 1)
+    if repeats != 1 and not run_id:
+        raise ValueError("Repeats require an explicit run ID and new experiment identity")
+    if run_id and (not getattr(args, "strategy_version", None)
+                   or not getattr(args, "max_total_calls", None)):
+        raise ValueError("Repeated runs require strategy version and total API ceiling")
+    modes = tuple(getattr(args, "modes", None) or ("oneshot", "workflow"))
     projects = tuple(dict.fromkeys(task.project for task in tasks))
     sources = {
         project: await asyncio.to_thread(Path(value).resolve, strict=True)
@@ -403,6 +418,10 @@ async def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
     settings_overrides: dict[str, object] = {}
     if args.model:
         settings_overrides["model_name"] = args.model
+    if getattr(args, "max_output_tokens", None) is not None:
+        settings_overrides["model_max_output_tokens"] = args.max_output_tokens
+    if getattr(args, "temperature", None) is not None:
+        settings_overrides["model_temperature"] = args.temperature
     base_settings = Settings(
         sandbox_backend="docker",
         github_write_enabled=False,
@@ -429,7 +448,7 @@ async def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
         "evaluator_config_version": EVALUATOR_CONFIG_VERSION,
         "projects": identities,
     }
-    dataset_digest = hashlib.sha256(args.manifest.read_bytes()).hexdigest()
+    dataset_digest = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
     implementation_digest = implementation_sha256()
     protect_experiment_directory(
         args.output,
@@ -443,9 +462,17 @@ async def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
             "temperature": base_settings.model_temperature,
             "model_roles": model_role_profile(base_settings),
             "max_calls": args.max_calls,
+            "repeat": {
+                "run_id": run_id, "repeats": repeats,
+                "strategy_version": getattr(args, "strategy_version", None),
+                "max_total_calls": getattr(args, "max_total_calls", None), "modes": list(modes),
+            },
+            "freeze_fingerprint": frozen.fingerprint if frozen else None,
+            "contamination_sha256": frozen.contamination_sha256 if frozen else None,
+            "partition": args.partition if frozen else None,
         },
     )
-    corpus = args.manifest.parent
+    corpus = manifest_path.parent
     reproduction_dir = args.output / "reproduction"
     verified: dict[str, dict[str, Any]] = {}
     for task in tasks:
@@ -510,7 +537,7 @@ async def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
         model=base_settings.model_name,
         temperature=base_settings.model_temperature,
         max_model_calls=args.max_calls,
-        modes=("oneshot", "workflow"),
+        modes=modes,
         context_budget={"files": 12, "chars": 70_000, "initial_retrieval": "issue-only"},
         test_evaluator="withheld-junit-v2",
         evaluator_config={
@@ -522,9 +549,27 @@ async def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
             "source_policy": "trusted-project-python-source-v1",
             "policy_retry_limit": 1,
             "version": EVALUATOR_CONFIG_VERSION,
+            "freeze_fingerprint": frozen.fingerprint if frozen else None,
+            "contamination_sha256": frozen.contamination_sha256 if frozen else None,
+            "partition": args.partition if frozen else None,
         },
     )
-    runtime = EvaluationRuntime(config, args.output / "model-records")
+    policy = {
+        "max_rate_limit_retries": base_settings.model_max_rate_limit_retries,
+        "max_transient_retries": base_settings.model_max_transient_retries,
+        "base_backoff_seconds": base_settings.model_retry_base_seconds,
+        "max_backoff_seconds": base_settings.model_max_retry_wait_seconds,
+        "max_total_backoff_seconds": base_settings.model_max_total_backoff_seconds,
+        "request_timeout_seconds": base_settings.model_request_timeout_seconds,
+        "max_output_tokens": base_settings.model_max_output_tokens,
+        "max_total_tokens": base_settings.model_max_total_tokens or None,
+    }
+    runtime = (
+        RepeatedEvaluationRuntime(
+            RepeatConfig(config, run_id, repeats, args.strategy_version, args.max_total_calls),
+            args.output / "model-records", **policy,
+        ) if run_id else EvaluationRuntime(config, args.output / "model-records", **policy)
+    )
 
     async def execute(case: dict[str, Any], mode: str, budget: ModelCallBudget) -> dict[str, Any]:
         task = manifest.by_id(case["id"])
@@ -556,6 +601,15 @@ async def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, default=Path("evals/real/manifest.json"))
+    parser.add_argument("--freeze", type=Path, help="Select a verified corpus freeze")
+    parser.add_argument("--partition", choices=["development", "holdout"], default="development")
+    parser.add_argument("--run-id")
+    parser.add_argument("--repeats", type=int, default=1)
+    parser.add_argument("--strategy-version")
+    parser.add_argument("--max-total-calls", type=int)
+    parser.add_argument("--modes", nargs="+", choices=["oneshot", "workflow"])
+    parser.add_argument("--max-output-tokens", type=int)
+    parser.add_argument("--temperature", type=float)
     parser.add_argument(
         "--source",
         action="append",

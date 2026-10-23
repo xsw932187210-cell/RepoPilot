@@ -1,0 +1,1005 @@
+{
+  "schema_version": 3,
+  "metadata": {
+    "repeat_protocol": "repeat-evaluation-v1",
+    "fingerprint": "frozen",
+    "config": {
+      "run_id": "hand-computable",
+      "repeats": 2,
+      "strategy_version": "v1",
+      "base": {
+        "modes": [
+          "oneshot",
+          "workflow"
+        ]
+      }
+    },
+    "selected_cases": [
+      {
+        "id": "a",
+        "project": "one",
+        "difficulty": "small"
+      },
+      {
+        "id": "b",
+        "project": "two",
+        "difficulty": "broad"
+      }
+    ],
+    "evidence_kind": "synthetic hand-computable statistics fixture, not model quality"
+  },
+  "summary": {
+    "selected": 8,
+    "completed": 8,
+    "failed": 0,
+    "pending": 0,
+    "successful": 4,
+    "success_rate": {
+      "successful": 4,
+      "selected_denominator": 8,
+      "completed_denominator": 8,
+      "selected_rate": 0.5,
+      "completed_rate": 0.5
+    },
+    "hidden_acceptance_regressions": {
+      "tests": 0,
+      "pass_to_pass_tests": 0,
+      "regression_rate": null,
+      "resolved_cases": 0,
+      "comparison_cases": 0
+    },
+    "duration_ms": {
+      "median": 100,
+      "p95": 100
+    },
+    "model_calls": {
+      "total": 16,
+      "successful": 16,
+      "rate_limit_retries": 0,
+      "transient_retries": 0,
+      "max_model_calls": 0
+    },
+    "tokens": {
+      "token_usage_complete": true,
+      "input_tokens": 16,
+      "output_tokens": 16,
+      "total_tokens": 32,
+      "observed_input_tokens": 16,
+      "observed_output_tokens": 16,
+      "observed_total_tokens": 32
+    },
+    "failure_reasons": {
+      "unsuccessful_result": 4
+    }
+  },
+  "modes": {
+    "oneshot": {
+      "selected": 4,
+      "completed": 4,
+      "failed": 0,
+      "pending": 0,
+      "successful": 2,
+      "success_rate": {
+        "successful": 2,
+        "selected_denominator": 4,
+        "completed_denominator": 4,
+        "selected_rate": 0.5,
+        "completed_rate": 0.5
+      },
+      "hidden_acceptance_regressions": {
+        "tests": 0,
+        "pass_to_pass_tests": 0,
+        "regression_rate": null,
+        "resolved_cases": 0,
+        "comparison_cases": 0
+      },
+      "duration_ms": {
+        "median": 100,
+        "p95": 100
+      },
+      "model_calls": {
+        "total": 8,
+        "successful": 8,
+        "rate_limit_retries": 0,
+        "transient_retries": 0,
+        "max_model_calls": 0
+      },
+      "tokens": {
+        "token_usage_complete": true,
+        "input_tokens": 8,
+        "output_tokens": 8,
+        "total_tokens": 16,
+        "observed_input_tokens": 8,
+        "observed_output_tokens": 8,
+        "observed_total_tokens": 16
+      },
+      "failure_reasons": {
+        "unsuccessful_result": 2
+      },
+      "unique_cases": 2,
+      "unique_projects": 2,
+      "executor_attempts": 4,
+      "api_requests_started": 8,
+      "api_reservations": 8,
+      "observed_api_reservations": 8,
+      "scheduled_transport_retries": 0,
+      "coder_iterations": 4,
+      "observed_coder_iterations": 4,
+      "approval_reached": 0,
+      "pending_by_status": {},
+      "repeats": [
+        {
+          "repeat_id": 1,
+          "selected": 2,
+          "terminal": 2,
+          "successful": 1,
+          "selected_rate": 0.5
+        },
+        {
+          "repeat_id": 2,
+          "selected": 2,
+          "terminal": 2,
+          "successful": 1,
+          "selected_rate": 0.5
+        }
+      ],
+      "repeat_rate_range": [
+        0.5,
+        0.5
+      ],
+      "complete": true
+    },
+    "workflow": {
+      "selected": 4,
+      "completed": 4,
+      "failed": 0,
+      "pending": 0,
+      "successful": 2,
+      "success_rate": {
+        "successful": 2,
+        "selected_denominator": 4,
+        "completed_denominator": 4,
+        "selected_rate": 0.5,
+        "completed_rate": 0.5
+      },
+      "hidden_acceptance_regressions": {
+        "tests": 0,
+        "pass_to_pass_tests": 0,
+        "regression_rate": null,
+        "resolved_cases": 0,
+        "comparison_cases": 0
+      },
+      "duration_ms": {
+        "median": 100,
+        "p95": 100
+      },
+      "model_calls": {
+        "total": 8,
+        "successful": 8,
+        "rate_limit_retries": 0,
+        "transient_retries": 0,
+        "max_model_calls": 0
+      },
+      "tokens": {
+        "token_usage_complete": true,
+        "input_tokens": 8,
+        "output_tokens": 8,
+        "total_tokens": 16,
+        "observed_input_tokens": 8,
+        "observed_output_tokens": 8,
+        "observed_total_tokens": 16
+      },
+      "failure_reasons": {
+        "unsuccessful_result": 2
+      },
+      "unique_cases": 2,
+      "unique_projects": 2,
+      "executor_attempts": 4,
+      "api_requests_started": 8,
+      "api_reservations": 8,
+      "observed_api_reservations": 8,
+      "scheduled_transport_retries": 0,
+      "coder_iterations": 4,
+      "observed_coder_iterations": 4,
+      "approval_reached": 0,
+      "pending_by_status": {},
+      "repeats": [
+        {
+          "repeat_id": 1,
+          "selected": 2,
+          "terminal": 2,
+          "successful": 1,
+          "selected_rate": 0.5
+        },
+        {
+          "repeat_id": 2,
+          "selected": 2,
+          "terminal": 2,
+          "successful": 1,
+          "selected_rate": 0.5
+        }
+      ],
+      "repeat_rate_range": [
+        0.5,
+        0.5
+      ],
+      "complete": true
+    }
+  },
+  "repeat_statistics": {
+    "protocol": "repeat-evaluation-v1",
+    "selected_unique_cases": 2,
+    "selected_projects": 2,
+    "selected_units": 8,
+    "repeats": 2,
+    "paired": [
+      {
+        "first": "oneshot",
+        "second": "workflow",
+        "direction": "second-minus-first",
+        "selected_unique_cases": 2,
+        "eligible_unique_cases": 2,
+        "excluded_incomplete_cases": 0,
+        "mean_case_rate_difference": 0.0,
+        "project_cluster_interval": {
+          "interval": [
+            -1.0,
+            1.0
+          ],
+          "projects": 2,
+          "method": "exact-project-cluster-resampling",
+          "level": 0.95,
+          "quantiles": "outward-order-statistics",
+          "degenerate": false
+        },
+        "complete": true
+      }
+    ],
+    "strata": {
+      "project": {
+        "one": {
+          "oneshot": {
+            "selected": 2,
+            "completed": 2,
+            "failed": 0,
+            "pending": 0,
+            "successful": 0,
+            "success_rate": {
+              "successful": 0,
+              "selected_denominator": 2,
+              "completed_denominator": 2,
+              "selected_rate": 0.0,
+              "completed_rate": 0.0
+            },
+            "hidden_acceptance_regressions": {
+              "tests": 0,
+              "pass_to_pass_tests": 0,
+              "regression_rate": null,
+              "resolved_cases": 0,
+              "comparison_cases": 0
+            },
+            "duration_ms": {
+              "median": 100,
+              "p95": 100
+            },
+            "model_calls": {
+              "total": 4,
+              "successful": 4,
+              "rate_limit_retries": 0,
+              "transient_retries": 0,
+              "max_model_calls": 0
+            },
+            "tokens": {
+              "token_usage_complete": true,
+              "input_tokens": 4,
+              "output_tokens": 4,
+              "total_tokens": 8,
+              "observed_input_tokens": 4,
+              "observed_output_tokens": 4,
+              "observed_total_tokens": 8
+            },
+            "failure_reasons": {
+              "unsuccessful_result": 2
+            },
+            "unique_cases": 1,
+            "unique_projects": 1,
+            "executor_attempts": 2,
+            "api_requests_started": 4,
+            "api_reservations": 4,
+            "observed_api_reservations": 4,
+            "scheduled_transport_retries": 0,
+            "coder_iterations": 2,
+            "observed_coder_iterations": 2,
+            "approval_reached": 0,
+            "pending_by_status": {},
+            "repeats": [
+              {
+                "repeat_id": 1,
+                "selected": 1,
+                "terminal": 1,
+                "successful": 0,
+                "selected_rate": 0.0
+              },
+              {
+                "repeat_id": 2,
+                "selected": 1,
+                "terminal": 1,
+                "successful": 0,
+                "selected_rate": 0.0
+              }
+            ],
+            "repeat_rate_range": [
+              0.0,
+              0.0
+            ],
+            "complete": true
+          },
+          "workflow": {
+            "selected": 2,
+            "completed": 2,
+            "failed": 0,
+            "pending": 0,
+            "successful": 2,
+            "success_rate": {
+              "successful": 2,
+              "selected_denominator": 2,
+              "completed_denominator": 2,
+              "selected_rate": 1.0,
+              "completed_rate": 1.0
+            },
+            "hidden_acceptance_regressions": {
+              "tests": 0,
+              "pass_to_pass_tests": 0,
+              "regression_rate": null,
+              "resolved_cases": 0,
+              "comparison_cases": 0
+            },
+            "duration_ms": {
+              "median": 100,
+              "p95": 100
+            },
+            "model_calls": {
+              "total": 4,
+              "successful": 4,
+              "rate_limit_retries": 0,
+              "transient_retries": 0,
+              "max_model_calls": 0
+            },
+            "tokens": {
+              "token_usage_complete": true,
+              "input_tokens": 4,
+              "output_tokens": 4,
+              "total_tokens": 8,
+              "observed_input_tokens": 4,
+              "observed_output_tokens": 4,
+              "observed_total_tokens": 8
+            },
+            "failure_reasons": {},
+            "unique_cases": 1,
+            "unique_projects": 1,
+            "executor_attempts": 2,
+            "api_requests_started": 4,
+            "api_reservations": 4,
+            "observed_api_reservations": 4,
+            "scheduled_transport_retries": 0,
+            "coder_iterations": 2,
+            "observed_coder_iterations": 2,
+            "approval_reached": 0,
+            "pending_by_status": {},
+            "repeats": [
+              {
+                "repeat_id": 1,
+                "selected": 1,
+                "terminal": 1,
+                "successful": 1,
+                "selected_rate": 1.0
+              },
+              {
+                "repeat_id": 2,
+                "selected": 1,
+                "terminal": 1,
+                "successful": 1,
+                "selected_rate": 1.0
+              }
+            ],
+            "repeat_rate_range": [
+              1.0,
+              1.0
+            ],
+            "complete": true
+          }
+        },
+        "two": {
+          "oneshot": {
+            "selected": 2,
+            "completed": 2,
+            "failed": 0,
+            "pending": 0,
+            "successful": 2,
+            "success_rate": {
+              "successful": 2,
+              "selected_denominator": 2,
+              "completed_denominator": 2,
+              "selected_rate": 1.0,
+              "completed_rate": 1.0
+            },
+            "hidden_acceptance_regressions": {
+              "tests": 0,
+              "pass_to_pass_tests": 0,
+              "regression_rate": null,
+              "resolved_cases": 0,
+              "comparison_cases": 0
+            },
+            "duration_ms": {
+              "median": 100,
+              "p95": 100
+            },
+            "model_calls": {
+              "total": 4,
+              "successful": 4,
+              "rate_limit_retries": 0,
+              "transient_retries": 0,
+              "max_model_calls": 0
+            },
+            "tokens": {
+              "token_usage_complete": true,
+              "input_tokens": 4,
+              "output_tokens": 4,
+              "total_tokens": 8,
+              "observed_input_tokens": 4,
+              "observed_output_tokens": 4,
+              "observed_total_tokens": 8
+            },
+            "failure_reasons": {},
+            "unique_cases": 1,
+            "unique_projects": 1,
+            "executor_attempts": 2,
+            "api_requests_started": 4,
+            "api_reservations": 4,
+            "observed_api_reservations": 4,
+            "scheduled_transport_retries": 0,
+            "coder_iterations": 2,
+            "observed_coder_iterations": 2,
+            "approval_reached": 0,
+            "pending_by_status": {},
+            "repeats": [
+              {
+                "repeat_id": 1,
+                "selected": 1,
+                "terminal": 1,
+                "successful": 1,
+                "selected_rate": 1.0
+              },
+              {
+                "repeat_id": 2,
+                "selected": 1,
+                "terminal": 1,
+                "successful": 1,
+                "selected_rate": 1.0
+              }
+            ],
+            "repeat_rate_range": [
+              1.0,
+              1.0
+            ],
+            "complete": true
+          },
+          "workflow": {
+            "selected": 2,
+            "completed": 2,
+            "failed": 0,
+            "pending": 0,
+            "successful": 0,
+            "success_rate": {
+              "successful": 0,
+              "selected_denominator": 2,
+              "completed_denominator": 2,
+              "selected_rate": 0.0,
+              "completed_rate": 0.0
+            },
+            "hidden_acceptance_regressions": {
+              "tests": 0,
+              "pass_to_pass_tests": 0,
+              "regression_rate": null,
+              "resolved_cases": 0,
+              "comparison_cases": 0
+            },
+            "duration_ms": {
+              "median": 100,
+              "p95": 100
+            },
+            "model_calls": {
+              "total": 4,
+              "successful": 4,
+              "rate_limit_retries": 0,
+              "transient_retries": 0,
+              "max_model_calls": 0
+            },
+            "tokens": {
+              "token_usage_complete": true,
+              "input_tokens": 4,
+              "output_tokens": 4,
+              "total_tokens": 8,
+              "observed_input_tokens": 4,
+              "observed_output_tokens": 4,
+              "observed_total_tokens": 8
+            },
+            "failure_reasons": {
+              "unsuccessful_result": 2
+            },
+            "unique_cases": 1,
+            "unique_projects": 1,
+            "executor_attempts": 2,
+            "api_requests_started": 4,
+            "api_reservations": 4,
+            "observed_api_reservations": 4,
+            "scheduled_transport_retries": 0,
+            "coder_iterations": 2,
+            "observed_coder_iterations": 2,
+            "approval_reached": 0,
+            "pending_by_status": {},
+            "repeats": [
+              {
+                "repeat_id": 1,
+                "selected": 1,
+                "terminal": 1,
+                "successful": 0,
+                "selected_rate": 0.0
+              },
+              {
+                "repeat_id": 2,
+                "selected": 1,
+                "terminal": 1,
+                "successful": 0,
+                "selected_rate": 0.0
+              }
+            ],
+            "repeat_rate_range": [
+              0.0,
+              0.0
+            ],
+            "complete": true
+          }
+        }
+      },
+      "difficulty": {
+        "broad": {
+          "oneshot": {
+            "selected": 2,
+            "completed": 2,
+            "failed": 0,
+            "pending": 0,
+            "successful": 2,
+            "success_rate": {
+              "successful": 2,
+              "selected_denominator": 2,
+              "completed_denominator": 2,
+              "selected_rate": 1.0,
+              "completed_rate": 1.0
+            },
+            "hidden_acceptance_regressions": {
+              "tests": 0,
+              "pass_to_pass_tests": 0,
+              "regression_rate": null,
+              "resolved_cases": 0,
+              "comparison_cases": 0
+            },
+            "duration_ms": {
+              "median": 100,
+              "p95": 100
+            },
+            "model_calls": {
+              "total": 4,
+              "successful": 4,
+              "rate_limit_retries": 0,
+              "transient_retries": 0,
+              "max_model_calls": 0
+            },
+            "tokens": {
+              "token_usage_complete": true,
+              "input_tokens": 4,
+              "output_tokens": 4,
+              "total_tokens": 8,
+              "observed_input_tokens": 4,
+              "observed_output_tokens": 4,
+              "observed_total_tokens": 8
+            },
+            "failure_reasons": {},
+            "unique_cases": 1,
+            "unique_projects": 1,
+            "executor_attempts": 2,
+            "api_requests_started": 4,
+            "api_reservations": 4,
+            "observed_api_reservations": 4,
+            "scheduled_transport_retries": 0,
+            "coder_iterations": 2,
+            "observed_coder_iterations": 2,
+            "approval_reached": 0,
+            "pending_by_status": {},
+            "repeats": [
+              {
+                "repeat_id": 1,
+                "selected": 1,
+                "terminal": 1,
+                "successful": 1,
+                "selected_rate": 1.0
+              },
+              {
+                "repeat_id": 2,
+                "selected": 1,
+                "terminal": 1,
+                "successful": 1,
+                "selected_rate": 1.0
+              }
+            ],
+            "repeat_rate_range": [
+              1.0,
+              1.0
+            ],
+            "complete": true
+          },
+          "workflow": {
+            "selected": 2,
+            "completed": 2,
+            "failed": 0,
+            "pending": 0,
+            "successful": 0,
+            "success_rate": {
+              "successful": 0,
+              "selected_denominator": 2,
+              "completed_denominator": 2,
+              "selected_rate": 0.0,
+              "completed_rate": 0.0
+            },
+            "hidden_acceptance_regressions": {
+              "tests": 0,
+              "pass_to_pass_tests": 0,
+              "regression_rate": null,
+              "resolved_cases": 0,
+              "comparison_cases": 0
+            },
+            "duration_ms": {
+              "median": 100,
+              "p95": 100
+            },
+            "model_calls": {
+              "total": 4,
+              "successful": 4,
+              "rate_limit_retries": 0,
+              "transient_retries": 0,
+              "max_model_calls": 0
+            },
+            "tokens": {
+              "token_usage_complete": true,
+              "input_tokens": 4,
+              "output_tokens": 4,
+              "total_tokens": 8,
+              "observed_input_tokens": 4,
+              "observed_output_tokens": 4,
+              "observed_total_tokens": 8
+            },
+            "failure_reasons": {
+              "unsuccessful_result": 2
+            },
+            "unique_cases": 1,
+            "unique_projects": 1,
+            "executor_attempts": 2,
+            "api_requests_started": 4,
+            "api_reservations": 4,
+            "observed_api_reservations": 4,
+            "scheduled_transport_retries": 0,
+            "coder_iterations": 2,
+            "observed_coder_iterations": 2,
+            "approval_reached": 0,
+            "pending_by_status": {},
+            "repeats": [
+              {
+                "repeat_id": 1,
+                "selected": 1,
+                "terminal": 1,
+                "successful": 0,
+                "selected_rate": 0.0
+              },
+              {
+                "repeat_id": 2,
+                "selected": 1,
+                "terminal": 1,
+                "successful": 0,
+                "selected_rate": 0.0
+              }
+            ],
+            "repeat_rate_range": [
+              0.0,
+              0.0
+            ],
+            "complete": true
+          }
+        },
+        "small": {
+          "oneshot": {
+            "selected": 2,
+            "completed": 2,
+            "failed": 0,
+            "pending": 0,
+            "successful": 0,
+            "success_rate": {
+              "successful": 0,
+              "selected_denominator": 2,
+              "completed_denominator": 2,
+              "selected_rate": 0.0,
+              "completed_rate": 0.0
+            },
+            "hidden_acceptance_regressions": {
+              "tests": 0,
+              "pass_to_pass_tests": 0,
+              "regression_rate": null,
+              "resolved_cases": 0,
+              "comparison_cases": 0
+            },
+            "duration_ms": {
+              "median": 100,
+              "p95": 100
+            },
+            "model_calls": {
+              "total": 4,
+              "successful": 4,
+              "rate_limit_retries": 0,
+              "transient_retries": 0,
+              "max_model_calls": 0
+            },
+            "tokens": {
+              "token_usage_complete": true,
+              "input_tokens": 4,
+              "output_tokens": 4,
+              "total_tokens": 8,
+              "observed_input_tokens": 4,
+              "observed_output_tokens": 4,
+              "observed_total_tokens": 8
+            },
+            "failure_reasons": {
+              "unsuccessful_result": 2
+            },
+            "unique_cases": 1,
+            "unique_projects": 1,
+            "executor_attempts": 2,
+            "api_requests_started": 4,
+            "api_reservations": 4,
+            "observed_api_reservations": 4,
+            "scheduled_transport_retries": 0,
+            "coder_iterations": 2,
+            "observed_coder_iterations": 2,
+            "approval_reached": 0,
+            "pending_by_status": {},
+            "repeats": [
+              {
+                "repeat_id": 1,
+                "selected": 1,
+                "terminal": 1,
+                "successful": 0,
+                "selected_rate": 0.0
+              },
+              {
+                "repeat_id": 2,
+                "selected": 1,
+                "terminal": 1,
+                "successful": 0,
+                "selected_rate": 0.0
+              }
+            ],
+            "repeat_rate_range": [
+              0.0,
+              0.0
+            ],
+            "complete": true
+          },
+          "workflow": {
+            "selected": 2,
+            "completed": 2,
+            "failed": 0,
+            "pending": 0,
+            "successful": 2,
+            "success_rate": {
+              "successful": 2,
+              "selected_denominator": 2,
+              "completed_denominator": 2,
+              "selected_rate": 1.0,
+              "completed_rate": 1.0
+            },
+            "hidden_acceptance_regressions": {
+              "tests": 0,
+              "pass_to_pass_tests": 0,
+              "regression_rate": null,
+              "resolved_cases": 0,
+              "comparison_cases": 0
+            },
+            "duration_ms": {
+              "median": 100,
+              "p95": 100
+            },
+            "model_calls": {
+              "total": 4,
+              "successful": 4,
+              "rate_limit_retries": 0,
+              "transient_retries": 0,
+              "max_model_calls": 0
+            },
+            "tokens": {
+              "token_usage_complete": true,
+              "input_tokens": 4,
+              "output_tokens": 4,
+              "total_tokens": 8,
+              "observed_input_tokens": 4,
+              "observed_output_tokens": 4,
+              "observed_total_tokens": 8
+            },
+            "failure_reasons": {},
+            "unique_cases": 1,
+            "unique_projects": 1,
+            "executor_attempts": 2,
+            "api_requests_started": 4,
+            "api_reservations": 4,
+            "observed_api_reservations": 4,
+            "scheduled_transport_retries": 0,
+            "coder_iterations": 2,
+            "observed_coder_iterations": 2,
+            "approval_reached": 0,
+            "pending_by_status": {},
+            "repeats": [
+              {
+                "repeat_id": 1,
+                "selected": 1,
+                "terminal": 1,
+                "successful": 1,
+                "selected_rate": 1.0
+              },
+              {
+                "repeat_id": 2,
+                "selected": 1,
+                "terminal": 1,
+                "successful": 1,
+                "selected_rate": 1.0
+              }
+            ],
+            "repeat_rate_range": [
+              1.0,
+              1.0
+            ],
+            "complete": true
+          }
+        }
+      }
+    },
+    "assumptions": "Case success fractions average predeclared repeats. Paired intervals resample whole projects, not individual repeated outcomes. The curated sample is not random; intervals are descriptive, small cluster counts are unstable, and constant observed outcomes yield degenerate intervals. Pending results do not establish a strategy winner. No seed was sent to providers; repeats may vary.",
+    "money": null
+  },
+  "cases": [
+    {
+      "case_id": "a",
+      "mode": "oneshot",
+      "status": "completed",
+      "duration_ms": 100,
+      "model_calls": 2,
+      "successful_model_calls": 2,
+      "token_usage_complete": true,
+      "success": false,
+      "failure_reason": "unsuccessful_result",
+      "result_category": "unsuccessful_result",
+      "run_id": "hand-computable",
+      "repeat_id": 1,
+      "project": "one",
+      "difficulty": "small"
+    },
+    {
+      "case_id": "a",
+      "mode": "workflow",
+      "status": "completed",
+      "duration_ms": 100,
+      "model_calls": 2,
+      "successful_model_calls": 2,
+      "token_usage_complete": true,
+      "success": true,
+      "failure_reason": null,
+      "result_category": "success",
+      "run_id": "hand-computable",
+      "repeat_id": 1,
+      "project": "one",
+      "difficulty": "small"
+    },
+    {
+      "case_id": "a",
+      "mode": "oneshot",
+      "status": "completed",
+      "duration_ms": 100,
+      "model_calls": 2,
+      "successful_model_calls": 2,
+      "token_usage_complete": true,
+      "success": false,
+      "failure_reason": "unsuccessful_result",
+      "result_category": "unsuccessful_result",
+      "run_id": "hand-computable",
+      "repeat_id": 2,
+      "project": "one",
+      "difficulty": "small"
+    },
+    {
+      "case_id": "a",
+      "mode": "workflow",
+      "status": "completed",
+      "duration_ms": 100,
+      "model_calls": 2,
+      "successful_model_calls": 2,
+      "token_usage_complete": true,
+      "success": true,
+      "failure_reason": null,
+      "result_category": "success",
+      "run_id": "hand-computable",
+      "repeat_id": 2,
+      "project": "one",
+      "difficulty": "small"
+    },
+    {
+      "case_id": "b",
+      "mode": "oneshot",
+      "status": "completed",
+      "duration_ms": 100,
+      "model_calls": 2,
+      "successful_model_calls": 2,
+      "token_usage_complete": true,
+      "success": true,
+      "failure_reason": null,
+      "result_category": "success",
+      "run_id": "hand-computable",
+      "repeat_id": 1,
+      "project": "two",
+      "difficulty": "broad"
+    },
+    {
+      "case_id": "b",
+      "mode": "workflow",
+      "status": "completed",
+      "duration_ms": 100,
+      "model_calls": 2,
+      "successful_model_calls": 2,
+      "token_usage_complete": true,
+      "success": false,
+      "failure_reason": "unsuccessful_result",
+      "result_category": "unsuccessful_result",
+      "run_id": "hand-computable",
+      "repeat_id": 1,
+      "project": "two",
+      "difficulty": "broad"
+    },
+    {
+      "case_id": "b",
+      "mode": "oneshot",
+      "status": "completed",
+      "duration_ms": 100,
+      "model_calls": 2,
+      "successful_model_calls": 2,
+      "token_usage_complete": true,
+      "success": true,
+      "failure_reason": null,
+      "result_category": "success",
+      "run_id": "hand-computable",
+      "repeat_id": 2,
+      "project": "two",
+      "difficulty": "broad"
+    },
+    {
+      "case_id": "b",
+      "mode": "workflow",
+      "status": "completed",
+      "duration_ms": 100,
+      "model_calls": 2,
+      "successful_model_calls": 2,
+      "token_usage_complete": true,
+      "success": false,
+      "failure_reason": "unsuccessful_result",
+      "result_category": "unsuccessful_result",
+      "run_id": "hand-computable",
+      "repeat_id": 2,
+      "project": "two",
+      "difficulty": "broad"
+    }
+  ]
+}
