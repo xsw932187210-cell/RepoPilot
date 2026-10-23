@@ -1,0 +1,125 @@
+{
+  "schema_version": "ch19-delivery-v1",
+  "verified_date": "2026-10-24",
+  "new_external_model_requests": 0,
+  "real_provider_e2e_executed": false,
+  "container": {
+    "installed_demo_sha256": "adc29908d29fe7e0d9790d823eddbad21818a2f897671c8ae3d7566b12b2d1a1",
+    "python": "3.12.15",
+    "platform": "Linux",
+    "machine": "aarch64",
+    "image_id": "sha256:c31c4b61478b9f2318a8f71a9e886b76070992b090ddd54915d2794161e45664",
+    "network": "none",
+    "read_only_root": true,
+    "capabilities_dropped": "ALL",
+    "no_new_privileges": true,
+    "memory_bytes": 536870912,
+    "pids_limit": 128,
+    "credential_mounts": false,
+    "docker_socket_mount": false
+  },
+  "focused_tests": {
+    "platform": "macOS arm64",
+    "python": "3.13.5",
+    "passed": 3,
+    "skipped": 0,
+    "cases": [
+      "approve",
+      "reject",
+      "cli_default_inspect"
+    ]
+  },
+  "source_sha256": {
+    "src/repopilot/demo.py": "adc29908d29fe7e0d9790d823eddbad21818a2f897671c8ae3d7566b12b2d1a1",
+    "tests/test_demo.py": "069dde3fa30f725c9358599872f905abeaed6ff9038b8b6d872258c49262a6e6",
+    "Makefile": "37f7273ea7f3ed3e2b006d60d75ad5c12f09920ca2472b3a77ceca2038c886ac",
+    "pyproject.toml": "d4a5a388560eb037c4a3adf43d88a61509f394fddaf975df69354e0e428c3ed4"
+  },
+  "installed_demo_matches_current_source": true,
+  "frozen_corpus_unchanged_from": "5201a8ee9d682551ef8aa06b178c68a1fc256607",
+  "runs": {
+    "approve": {
+      "provider": "scripted-mock",
+      "decision": "approve",
+      "status": "completed",
+      "test_runs": [
+        {
+          "exit_code": 1,
+          "timed_out": false
+        },
+        {
+          "exit_code": 0,
+          "timed_out": false
+        }
+      ],
+      "node_runs": {
+        "prepare": 1,
+        "route": 1,
+        "planner": 1,
+        "researcher": 1,
+        "test_analyst": 1,
+        "coder": 2,
+        "apply_policy": 2,
+        "test_runner": 2,
+        "reviewer": 2,
+        "approval": 1,
+        "finalize": 1
+      },
+      "role_calls_before_resume": 5,
+      "role_calls_after_resume": 5,
+      "candidate_binding_unchanged": true,
+      "resumed": true,
+      "resume_scope": "same_process_in_memory_checkpoint",
+      "worker_process_restart_verified_here": false,
+      "publication_enabled": false,
+      "pull_request_url": null,
+      "fixture_unchanged": true,
+      "ok": true,
+      "external_model_requests": 0
+    },
+    "inspect": {
+      "provider": "scripted-mock",
+      "decision": "inspect",
+      "status": "awaiting_approval",
+      "test_runs": [
+        {
+          "exit_code": 1,
+          "timed_out": false
+        },
+        {
+          "exit_code": 0,
+          "timed_out": false
+        }
+      ],
+      "node_runs": {
+        "prepare": 1,
+        "route": 1,
+        "planner": 1,
+        "researcher": 1,
+        "test_analyst": 1,
+        "coder": 2,
+        "apply_policy": 2,
+        "test_runner": 2,
+        "reviewer": 2
+      },
+      "role_calls_before_resume": 5,
+      "role_calls_after_resume": 5,
+      "candidate_binding_unchanged": true,
+      "resumed": false,
+      "resume_scope": "same_process_in_memory_checkpoint",
+      "worker_process_restart_verified_here": false,
+      "publication_enabled": false,
+      "pull_request_url": null,
+      "fixture_unchanged": true,
+      "ok": true,
+      "external_model_requests": 0
+    }
+  },
+  "actual_worker_restart_evidence": "docs/ch18-verification-2026-10-23.md",
+  "limits": [
+    "owned_fixture_only",
+    "scripted_mock_not_model_quality",
+    "same_process_in_memory_checkpoint",
+    "real_task_configuration_documented_but_not_run_this_round"
+  ]
+}

@@ -13,15 +13,26 @@ and API in this repository were implemented specifically for RepoPilot.
 See [Openspec.md](Openspec.md) for the current behavioral contracts, verified evidence,
 known limitations, and acceptance criteria for the next iterations (Chinese).
 
+**Start with `make demo`** for a credential-free Docker walkthrough: an intentionally scripted first
+proposal fails a real test, the second passes, and bound approval resumes the same-process checkpoint.
+See [演示与真实任务路径](docs/demo.md), [能力与证据索引](docs/evidence-index.md),
+[设计与失败案例](docs/design-decisions.md), and [可复现安装](docs/reproducible-delivery.md).
+Actual Worker process restart is verified separately by `make verify`.
+
+The latest three-strategy pilot found **0/6 independent repairs in each arm**. It adds evaluation
+evidence, not a quality-lift claim; [results](docs/real-evaluation-results-2026-10-23.md) and
+[offline failure observations](docs/failure-analysis-2026-10-23.md) retain that negative result.
+
 ## What it demonstrates
 
-- Explicit LangGraph state machine with Planner, Researcher, Test Analyst, Coder, and Reviewer roles.
+- Explicit LangGraph state machine: three model roles (Planner, Coder, Reviewer), plus deterministic
+  read-only Researcher and Test Analyst nodes.
 - [Budgeted routing](docs/task-routing.md): explicit `oneshot / workflow / auto`,
   deterministic visible-input rules, one bounded upgrade on the same call ledger,
   and persisted route explanations. Omitted strategy retains workflow; one-shot
   explicitly omits model review and still requires Docker test evidence and human approval.
-- Parallel research/test-analysis fan-out, deterministic-failure retries, one bounded remediation
-  for concrete reviewer findings, and reviewer-risk escalation to the human approval gate.
+- Parallel research/test-analysis fan-out, deterministic-failure retries and reviewer rework within
+  the total Coder iteration budget, with low-risk concerns escalated to human approval.
 - Single graph writer with a versioned read/write/create policy, full-batch edit preflight,
   read-only tests/build configuration, stale-context rejection, and one bounded Coder correction;
   policy-rejected batches never partially touch the tree.
@@ -42,14 +53,15 @@ known limitations, and acceptance criteria for the next iterations (Chinese).
 - Network-disabled Docker test sandbox using a disposable per-task snapshot plus resource,
   capability, command, and path controls.
 - Governed GitHub REST tool that can create a draft PR only after a non-empty diff, passing tests,
-  separate review, and human approval.
+  recorded review status, runtime opt-in, and human approval. One-shot skips model review explicitly.
 - Ten-scenario offline benchmark and mock model for deterministic CI regression testing.
 - Twenty pinned BugsInPy defects from The Fuck with a Docker reproduction validator,
   resumable per-case real-model evaluation, one-shot baseline comparison, and sanitized
   failure/latency reports; this is a one-project pilot, not a broad benchmark claim.
 - A separate [frozen corpus pilot](docs/real-task-corpus.md#frozen-cross-project-pilot-v1)
   with 23 reproduced defects across three projects: the historical 20 are development,
-  and three new tqdm/Cookiecutter cases form a project-disjoint holdout. No new repair-rate result.
+  and three new tqdm/Cookiecutter cases form the original project-disjoint holdout. The completed
+  three-strategy pilot repeats each case twice; observed cases are no longer unseen validation data.
 - Automated lint, test, and 70% line-coverage quality gates on every push and pull request.
 - OpenAI-compatible and Google Cloud SDK adapters, with an optional ChatGPT OAuth Reviewer.
 
@@ -58,13 +70,24 @@ known limitations, and acceptance criteria for the next iterations (Chinese).
 Requirements: Docker Desktop and Docker Compose.
 
 ```bash
-cp .env.example .env
+make demo
+make check
+# Full isolated service/fault/restart verification:
+make verify
+```
+
+These commands do not read credentials into containers or replace your running application stack.
+See [locked dependencies, supported platforms and CI](docs/reproducible-delivery.md). To start a
+long-lived local application in a new clone:
+
+```bash
+cp -n .env.example .env
 docker compose up --build -d
 ./scripts/smoke.sh
 ./scripts/recovery_smoke.sh
 ```
 
-The default `MODEL_PROVIDER=mock` requires no API key and repairs the bundled calculator fixture.
+The template default `MODEL_PROVIDER=mock` requires no API key and repairs the bundled calculator fixture.
 Open <http://localhost:8000/docs> for the API.
 
 Compose runs the one-shot application migration before starting API and Worker. Existing deployments
@@ -77,7 +100,8 @@ provider, recreate the API and worker with an explicit mock override before coll
 smoke evidence:
 
 ```bash
-MODEL_PROVIDER=mock MODEL_NAME=deterministic-mock-v1 OPENAI_API_KEY= OPENAI_BASE_URL= \
+MODEL_PROVIDER=mock MODEL_NAME=deterministic-mock-v1 REVIEW_MODEL_PROVIDER= \
+  OPENAI_API_KEY= OPENAI_BASE_URL= GITHUB_WRITE_ENABLED=false \
   docker compose up --build -d --force-recreate api worker
 ```
 
@@ -212,6 +236,11 @@ The first complete 20-case paired run is documented in
 [docs/real-evaluation-results-2026-09-09.md](docs/real-evaluation-results-2026-09-09.md). It records
 the negative result as well as the successes: the current multi-agent path did not beat the
 one-shot baseline, so no quality-lift claim is made.
+
+The later [2026-10-23 three-strategy pilot](docs/real-evaluation-results-2026-10-23.md) contains
+three defects across two held-out projects, two repeats per strategy, and zero accepted repairs.
+Its 18 units are not 18 independent defects. [Failure observations](docs/failure-analysis-2026-10-23.md)
+separate call-control exits, collection errors and candidate outcomes; the two experiments stay separate.
 
 To validate the real corpus without spending model quota, run `make eval-real-reproduce` first.
 The real-model protocol uses the same pinned manifest and Docker image identity, resumes completed

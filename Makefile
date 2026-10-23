@@ -30,6 +30,15 @@ doctor: test-image
 verify:
 	./scripts/ch18_integration.sh
 
+.PHONY: demo
+demo: test-image
+	mkdir -p reports/demo
+	docker run --rm --network none --read-only --cap-drop ALL \
+		--security-opt no-new-privileges --memory 512m --pids-limit 128 \
+		--tmpfs /tmp:rw,nosuid,size=128m --user "$$(id -u):$$(id -g)" \
+		-v "$$(pwd)/reports/demo:/demo-output" repopilot:test \
+		repopilot-demo --decision approve --output /demo-output
+
 migration-test:
 	./scripts/migration_integration.sh
 

@@ -27,8 +27,8 @@ flowchart LR
   A --> S[Docker tests on frozen artifact]
   AP -->|one task-wide correction| C
   S --> V[Reviewer]
-  V -->|medium/high risk: one bounded remediation| C
-  V -->|approved, low-risk, or second candidate| H[HITL interrupt]
+  V -->|medium/high risk within iteration budget| C
+  V -->|passing test gate: escalate per policy| H[HITL interrupt]
   H -->|approved| PI[(Bound publication intent and receipt)]
   PI --> GH[GitHub object/ref/PR reconciliation]
   G --> CP[(PostgreSQL checkpoints)]
@@ -53,7 +53,8 @@ flowchart LR
    worker's mounts, network access, Linux capabilities, or privilege escalation. Symlinks and
    special files are rejected when the snapshot is built.
 5. GitHub writes require a non-empty diff, passing tests, an allowlisted owner, runtime enablement,
-   a token, reviewer evidence, and a LangGraph human approval interrupt. Deterministic checks override an
+   a token, recorded review status, and a LangGraph human approval interrupt. One-shot explicitly skips
+   model review. Deterministic checks override an
    incorrect model approval and feed their evidence into the bounded retry loop.
 6. Tokens and credential-bearing URLs are never placed in graph state or task events.
 
@@ -85,8 +86,9 @@ PR outcomes stop further writes; cancellation records effects rather than deleti
 
 When deterministic validation fails, or when the reviewer reports a concrete medium/high-risk
 finding, the coder refreshes repository context from the bound complete generation before
-applying feedback. A low-risk or evidence-only reviewer concern goes directly to HITL; after one
-review-driven remediation, the next candidate is also escalated. Previous edits remain
+applying feedback. A low-risk reviewer concern goes directly to HITL. Reviewer rework shares the
+total Coder iteration budget: the default two iterations allow one rework; a configured higher
+maximum can allow more. An independent one-rework cap remains CH-13. Previous edits remain
 accumulated in state, and the configured maximum iteration count prevents an unbounded agent loop.
 
 Coder checkpoints a `CodeChangeOutput-v2` proposal before the separate `apply_policy` writer
