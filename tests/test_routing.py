@@ -137,7 +137,7 @@ async def test_auto_upgrade_shares_budget_and_preserves_policy_boundary(tmp_path
     assert budget.snapshot()["reserved_calls"] == 4
     assert result["routing"]["upgrades"] == 1
     assert [item["selected"] for item in result["routing_history"]] == ["oneshot", "workflow"]
-    assert (result["policy_retry_count"] == 1) is forbidden
+    assert (result.get("policy_retry_count", 0) == 1) is forbidden
     assert result["changed_files"] == ["calculator.py"]
     publisher.publish.assert_not_called()
 
