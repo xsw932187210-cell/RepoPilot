@@ -16,13 +16,19 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install ".[dev]"
-      - run: ruff check .
+          cache-dependency-path: requirements/uv.txt
+      - run: pip install --require-hashes -r requirements/uv.txt
+      - name: Install locked dependencies and build backend
+        run: uv sync --locked --extra dev --group build --no-install-project
+      - run: uv sync --locked --extra dev --group build --no-build-isolation
+      - run: uv run --no-sync ruff check .
+      - name: Check local readiness without model calls
+        run: uv run --no-sync repopilot-doctor
       - name: Run tests with coverage floor
-        run: pytest --cov=repopilot --cov-report=term-missing --cov-fail-under=70 -q
+        run: uv run --no-sync pytest --cov=repopilot --cov-report=term-missing --cov-fail-under=70 -q
       - name: Run deterministic workflow benchmark
         run: >-
-          python -m repopilot.evaluation
+          uv run --no-sync python -m repopilot.evaluation
           --provider mock
           --output reports/mock-evaluation.json
           --fail-on-regression

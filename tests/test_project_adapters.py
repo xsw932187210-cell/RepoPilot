@@ -11,6 +11,7 @@ from dataclasses import asdict, replace
 from pathlib import Path
 from types import SimpleNamespace
 
+import docker
 import pytest
 
 from repopilot.capabilities import real_evaluation_policy
@@ -60,6 +61,49 @@ def write_manifest(tmp_path: Path, raw: dict) -> Path:
     path = tmp_path / "manifest.json"
     path.write_text(json.dumps(raw), encoding="utf-8")
     return path
+
+
+def current_synthetic_runtime(destination: Path, image_id: str, python_version: str) -> Path:
+    """A new engineering-only identity; never overwrite the historical fixture manifest."""
+    raw = json.loads(SYNTHETIC.read_text())
+    assert set(raw["projects"]) == {"tinyledger"}
+    assert all(task["corpus"]["kind"] == "synthetic" for task in raw["tasks"])
+    shutil.copytree(SYNTHETIC.parent, destination)
+    recipe = (ROOT / "Dockerfile.sandbox").read_bytes()
+    recipe_path = destination / "environments/ch18-sandbox.Dockerfile"
+    recipe_path.write_bytes(recipe)
+    lock_sha = hashlib.sha256((ROOT / "uv.lock").read_bytes()).hexdigest()
+    raw["projects"]["tinyledger"]["runtime"].update(
+        image=image_id, python_version=python_version,
+        base_image=json.loads((ROOT / "delivery/images.json").read_text())["python"],
+        recipe="environments/ch18-sandbox.Dockerfile",
+        recipe_sha256=hashlib.sha256(recipe).hexdigest(),
+        preparation=f"CH-18 synthetic regression only; current locked sandbox; uv.lock={lock_sha}",
+        install_argv=[["uv", "sync", "--locked", "--only-group", "sandbox"]],
+    )
+    raw["projects"]["tinyledger"]["fingerprint"] = task_fingerprint(
+        raw["projects"]["tinyledger"]
+    )
+    for task in raw["tasks"]:
+        task["python_version"] = python_version
+        task["fingerprint"] = task_fingerprint(task)
+    path = destination / "manifest.json"
+    path.write_text(json.dumps(raw), encoding="utf-8")
+    return path
+
+
+def test_current_synthetic_runtime_keeps_historical_assets_and_has_a_new_identity(tmp_path):
+    original = SYNTHETIC.read_bytes()
+    historical = load_real_task_manifest(SYNTHETIC).tasks[0]
+    manifest = current_synthetic_runtime(tmp_path / "corpus", "sha256:" + "a" * 64, "3.12")
+    current = load_real_task_manifest(manifest).tasks[0]
+    assert current.fingerprint != historical.fingerprint
+    assert current.adapter.fingerprint != historical.adapter.fingerprint
+    assert current.source == historical.source and current.test == historical.test
+    assert current.adapter.source_roots == historical.adapter.source_roots
+    assert current.adapter.readonly_paths == historical.adapter.readonly_paths
+    assert current.adapter.runtime.image == "sha256:" + "a" * 64
+    assert SYNTHETIC.read_bytes() == original
 
 
 def test_v1_bytes_and_twenty_task_identities_are_retained_read_only():
@@ -364,7 +408,21 @@ class FixtureModel(MockAgentModel):
 )
 @pytest.mark.parametrize("mode", ["oneshot", "workflow"])
 async def test_second_project_full_docker_generation_and_hidden_acceptance(tmp_path, mode):
-    task = load_real_task_manifest(SYNTHETIC).tasks[0]
+    manifest = SYNTHETIC
+    if os.getenv("REPOPILOT_CH18_ADAPTER_FIXTURE") == "1":
+        client = docker.from_env()
+        try:
+            image = client.images.get(Settings(_env_file=None).sandbox_image)
+            environment = dict(item.split("=", 1) for item in image.attrs["Config"]["Env"])
+        finally:
+            client.close()
+        python_version = ".".join(environment["PYTHON_VERSION"].split(".")[:2])
+        manifest = current_synthetic_runtime(tmp_path / "corpus", image.id, python_version)
+    task = load_real_task_manifest(manifest).tasks[0]
+    print(json.dumps({"synthetic_fixture_runtime": {
+        "image_id": task.adapter.runtime.image, "python": task.adapter.runtime.python_version,
+        "adapter_fingerprint": task.adapter.fingerprint, "task_fingerprint": task.fingerprint,
+    }}))
     source = fixture_source(tmp_path / "source")
     settings = Settings(
         _env_file=None,
@@ -373,11 +431,11 @@ async def test_second_project_full_docker_generation_and_hidden_acceptance(tmp_p
         github_write_enabled=False,
         model_provider="mock",
     )
-    reproduction = await reproduce(task, source, SYNTHETIC.parent, settings)
+    reproduction = await reproduce(task, source, manifest.parent, settings)
     assert reproduction["verified"]
     model = FixtureModel()
     result = await execute_candidate(
-        task, mode, source, SYNTHETIC.parent, settings, reproduction, model
+        task, mode, source, manifest.parent, settings, reproduction, model
     )
     assert result["resolved"] and result["acceptance"]["exit_code"] == 0
     assert result["comparison"]["fail_to_pass_count"] == 2

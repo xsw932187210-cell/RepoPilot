@@ -1,0 +1,99 @@
+{
+  "base_commit": "cbbafbbc3f99cd85b71ed8bd0ae125b5f08b4d86",
+  "checks": {
+    "coverage_floor": true,
+    "doctor": true,
+    "full_test_matrix": true,
+    "inputs_unchanged_during_verification": true,
+    "installed_source_identity": true,
+    "mock": true,
+    "recovery": true,
+    "recovery-oneshot": true,
+    "resources_removed": true,
+    "runner_completed": true,
+    "smoke": true
+  },
+  "coverage_percent": 87.0,
+  "lock_sha256": "09a88bb2bad64d04cecc1a4859a93bda155f3c47ae3324589db853e836e78fa1",
+  "mock": {
+    "count": 10,
+    "successful": 10
+  },
+  "model_requests_issued": 0,
+  "ok": true,
+  "provider_quality_verified": false,
+  "runtime_versions": {
+    "checkpoint_postgres": "3.2.0",
+    "langgraph": "1.2.16",
+    "langsmith": "0.14.11",
+    "pytest": "8.4.2",
+    "python": "3.12.15"
+  },
+  "schema_version": "delivery-verification-v1",
+  "source_tree_sha256": "70593649d931e9a3016ff73a682b3f7a4404c0e01da1929835729ab26a98eb28",
+  "tests": {
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0,
+    "tests": 551
+  },
+  "image_ids": {
+    "app": "sha256:cd1443e0424172991496aa116e8b366a6aab39d9f8428d66adf45d05d55ed7cc",
+    "test": "sha256:b56a7880d2b188e2ff9b1f230f5a92e3f59c360959dfc82b074182720f68d513",
+    "sandbox": "sha256:9e57d70489f5a65039726633bfb9456f3fcf9f5b424367ef1f4318d13e23c245"
+  },
+  "input_snapshot_sha256": "56f3392a9126c89f8f4d60c21a7c7b3d77aa92870ef300fa6340d84b6579b7b1",
+  "verification_started_date": "2026-10-23",
+  "verification_completed_date": "2026-10-24",
+  "verified_changes_were_uncommitted": true,
+  "outside_project_guard": {
+    "before_sha256": "03565e9376d8934da647bda16d9354b9955e7b30120c03266dc2a18592e0808f",
+    "outside_verification_project": true,
+    "survived_unchanged": true,
+    "guard_cleaned": true
+  },
+  "clean_environment": {
+    "platform": "macOS arm64",
+    "python": "3.13.5",
+    "lock_install": true,
+    "doctor": true,
+    "mock_passed": 10,
+    "mock_selected": 10,
+    "system_python_changed": false
+  },
+  "approval_restart": {
+    "workflow": {
+      "calls_after": 3,
+      "unknown_after": 0,
+      "approval_bindings_unchanged": true,
+      "node_runs": {
+        "prepare": 1,
+        "route": 1,
+        "planner": 1,
+        "researcher": 1,
+        "test_analyst": 1,
+        "coder": 1,
+        "apply_policy": 1,
+        "test_runner": 1,
+        "reviewer": 1,
+        "approval": 1,
+        "finalize": 1
+      }
+    },
+    "oneshot": {
+      "calls_after": 1,
+      "unknown_after": 0,
+      "approval_bindings_unchanged": true,
+      "node_runs": {
+        "prepare": 1,
+        "route": 1,
+        "coder": 1,
+        "apply_policy": 1,
+        "test_runner": 1,
+        "oneshot_gate": 1,
+        "approval": 1,
+        "finalize": 1
+      }
+    }
+  }
+}

@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling>=1.27"]
+requires = ["hatchling==1.27.0", "editables==0.5"]
 build-backend = "hatchling.build"
 
 [project]
@@ -7,7 +7,7 @@ name = "repopilot"
 version = "0.1.0"
 description = "A recoverable, human-governed multi-agent software delivery system built with LangGraph."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.14"
 license = { text = "MIT" }
 authors = [{ name = "xsw932187210" }]
 dependencies = [
@@ -50,6 +50,14 @@ repopilot-eval = "repopilot.evaluation:main"
 repopilot-migrate = "repopilot.migrations.cli:main"
 repopilot-publish = "repopilot.publication_cli:main"
 repopilot-chatgpt = "repopilot.chatgpt_auth:main"
+repopilot-doctor = "repopilot.doctor:main"
+
+[dependency-groups]
+build = ["hatchling==1.27.0", "editables==0.5"]
+sandbox = ["pytest==8.4.2", "ruff==0.17.1"]
+
+[tool.uv]
+required-version = "==0.9.6"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/repopilot"]

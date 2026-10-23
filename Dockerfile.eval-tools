@@ -1,5 +1,5 @@
-FROM repopilot-api:latest
+FROM repopilot:test
 USER root
-RUN python -m pip install --no-cache-dir 'pytest>=8.4,<9' 'pytest-asyncio>=1.1,<2' 'pytest-cov>=6.2,<7' 'ruff>=0.12,<1'
+# The integration-test image already contains the locked development dependencies.
 WORKDIR /app
 ENV PYTHONPATH=/app/src PYTHONDONTWRITEBYTECODE=1
