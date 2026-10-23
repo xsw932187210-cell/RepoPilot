@@ -40,6 +40,16 @@
         "cookiecutter-004"
       ],
       "details": "The same coding assistant inspected source/test reference differences and public issues for dataset QA. Added independent Docker symptom checks, corrected an invalid visible selector, and narrowed tqdm to the remaining no-total symptom. No model-generated repair, prompt revision, retrieval tuning or router tuning used these tasks."
+    },
+    {
+      "kind": "curation",
+      "recorded_at": "2026-10-23",
+      "task_ids": [
+        "tqdm-003",
+        "cookiecutter-003",
+        "cookiecutter-004"
+      ],
+      "details": "The predeclared v13 pilot reserved 30 requests before rate limiting; Cookiecutter case 3 exposed an artifact-base mismatch due to an upstream documentation gitlink. Runtime debugging corrects the private artifact baseline to match the existing history-free export. Observed v13 results are retained separately. No repair prompt, router threshold, retrieval budget, model profile, expected answer or hidden-test criterion was tuned."
     }
   ]
 }

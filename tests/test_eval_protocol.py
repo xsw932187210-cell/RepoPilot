@@ -64,6 +64,42 @@ def test_authorization_requires_existing_grant_and_frozen_source(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_corrected_run_needs_fresh_grant_and_preserves_original_30(tmp_path):
+    store = PrivateStore(tmp_path / "private")
+    grant(store)
+    original_output = tmp_path / "original"
+    original = AuthorizedExperiment(
+        store, {"source_frozen": True, "fingerprint": "old-plan"}, original_output,
+    )
+    old_budget = ledger(*(f"old-{n}" for n in range(30)))
+    await original.observe(old_budget)
+    original.finish("pending")
+    path = original_output / "model-records/api-reservations.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps(old_budget))
+    plan = {"source_frozen": True, "fingerprint": "corrected-plan", "protocol": {
+        "max_api_attempts": 78, "authorization_file": "ch01c-v2.json",
+        "supersedes_plan_fingerprint": "old-plan",
+    }}
+    with pytest.raises(ValueError, match="authorization_required"):
+        AuthorizedExperiment(store, plan, tmp_path / "corrected")
+    approval = {**store.read("ch01c.json"), "max_api_attempts": 78,
+                "prior_reserved_api_attempts": 30, "original_total_ceiling": 108,
+                "status": "authorized_not_started"}
+    for key in ("binding", "reservation_ids", "cohort_fingerprint", "reserved_api_attempts"):
+        approval.pop(key, None)
+    store.write("ch01c-v2.json", approval)
+    corrected = AuthorizedExperiment(store, plan, tmp_path / "corrected")
+    assert store.read("ch01c.json")["status"] == "superseded"
+    assert len(store.read("ch01c.json")["reservation_ids"]) == 30
+    await corrected.observe({**ledger("new-one"), "max_api_attempts": 78})
+    assert corrected.record["reserved_api_attempts"] == 1
+    with pytest.raises(ValueError, match="invalid_authorized"):
+        await corrected.observe({**ledger(*(f"n-{n}" for n in range(79))),
+                                 "max_api_attempts": 78})
+
+
+@pytest.mark.asyncio
 async def test_observer_failure_consumes_reservation_without_transport(tmp_path):
     calls = 0
 
@@ -92,9 +128,12 @@ async def test_observer_failure_consumes_reservation_without_transport(tmp_path)
     assert result["metadata"]["budget"]["orphan_reservations"] == 1
 
 
-def test_protocol_plan_is_read_only_and_rejects_wrong_models_or_design():
+def test_protocol_plan_is_read_only_and_rejects_wrong_models_or_design(monkeypatch):
     root = Path(__file__).parents[1]
     protocol = json.loads((root / "evals/real/experiments/ch01c-pilot-v1.json").read_text())
+    monkeypatch.setattr(
+        "repopilot.eval_protocol.version", lambda name: protocol["sdk_versions"][name],
+    )
     settings = Settings(
         _env_file=None, model_provider="google_cloud", model_name="gemini-3.5-flash",
         review_model_provider="chatgpt", review_model_name="gpt-6.1-sol",
@@ -109,3 +148,6 @@ def test_protocol_plan_is_read_only_and_rejects_wrong_models_or_design():
         prepare_plan(protocol, settings.model_copy(update={"review_model_name": "another"}), root)
     with pytest.raises(ValueError, match="configured_execution_limits"):
         prepare_plan(protocol, settings.model_copy(update={"max_file_bytes": 80_000}), root)
+    monkeypatch.setattr("repopilot.eval_protocol.version", lambda name: "mismatched-sdk")
+    with pytest.raises(ValueError, match="configured_sdk_versions"):
+        prepare_plan(protocol, settings, root)

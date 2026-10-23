@@ -1,6 +1,6 @@
 # RepoPilot 项目规范与迭代验收
 
-> 更新日期：2026-10-23；用户已恢复开发。CH-07C 经 PR #14 合入功能分支 `c77fde6`；当前实现 CH-01B，随后准备 CH-01C，按用户要求统一端到端验收。依赖链尚未整体进入 main（最近核对 `4d55a5b`）。最近完整真实模型质量评测：2026-09-09。
+> 更新日期：2026-10-23；用户已恢复开发。CH-07C/CH-01B 经 PR #14/#15 合入功能分支，CH-01C 初试已用 30/108 次并因运行时准备问题/限流中断；评测基线已修正，独立新实验拟使用剩余 78 次，等待明确确认。完整依赖链尚未进入 main（最近核对 `4d55a5b`）。最近完整真实模型质量评测仍为 2026-09-09。
 > 本文是现有项目的规范入口，记录当前行为、证据和后续变更的验收标准。
 > 本次建立的是单文件规范，尚未接入 OpenSpec CLI，也不代表已建立其提案、归档或自动校验流程。
 > 规划版本：Roadmap v3。CH-01～CH-08、CH-21 为主题编号，具体开发选带字母的子任务；新增的上下文与历史案例探索按需启动。
@@ -195,7 +195,7 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 - 每个 case-mode 独立原子落盘；相同配置续跑时复用 `completed` 与 `failed`，重试尚未完成或 `pending_quota` 的记录。schema 4 在每次预留/发起/结果后持久化计数，续跑保留预算并把未定响应转为 `unknown`。失败案例不会自动无限重跑。
 - 指纹覆盖数据集、案例选择、精确 provider/模型、配置、调用策略、实现和镜像等身份；`evaluation-call-budget-v2` 与旧 schema-3 记录不混用，fallback/模型切换使用新实验身份。
 - 限流和临时故障进行有上限的退避；所有 API 尝试计入预算，SDK 隐式重试关闭。配额耗尽保留已完成进度和独立 pending 状态。
-- v8 引入的模型案例存储约束在当前 v13 保留：去除原始 Diff、命令、进程输出、逐测试标识，保留聚合计数和脱敏失败原因；未执行的配额占位项不计入时延统计。
+- v8 引入的模型案例存储约束在当前 v14 保留：去除原始 Diff、命令、进程输出、逐测试标识，保留聚合计数和脱敏失败原因；未执行的配额占位项不计入时延统计。
 - 以上持久化约束不自动覆盖复现缓存、在线图状态和事件 payload；这些数据仍需按用途审查。未知 Token 或金额记录为缺失，不能估造。
 
 验证入口：[真实评测协议](docs/real-evaluation-protocol.md)、[test_eval_runtime.py](tests/test_eval_runtime.py)、[test_acceptance.py](tests/test_acceptance.py)、[test_eval_report.py](tests/test_eval_report.py)。
@@ -313,7 +313,7 @@ S/M/L 表示相对范围：S 通常是独立诊断或小接口；M 是一组紧�
 
 2026-10-19 确认的质量迭代顺序：先做 CH-01A 失败归因，再通过 CH-07A/B/C 建立跨项目开发集和冻结保留集；按证据选择 CH-13 Reviewer 校准或 CH-01B 任务路由，每次只验证一个主要策略变化。CH-14 的片段检索、CH-21 的压缩/历史案例复用由大文件、长任务或重复仓库任务的瓶颈触发；CH-12 多用户权限由明确使用需求触发，不作为本轮前置功能。
 
-CH-01A、CH-02B、CH-03A 已于 2026-10-19、CH-05A 于 2026-10-21、CH-03B 于 2026-10-22 完成验收，依赖历史已由 PR #8 合并为 `main@554012e`。CH-06A 于 2026-10-22 验收并由 PR #9 合并为 `main@4d55a5b`。CH-02A、CH-09、CH-10 已合并。CH-06C 已验收；CH-07A 已经 PR #10 合入其功能分支，OAuth/混合模型已由 PR #11/#12 合入 CH-07A 功能分支，整条依赖链尚未进入 main。用户确认五卡路线 **CH-07A → CH-07B → CH-07C → CH-01B → CH-01C**；CH-07B 已由 PR #13 合入功能分支，CH-07C 已验收，用户明确暂停于 CH-01B 开始前；恢复顺序与私有预算状态见冻结交接。CH-01C 新确认上限为 3 个保留案例 × 3 策略 × 2 重复，每单元最多 6 次、总计最多 108 次请求（含失败/重试，尚未启动）；此前 6 次连接预算另计且已耗尽。执行顺序以硬依赖为准，不预设真实模型收益。
+CH-01A、CH-02B、CH-03A 已于 2026-10-19、CH-05A 于 2026-10-21、CH-03B 于 2026-10-22 完成验收，依赖历史已由 PR #8 合并为 `main@554012e`。CH-06A 于 2026-10-22 验收并由 PR #9 合并为 `main@4d55a5b`。CH-02A、CH-09、CH-10 已合并。CH-06C 已验收；CH-07A 已经 PR #10 合入其功能分支，OAuth/混合模型已由 PR #11/#12 合入 CH-07A 功能分支，整条依赖链尚未进入 main。用户确认五卡路线 **CH-07A → CH-07B → CH-07C → CH-01B → CH-01C**；CH-07B/CH-07C/CH-01B 已由 PR #13/#14/#15 合入功能分支；用户暂停后已恢复。CH-01C 初试已用 30 次，后续按新的明确预算决定，不能把冻结时 0/108 当当前余额。CH-01C 新确认上限为 3 个保留案例 × 3 策略 × 2 重复，每单元最多 6 次、总计最多 108 次请求（含失败/重试，尚未启动）；此前 6 次连接预算另计且已耗尽。执行顺序以硬依赖为准，不预设真实模型收益。
 
 ### 8.4 跨任务接口约定（已落实项与待实现设计）
 
@@ -341,7 +341,7 @@ CH-05A 接口映射（2026-10-21，已实现并验收）：新增 `candidate_gen
 
 CH-03A 接口映射（2026-10-19，已实现并验收）：`ArtifactStore.freeze/materialize/read_diff` 保存 `sha256:<manifest_digest>` 引用；manifest 覆盖除根目录 `.git` 元数据以外的完整普通文件，包含原始字节摘要与文件权限，目录规范为 0755，拒绝链接与特殊文件。`candidate-v1` 绑定 base SHA、代次、能力策略和完整 Diff 摘要，`test-evidence-v1` 绑定镜像实际 ID、规范命令、运行策略、结果与时间。新增四张表由 `20261019_0004` 迁移建立；失败测试也保留候选与证据。
 
-无 Git 历史的真实评测导出目录由受信任 `OfflineWorkspace` 适配器提供固定 buggy commit 和源仓库 `base_repository`，只读取对应树/blob，不把 `.git` 或历史交给模型/沙箱。其实现变更进入评测指纹；不得复用历史模型记录来宣称新运行时已实测。
+无 Git 历史的真实评测导出目录由受信任 `OfflineWorkspace` 适配器准备。evaluator v14 的 `base_repository` 是按实际导出 buggy 文件创建的独立私有 Git 对象库；`candidate.base_sha` 是该导出基线提交，上游 buggy SHA 另行保存。这样不会因原仓库未检出的文档 submodule 与归档导出不一致而阻断候选初始化；不下载 submodule，不运行 upstream attributes/filter/hooks，不把 Git 对象或历史交给模型/沙箱。基线仅用于离线评测，禁止发布；线上发布仍绑定原仓库真实 base SHA 并保持原链接拒绝策略。每个选中案例在任何付费请求前验证快照可创建且初始 Diff 为空。实现变更进入评测指纹，不复用 v13 模型记录来宣称 v14 已实测。
 
 审批 API 保留 `/api/v1/tasks/{id}/approval` 路径，但请求强制 `schema_version=approval-v2`、`approval_id/request_version/candidate_id/evidence_digest/approved`；旧布尔请求明确 422，不补齐成最新候选。GET 返回审批摘要、Reviewer 风险、manifest 与测试证据，受现有 API Key 访问控制；候选 `/candidates/{candidate_id}/diff` 返回未截断 Diff。`request_version` 为进入等待审批时的任务版本。decision 与 `awaiting_approval → queued` CAS、恢复意图及审计事件同一事务保存；Redis 失败返回 202 和 `saved=true / dispatch_state=pending / queue_delivery_failed`，可用 `/approval/dispatch` 显式重投同一 decision。`enqueued` 只代表尝试被 Redis 接受，不是消费确认；CH-04A 之前没有后台自动投递或崩溃重领。Worker 从数据库读取决定，不信任队列中的布尔值。完全相同的重试返回原决定，相反决定或旧绑定 409。缺少冻结候选的旧审批 checkpoint 不自动转换，GET 明确 409 `legacy_approval_requires_revalidation`；可取消旧任务并创建新任务重新测试。
 
@@ -380,7 +380,7 @@ CH-01B 接口映射（2026-10-23，已实现并通过集中验收）：迁移 `2
 
 #### CH-01B：增加有预算约束的任务路由
 
-- **状态**：VERIFIED（2026-10-23，路由实现 `06f656b`，集中验收源码 `4b6f7c9`；隔离 Docker 538 passed / 0 skipped、87.20%，Mock 10/10、smoke、workflow 3→3 / oneshot 1→1 Worker 重启通过；尚未创建本卡 PR）。**优先级/规模**：P1 / M。**硬依赖**：CH-01A、CH-02B、CH-10。
+- **状态**：MERGED（2026-10-23，路由实现 `06f656b`，集中验收源码 `4b6f7c9`；隔离 Docker 538 passed / 0 skipped、87.20%，Mock 10/10、smoke、workflow 3→3 / oneshot 1→1 Worker 重启通过；[PR #15](https://github.com/xsw932187210-cell/RepoPilot/pull/15) 合入功能分支 `482ae04`，CI 2/2；尚未进入 main）。**优先级/规模**：P1 / M。**硬依赖**：CH-01A、CH-02B、CH-10。
 - **入口**：`graph/builder.py`、`graph/state.py`、`models.py`、`config.py`；建议新增 `routing.py`。
 - **实施步骤**：
   1. 支持显式 `oneshot / workflow / auto` 策略，保存 route、理由和策略版本；旧请求默认保持原路径，避免无意改变已有结果。
@@ -394,7 +394,7 @@ CH-01B 接口映射（2026-10-23，已实现并通过集中验收）：迁移 `2
 
 #### CH-01C：完成 one-shot / workflow / auto 三组对照
 
-- **状态**：IN_PROGRESS（2026-10-23，三组/两轮协议、固定来源检查和私有授权绑定已准备；CH-01B 待集中验收，真实推理尚未开始，最多 108 次授权保留）。**优先级/规模**：P1 / M。**硬依赖**：CH-01B、CH-07B、CH-07C。
+- **状态**：IMPLEMENTED_UNVERIFIED（2026-10-23，初试 18 单元中 6 completed / 3 准备失败 / 9 pending，已记账 30/108；结果不完整，不作策略结论。v14 修正导出基线并加全案例快照预检，29 项边界及 3 题 Mock/Docker 端到端通过；独立 v2 实验拟用剩余 78 次，待确认，未创建新授权。[中断记录](docs/ch01c-interrupted-2026-10-23.md)、[新方案](docs/ch01c-corrected-plan-2026-10-23.md)）。**优先级/规模**：P1 / M。**硬依赖**：CH-01B、CH-07B、CH-07C。
 - **入口**：`real_evaluation.py`、`eval_runtime.py`、`eval_report.py`、冻结的评测清单。
 - **实施步骤**：
   1. 开跑前冻结模型精确标识、策略配置、路由阈值、案例选择、主要指标、重复次数和预算；保留配置摘要。
@@ -1230,3 +1230,12 @@ smoke 使用已经运行的服务。若 `.env` 选择真实模型，应按 [READ
 - 三种策略经真实 API/Worker 测试后停在绑定审批；人工拒绝阻止发布。Mock 10/10、smoke 通过；workflow 3→3、oneshot 1→1 的真实 Worker 审批重启均保持候选、manifest、证据与决定，unknown=0。
 - 111 份源码/测试与测试/API 各 57 份实际包源码匹配固定验收提交；专属 project `repopilot_ch01b_20261023` 容器/卷/网络清理确认，镜像保留。首轮宿主 57 passed / 1 夹具缺省计数断言失败保留，修正后在集中容器回归通过；没有重复完整宿主测试。
 - 证据：[验收](docs/ch01b-verification-2026-10-23.md)、[机器摘要](docs/evidence/2026-10-23-ch01b-verification.json)、[路由契约](docs/task-routing.md)。本卡真实模型请求为 0，历史质量报告/失败账本不变；调用差异不是修复率增益。PR 与后续真实对照另行按实际结果记账。
+
+### 2026-10-23 · CH-01C · 真实初试中断与评测基线修正
+
+- 原实验固定源码 `93079302b7f6ed4dfa24eb89028bfa8f5c77826b` / evaluator v13，预先提交 v1 方案；3 保留题 × 3 策略 × 2 轮，每单元最多 6 次，总上限 108。所有题均先通过相同固定镜像的 buggy/fixed 复现。
+- 真实记账 30 次（Google Cloud 22、ChatGPT 8，含 5 次 transport retry，无 orphan），余 78；18 单元中 6 completed、3 Cookiecutter-003 快照准备失败、9 pending。已完成单元未观察到通过独立验收的修复，但不能由不完整/存在基础设施失败的试验宣布策略优劣。原目录、计数及零/失败结果保留。
+- Cookiecutter-003 原提交含 `docs/HelloCookieCutter1` gitlink；归档导出略过该引用，而通用 artifact raw-base 校验正确拒绝非 blob，暴露两处基线不一致。v14 只修正离线评测：对实际导出文件构建外置、无历史的确定性 Git 基线，线上 raw-base/链接拒绝不变；所有选中案例在付费请求前完成 artifact/空初始 Diff 预检。没有调整修复提示、路由阈值、检索预算或隐藏验收。
+- 修正后 29 项边界通过；同样 3 题经完整 Mock 图与断网 Docker visible/hidden 路径通过，每题 1 次 Mock、0 次真实请求，无改动候选被正确拒绝。初版诊断缺 await 的失败日志保留，修正后最终诊断通过。CI 单测为固定 SDK 元数据加入 mock 并独立验证错误版本拒绝；真实运行仍严格校验 SDK。
+- 原 v1 实验不得在新代码下混续。v2 有新身份、同样 18 单元、每单元仍 6 次，最多只追加剩余 78 次，旧 30 保留、两次总计最多 108；需要用户确认重新开始这些单元。新私有授权尚未创建，没有新真实推理请求。
+- [PR #16](https://github.com/xsw932187210-cell/RepoPilot/pull/16) 保持 Draft，CH-01C 尚未完成/合并；[中断说明](docs/ch01c-interrupted-2026-10-23.md)、[部分脱敏记录](docs/evidence/2026-10-23-ch01c-v1-interrupted.json)、[修正方案](docs/ch01c-corrected-plan-2026-10-23.md)。B/C 工程通过不代替质量实验，历史 2026-09-09 报告和失败账本不变。

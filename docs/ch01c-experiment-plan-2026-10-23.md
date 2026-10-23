@@ -1,5 +1,10 @@
 # CH-01C predeclared comparison — 2026-10-23
 
+Historical v1 plan. This run was interrupted after 30 requests; see the
+[interruption record](ch01c-interrupted-2026-10-23.md) and
+[corrected v2 plan](ch01c-corrected-plan-2026-10-23.md). Do not interpret this
+historical 108-request ceiling as a fresh grant.
+
 This plan precedes all new repair inference. CH-01B routing code is implemented;
 its consolidated Docker acceptance is still required before this plan is run.
 The experiment is a small descriptive pilot, with no assumed improvement.

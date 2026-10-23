@@ -33,13 +33,14 @@ def digest(value) -> str:
 
 def prepare_plan(protocol: dict, settings: Settings, root: Path) -> dict:
     require_secret_free(protocol)
-    if protocol.get("protocol") != "ch01c-pilot-v1":
+    if protocol.get("protocol") not in {"ch01c-pilot-v1", "ch01c-pilot-v2"}:
         raise ValueError("unsupported_experiment_protocol")
+    maximum = 108 if protocol["protocol"] == "ch01c-pilot-v1" else 78
     if (
         protocol.get("strategies") != ["oneshot", "workflow", "auto"]
         or protocol.get("repeats") != 2 or len(protocol.get("cases", [])) != 3
         or protocol.get("max_calls_per_unit") != 6
-        or protocol.get("max_api_attempts") != 108 or protocol.get("order") != "rotating-v1"
+        or protocol.get("max_api_attempts") != maximum or protocol.get("order") != "rotating-v1"
         or protocol.get("partition") != "holdout" or protocol.get("provider_seed") is not None
     ):
         raise ValueError("experiment_outside_approved_design")
@@ -91,9 +92,16 @@ class AuthorizedExperiment:
 
     def __init__(self, store: PrivateStore, plan: dict, output: Path):
         self.store, self.plan, self.output = store, plan, output.resolve()
-        self.record = store.read("ch01c.json")
+        protocol = plan.get("protocol", {})
+        self.maximum = protocol.get("max_api_attempts", 108)
+        self.filename = protocol.get("authorization_file", "ch01c.json")
+        if (self.maximum, self.filename) not in {
+            (108, "ch01c.json"), (78, "ch01c-v2.json"),
+        }:
+            raise ValueError("unsupported_experiment_authorization")
+        self.record = store.read(self.filename)
         required = {
-            "task": "CH-01C", "max_api_attempts": 108,
+            "task": "CH-01C", "max_api_attempts": self.maximum,
             "per_case_strategy_repeat_max_attempts": 6,
             "cases": 3, "repeats": 2, "includes_failures_and_retries": True,
         }
@@ -105,6 +113,23 @@ class AuthorizedExperiment:
             self.record.get("providers", [])
         ) != {"google_cloud", "chatgpt"}:
             raise ValueError("existing_user_authorization_required")
+        prior = None
+        if self.maximum == 78:
+            prior = store.read("ch01c.json")
+            binding = prior.get("binding") or {}
+            old_ids = prior.get("reservation_ids", [])
+            if (
+                len(old_ids) != 30 or prior.get("max_api_attempts") != 108
+                or binding.get("fingerprint") != protocol.get("supersedes_plan_fingerprint")
+                or self.record.get("prior_reserved_api_attempts") != 30
+                or self.record.get("original_total_ceiling") != 108
+            ):
+                raise ValueError("corrected_run_requires_confirmed_remaining_budget")
+            old_ledger = json.loads((
+                Path(binding["output"]) / "model-records/api-reservations.json"
+            ).read_text())
+            if [item["attempt_id"] for item in old_ledger["reservations"]] != old_ids:
+                raise ValueError("prior_run_reservation_history_changed")
         if not plan["source_frozen"]:
             raise ValueError("experiment_implementation_not_frozen")
         binding = {"fingerprint": plan["fingerprint"], "output": str(self.output)}
@@ -118,13 +143,17 @@ class AuthorizedExperiment:
         elif self.record["reservation_ids"]:
             raise ValueError("authorized_experiment_ledger_missing")
         self.record["status"] = "running"
-        self.store.write("ch01c.json", self.record)
+        if prior is not None:
+            prior["status"] = "superseded"
+            prior["superseded_by_authorization"] = self.filename
+            self.store.write("ch01c.json", prior)
+        self.store.write(self.filename, self.record)
 
     def _reconcile(self, budget: dict) -> None:
         reservations = budget.get("reservations")
         if (
-            not isinstance(reservations, list) or len(reservations) > 108
-            or budget.get("max_api_attempts") != 108
+            not isinstance(reservations, list) or len(reservations) > self.maximum
+            or budget.get("max_api_attempts") != self.maximum
             or not isinstance(budget.get("fingerprint"), str)
         ):
             raise ValueError("invalid_authorized_reservation_ledger")
@@ -144,11 +173,11 @@ class AuthorizedExperiment:
 
     async def observe(self, budget: dict) -> None:
         self._reconcile(budget)
-        self.store.write("ch01c.json", self.record)
+        self.store.write(self.filename, self.record)
 
     def finish(self, status: str) -> None:
         self.record["status"] = status
-        self.store.write("ch01c.json", self.record)
+        self.store.write(self.filename, self.record)
 
 
 async def execute_protocol(protocol: dict, sources: list[str], root: Path) -> dict:
@@ -170,7 +199,8 @@ async def execute_protocol(protocol: dict, sources: list[str], root: Path) -> di
             manifest=root / "evals/real/manifest-pilot-v1.json", freeze=root / protocol["freeze"],
             partition="holdout", case=protocol["cases"], output=output, source=sources,
             run_id=protocol["run_id"], repeats=2, strategy_version=protocol["strategy_version"],
-            max_total_calls=108, max_calls=6, modes=protocol["strategies"], image=None,
+            max_total_calls=protocol["max_api_attempts"], max_calls=6,
+            modes=protocol["strategies"], image=None,
             model=protocol["primary"]["model"],
             max_output_tokens=protocol["gemini_max_output_tokens"],
             temperature=protocol["temperature"], reproduce_only=False,
@@ -183,7 +213,10 @@ async def execute_protocol(protocol: dict, sources: list[str], root: Path) -> di
             pending = any(r["status"].startswith("pending") for r in report["records"])
             authorization.finish("pending" if pending else "completed")
             return {**result, "authorized_budget": {
-                "maximum": 108, "reserved": len(authorization.record["reservation_ids"]),
+                "maximum": authorization.maximum,
+                "prior_reserved": 30 if authorization.maximum == 78 else 0,
+                "original_total_ceiling": 108,
+                "reserved": len(authorization.record["reservation_ids"]),
                 "status": authorization.record["status"],
             }}
         except BaseException:
@@ -194,7 +227,7 @@ async def execute_protocol(protocol: dict, sources: list[str], root: Path) -> di
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--protocol", type=Path,
-                        default=Path("evals/real/experiments/ch01c-pilot-v1.json"))
+                        default=Path("evals/real/experiments/ch01c-pilot-v2.json"))
     parser.add_argument("--source", action="append", default=[])
     parser.add_argument("--run", action="store_true")
     args = parser.parse_args()
