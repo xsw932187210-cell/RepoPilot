@@ -485,6 +485,21 @@ class ReviewerRoutedModel:
         return await self.reviewer.review(issue_title, diff, test_result)
 
 
+async def remaining_model_calls(model: AgentModel, fallback_limit: int, used: int = 0) -> int:
+    """Read the existing shared ledger; routing never creates or resets a budget."""
+    primary = model.primary if isinstance(model, ReviewerRoutedModel) else model
+    control = getattr(primary, "call_control", None)
+    if control is None:
+        # Unwrapped deterministic test doubles only. Production/evaluation models
+        # always expose the task's existing controlled caller.
+        return max(0, fallback_limit - used)
+    snapshot = (
+        control.snapshot() if isinstance(control, ModelCallBudget)
+        else await control.ledger.snapshot()
+    )
+    return max(0, int(snapshot["max_model_calls"]) - int(snapshot["reserved_calls"]))
+
+
 def model_role_profile(settings: Settings) -> dict[str, dict[str, object]]:
     """Public, credential-free model identity and the actual provider capabilities."""
     provider = settings.model_provider

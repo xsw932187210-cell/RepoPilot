@@ -112,6 +112,9 @@ class TaskRecord(Base):
     base_branch: Mapped[str] = mapped_column(String(120))
     test_command: Mapped[str] = mapped_column(String(300))
     max_iterations: Mapped[int] = mapped_column(Integer, default=2)
+    execution_strategy: Mapped[str] = mapped_column(
+        String(16), default="workflow", server_default=text("'workflow'")
+    )
     graph_thread_id: Mapped[str] = mapped_column(String(80), unique=True, index=True)
     state_version: Mapped[int] = mapped_column(Integer, default=1, server_default=text("1"))
     result: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
@@ -165,6 +168,7 @@ class TaskRecord(Base):
             base_branch=self.base_branch,
             test_command=self.test_command,
             max_iterations=self.max_iterations,
+            execution_strategy=self.execution_strategy,
             graph_thread_id=self.graph_thread_id,
             state_version=self.state_version,
             result=self.result,
@@ -351,6 +355,7 @@ class Database:
             base_branch=data.base_branch,
             test_command=data.test_command,
             max_iterations=data.max_iterations,
+            execution_strategy=data.execution_strategy,
             graph_thread_id=f"task-{task_id}",
             execution_timeout_seconds=data.execution_timeout_seconds
             if data.execution_timeout_seconds is not None

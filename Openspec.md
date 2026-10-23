@@ -1,6 +1,6 @@
 # RepoPilot 项目规范与迭代验收
 
-> 更新日期：2026-10-23；用户要求暂停于 CH-07C 已验收源码 `3615d6b`，恢复入口见 [冻结交接](docs/checkpoint-2026-10-23.md)。CH-06A 已由 PR #9 合入 main；PR #10～#13 将 CH-07A、OAuth/混合模型和 CH-07B 合入功能依赖链。最近核对远端 main 为 `4d55a5b`，依赖链尚未整体合入 main。最近完整真实模型质量评测：2026-09-09。
+> 更新日期：2026-10-23；用户已恢复开发。CH-07C 经 PR #14 合入功能分支 `c77fde6`；当前实现 CH-01B，随后准备 CH-01C，按用户要求统一端到端验收。依赖链尚未整体进入 main（最近核对 `4d55a5b`）。最近完整真实模型质量评测：2026-09-09。
 > 本文是现有项目的规范入口，记录当前行为、证据和后续变更的验收标准。
 > 本次建立的是单文件规范，尚未接入 OpenSpec CLI，也不代表已建立其提案、归档或自动校验流程。
 > 规划版本：Roadmap v3。CH-01～CH-08、CH-21 为主题编号，具体开发选带字母的子任务；新增的上下文与历史案例探索按需启动。
@@ -79,7 +79,7 @@ reviewer → approval 中断 → 拒绝：cancelled / 同意：finalize → comp
 
 ### RP-01：任务输入、状态和查询
 
-- 输入包括公开 GitHub HTTPS 仓库 URL 或内置 demo URI、Issue 标题与描述、基线分支、测试命令、最大迭代数，以及可选的执行期限和排队/审批计时策略。
+- 输入包括公开 GitHub HTTPS 仓库 URL 或内置 demo URI、Issue 标题与描述、基线分支、测试命令、最大迭代数、`execution_strategy=oneshot/workflow/auto`（省略为 workflow），以及可选的执行期限和排队/审批计时策略。
 - 创建任务时校验仓库地址、分支和测试命令，成功返回 `202` 与任务 ID；非法输入返回 `422`。
 - API key 是可选配置；设置后通过 `X-API-Key` 校验。当前无用户身份、租户隔离或权限角色。
 - Task API 返回 `state_version` 与 `result_schema_version`，Event API/SSE 返回 `payload_schema_version`。迁移前的 result/event JSON 标记为版本 0 并保持原样可读，当前新写入为版本 1。
@@ -193,7 +193,7 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 - 每个 case-mode 独立原子落盘；相同配置续跑时复用 `completed` 与 `failed`，重试尚未完成或 `pending_quota` 的记录。schema 4 在每次预留/发起/结果后持久化计数，续跑保留预算并把未定响应转为 `unknown`。失败案例不会自动无限重跑。
 - 指纹覆盖数据集、案例选择、精确 provider/模型、配置、调用策略、实现和镜像等身份；`evaluation-call-budget-v2` 与旧 schema-3 记录不混用，fallback/模型切换使用新实验身份。
 - 限流和临时故障进行有上限的退避；所有 API 尝试计入预算，SDK 隐式重试关闭。配额耗尽保留已完成进度和独立 pending 状态。
-- v8 引入的模型案例存储约束在当前 v12 保留：去除原始 Diff、命令、进程输出、逐测试标识，保留聚合计数和脱敏失败原因；未执行的配额占位项不计入时延统计。
+- v8 引入的模型案例存储约束在当前 v13 保留：去除原始 Diff、命令、进程输出、逐测试标识，保留聚合计数和脱敏失败原因；未执行的配额占位项不计入时延统计。
 - 以上持久化约束不自动覆盖复现缓存、在线图状态和事件 payload；这些数据仍需按用途审查。未知 Token 或金额记录为缺失，不能估造。
 
 验证入口：[真实评测协议](docs/real-evaluation-protocol.md)、[test_eval_runtime.py](tests/test_eval_runtime.py)、[test_acceptance.py](tests/test_acceptance.py)、[test_eval_report.py](tests/test_eval_report.py)。
@@ -351,6 +351,8 @@ CH-06A 接口映射（2026-10-22，已实现并验收）：复用任务状态版
 
 CH-06C 接口映射（2026-10-22，已实现并验收）：public-data-v1 对公开任务结果/事件执行字段投影，错误只保留稳定 code/type；API 历史读取不改写原始 SQL。新任务/审批文本先脱敏，代码/模型输入/异步 checkpoint 拒绝已知凭据，源码与 artifact 字节不替换；完整 Diff 要求配置 API Key，旧敏感 authority 返回 409 需重新验证。PR 元数据在新 POST 前检查，已存在效果仍只读对账。评测指纹增加 public_data_version，旧目录拒绝混跑。私有根目录 0700、保留期人工管理，自动 GC/加密/租户隔离仍未实现。
 
+CH-01B 接口映射（2026-10-23，已实现、待集中验收）：迁移 `20261023_0008` 为任务新增 `execution_strategy`，旧行/省略请求默认为 workflow。新增 route/oneshot_gate/route_failure 确定性节点；one-shot 只生成一次并明确 `review_performed=false`，仍需测试及绑定人工决定。auto 仅使用 Issue 与首次可见检索，失败升级保留候选、权限纠正计数和原模型账本。routing/history 及指标保存策略、版本、理由、特征与剩余额度，公共投影白名单控制输出。真实 evaluator v13 三路共用同一权限/测试/审批门槛，隐藏验收在生成结束后单独执行，旧实验不改写。详见 [路由契约](docs/task-routing.md)。
+
 四个全局约束：
 
 1. **代码身份一致**：被测试、被审批和被提交的必须是同一个候选；不能只比较一段展示用 Diff。
@@ -376,7 +378,7 @@ CH-06C 接口映射（2026-10-22，已实现并验收）：public-data-v1 对公
 
 #### CH-01B：增加有预算约束的任务路由
 
-- **状态**：TODO。**优先级/规模**：P1 / M。**硬依赖**：CH-01A、CH-02B、CH-10。
+- **状态**：IMPLEMENTED_UNVERIFIED（2026-10-23，显式策略/API/迁移、确定性路由、共享预算升级与公共摘要已实现；按用户要求待集中 Docker 端到端验收）。**优先级/规模**：P1 / M。**硬依赖**：CH-01A、CH-02B、CH-10。
 - **入口**：`graph/builder.py`、`graph/state.py`、`models.py`、`config.py`；建议新增 `routing.py`。
 - **实施步骤**：
   1. 支持显式 `oneshot / workflow / auto` 策略，保存 route、理由和策略版本；旧请求默认保持原路径，避免无意改变已有结果。
@@ -606,7 +608,7 @@ CH-06C 接口映射（2026-10-22，已实现并验收）：public-data-v1 对公
 
 #### CH-07C：重复实验、统计口径与报告版本
 
-- **状态**：VERIFIED（2026-10-23，固定源码 `3615d6b`；宿主 470 passed / 42 skipped、86.23%；隔离 Linux 512 passed / 0 skipped、87.56%，Mock 10/10、smoke 和 Worker 重启通过；未调用真实模型，尚未推送/创建 PR。用户要求于本卡验收后暂停，见 [冻结交接](docs/checkpoint-2026-10-23.md)）。**优先级/规模**：P1 / M。**硬依赖**：CH-07A。
+- **状态**：MERGED（2026-10-23，固定源码 `3615d6b`；宿主 470 passed / 42 skipped、86.23%；隔离 Linux 512 passed / 0 skipped、87.56%，Mock 10/10、smoke 和 Worker 重启通过；[PR #14](https://github.com/xsw932187210-cell/RepoPilot/pull/14) 合入功能分支 `c77fde6`，CI 2/2；尚未进入 main）。**优先级/规模**：P1 / M。**硬依赖**：CH-07A。
 - **入口**：`eval_runtime.py`、`eval_report.py`、`real_evaluation.py`、相应测试。
 - **实施步骤**：
   1. 引入 repeat/run ID、策略版本和运行顺序，纳入指纹与路径；明确 provider 不支持 seed 时仍可能有随机波动。

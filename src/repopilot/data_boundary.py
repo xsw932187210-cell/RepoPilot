@@ -104,6 +104,7 @@ _RESULT = frozenset({
     "pull_request_url", "error", "error_code", "candidate_id", "generation", "evidence_digest",
     "approval_decision_id", "approval_id", "approval_request_version", "publish_receipt",
     "publish_reason",
+    "execution_strategy", "routing", "routing_history", "review_performed",
 })
 _EVENT = frozenset({
     "repository_url", "issue_title", "steps", "risks", "files", "query_terms", "strategy",
@@ -115,12 +116,21 @@ _EVENT = frozenset({
     "iteration", "policy_feedback", "requests", "reason", "confirmed", "resources", "scope",
     "schema_version", "decision_id", "approval_id", "request_version", "actor", "decided_at",
     "dispatch_state", "publication_protocol_version", "status",
+    "routing", "review_performed",
 })
 _INTERRUPT = frozenset({
     "schema_version", "candidate_id", "artifact_digest", "base_sha", "evidence_digest",
     "candidate_url", "question", "changed_files", "review", "test_result",
+    "routing", "review_performed",
 })
 _METRIC = frozenset({"node", "duration_ms", "iteration"})
+_ROUTING = frozenset({
+    "policy_version", "policy_fingerprint", "requested", "selected", "reasons",
+    "features", "remaining_calls", "upgrades", "trigger",
+})
+_ROUTE_FEATURES = frozenset({
+    "issue_chars", "editable_files", "context_chars", "ambiguous_scope", "retrieval_hits",
+})
 _POLICY = frozenset({
     "schema_version", "reason_code", "target_path", "allowed_actions", "allowed_paths", "guidance",
 })
@@ -154,6 +164,10 @@ def public_result(value: Any) -> dict[str, Any] | None:
     if value is None:
         return None
     result = _fields(value, _RESULT)
+    if result.get("routing") is not None:
+        result["routing"] = public_routing(result["routing"])
+    if isinstance(result.get("routing_history"), list):
+        result["routing_history"] = [public_routing(item) for item in result["routing_history"]]
     for name in ("initial_retrieval", "retrieval"):
         if name in result:
             result[name] = _fields(result[name], _RETRIEVAL)
@@ -176,11 +190,22 @@ def public_result(value: Any) -> dict[str, Any] | None:
     return result
 
 
+def public_routing(value: Any) -> dict[str, Any]:
+    result = _fields(value, _ROUTING)
+    if "features" in result:
+        result["features"] = _fields(result["features"], _ROUTE_FEATURES)
+    return result
+
+
 def public_event_payload(value: Any) -> dict[str, Any]:
     result = _fields(value, _EVENT)
+    if result.get("routing") is not None:
+        result["routing"] = public_routing(result["routing"])
     if isinstance(result.get("requests"), list):
         result["requests"] = [_fields(item, _INTERRUPT) for item in result["requests"]]
         for item in result["requests"]:
+            if item.get("routing") is not None:
+                item["routing"] = public_routing(item["routing"])
             if "review" in item:
                 item["review"] = _fields(item["review"], _REVIEW)
             if "test_result" in item:

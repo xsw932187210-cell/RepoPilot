@@ -56,6 +56,10 @@ class Settings(BaseSettings):
     max_context_chars: int = Field(default=70_000, ge=10_000, le=500_000)
     max_file_bytes: int = Field(default=120_000, ge=1_000, le=500_000)
     max_iterations: int = Field(default=2, ge=1, le=5)
+    routing_max_editable_files: int = Field(default=2, ge=1, le=30)
+    routing_max_context_chars: int = Field(default=20_000, ge=1, le=500_000)
+    routing_min_issue_chars: int = Field(default=40, ge=1, le=12_240)
+    routing_max_issue_chars: int = Field(default=1_500, ge=1, le=12_240)
 
     sandbox_backend: str = "local"
     sandbox_image: str = "repopilot-sandbox:local"

@@ -31,6 +31,7 @@ separately.
 | `20261021_0005` | Adds CH-05A's generation records/current pointer; seeds existing explicit CH-03A approval bindings without retesting or editing artifacts |
 | `20261022_0006` | Adds `publish_intents`, unique decision binding, immutable payload digest and receipt CAS; does not invent historical publication outcomes |
 | `20261022_0007` | Adds durable stop requests, owned resource/cleanup evidence and separate execution/queue/approval accounting; historical deadlines and stop confirmations remain null |
+| `20261023_0008` | Persists `execution_strategy`; old tasks and omitted inputs retain `workflow`. Stop old Workers and migrate before starting new code; routed checkpoints require the same routing-policy fingerprint |
 
 `Database.setup()` now runs the same upgrade path as the CLI. Compose also has a one-shot `migrate`
 service, and API/Worker startup waits for that service to finish successfully.

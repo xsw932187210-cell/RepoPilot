@@ -41,6 +41,10 @@ logger = logging.getLogger("repopilot.worker")
 def result_summary(result: dict[str, Any]) -> dict[str, Any]:
     return public_result({
         "status": result.get("status"),
+        "execution_strategy": result.get("execution_strategy", "workflow"),
+        "routing": result.get("routing"),
+        "routing_history": result.get("routing_history", []),
+        "review_performed": result.get("review_performed"),
         "iteration": result.get("iteration"),
         "policy_retry_count": result.get("policy_retry_count", 0),
         "policy_feedback": result.get("policy_feedback"),
@@ -425,6 +429,7 @@ class Worker:
             "base_branch": task.base_branch,
             "test_command": task.test_command,
             "max_iterations": task.max_iterations,
+            "execution_strategy": task.execution_strategy,
             "reviewer_feedback": [],
             "iteration": 0,
             "policy_retry_count": 0,
