@@ -28,6 +28,13 @@
    Worker 与 probe 使用同一映射。没有修改 socket 权限、改用 root 或放宽沙箱隔离。
    新增容器内 Docker 连接预检，避免相同环境问题扩散成多项 Worker 失败。
    失败 CI 及其 `ok=false` 汇总保留，修正后的远端结果另行记录。
+4. 修正 socket 后第二轮 Ubuntu CI（[run 39989332813](https://github.com/xsw932187210-cell/RepoPilot/actions/runs/39989332813)）
+   **549 passed、2 failed、0 skipped，86.36%**。剩余失败为自有 tinyledger 合成适配测试
+   引用了原电脑的历史 Python 3.8 镜像 ID，干净 runner 无该缓存。CH-18 现在将合成工程
+   回归绑定到本轮实际构建的锁定 sandbox 镜像，并在临时 corpus 中保存新的镜像、Python、
+   recipe/lock 与 adapter/task 指纹。原 frozen manifest、测试 overlay、真实语料和模型
+   实验没有修改；相同的可见测试、独立验收与上下文隔离断言继续执行。新增用例验证
+   历史字节不变及新旧身份分开。该新运行不宣称复现了历史 Python 3.8 环境。
 
 ## 最终验证
 

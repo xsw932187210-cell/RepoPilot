@@ -9,4 +9,5 @@ export CH06A_DOCKERFILE=Dockerfile CH06A_DEPENDENCY_IMAGE=
 export CH06C_POSTGRES_TEST_URL=postgresql+asyncpg://repopilot:repopilot@postgres:5432/repopilot_ch06c_test
 export CH06C_API_URL=http://api:8000
 export CH07A_DOCKER_TEST=1 CH01B_DOCKER_TEST=1 CH18_VERIFY_NO_SKIPS=1
+export CH18_ADAPTER_FIXTURE=1
 exec ./scripts/ch06a_integration.sh

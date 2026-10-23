@@ -34,6 +34,9 @@ make verify   # 独立 PostgreSQL/Redis/API/Worker/Docker 全量验证，结束�
 `make check` 的服务条件用例会明确 skip；这些 skip 不能当作服务验收。
 `make verify` 复用既有故障矩阵，并开启“出现 skip 则整体失败”的规则；完整结果应为零跳过。
 它还运行 API smoke 和 workflow/oneshot 的真实 Worker 审批重启检查。
+自有 tinyledger 的合成适配回归在临时 corpus 中绑定本轮实际 sandbox 镜像、Python、
+recipe 和 lock 的新身份；其可见/独立测试及写权限保持不变，不依赖另一台电脑的历史
+Python 3.8 镜像缓存。原冻结元数据和真实模型评测仍使用各自原身份，不由此入口改写。
 
 verify 使用随机专属项目名 `repopilot_ch18_*`、自动选择的本机端口、项目私有数据卷与网络，
 拒绝复用已有项目资源。Compose 显式 `--env-file /dev/null`，固定 Mock、关闭 GitHub 写入，
@@ -46,7 +49,7 @@ verify 使用随机专属项目名 `repopilot_ch18_*`、自动选择的本机端
 的方式绕过连接失败。完整验证先在 probe 容器中检查 Docker 连接，再开始故障矩阵。
 
 输出位于忽略目录 `reports/repopilot_ch18_*/`。其中 `delivery-summary.json` 只含计数、
-版本、源码/锁摘要和验证状态；公开 CI 只上传这一份白名单汇总，不上传整个 reports。
+版本、源码/锁摘要和验证状态；完整服务 CI 只上传这份白名单汇总，不上传整个 reports。
 `cleanup.json` 确认专属容器、网络和卷已清理。镜像作为构建缓存保留；不运行全局 prune。
 如果进程被强制终止，须先核对项目标签再处理残留，不能推断清理已经成功。
 
