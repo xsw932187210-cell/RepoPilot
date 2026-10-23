@@ -48,12 +48,21 @@ argument to the router; fields come from issue-only first retrieval of the buggy
 tree. Later workflow retrieval can still use Planner terms in the application;
 real evaluation keeps issue-only retrieval for all arms.
 
-Real evaluator v13 runs all three strategies through the same permission/test/HITL
+Since real evaluator v13, all three strategies use the same permission/test/HITL
 graph, then runs withheld acceptance after generation stops. No benchmark approval
 is synthesized and no benchmark PR is published. Historical v12 and earlier
 one-shot results retain their old identity/meaning; the added visible gate does not
 retroactively turn historical one-shot runs into approval-reaching runs. This card
-adds engineering behavior, with repair quality left for CH-01C.
+adds engineering behavior, with repair quality measured separately by CH-01C.
+Evaluator v14 retains these strategy rules and constructs its private artifact
+baseline from the exact exported buggy files; it does not change online raw-Git
+publication checks or send hidden acceptance feedback into routing.
+
+The [2026-10-23 corrected pilot](real-evaluation-results-2026-10-23.md) finished
+18 units on three defects/two projects. Each strategy observed 0/6 accepted repairs;
+one-shot/workflow/auto used 14/27/30 requests. All four reported auto routes selected
+workflow; two auto call failures had no route result. This pilot did not establish
+a routing or quality improvement. Keep workflow as the default and auto explicit.
 
 The [consolidated Docker verification](ch01b-verification-2026-10-23.md) passed
 538 cases, Mock 10/10, smoke and both approval-restart paths. The harness is

@@ -1,8 +1,14 @@
 # CH-01C corrected experiment plan — 2026-10-23
 
-Status: implemented and checked offline; **fresh budget confirmation required
-before inference**. The [original incomplete run](ch01c-interrupted-2026-10-23.md)
-and its 30 requests remain preserved. The proposed fresh experiment uses only the
+Status: user explicitly approved the corrected experiment on **2026-10-23**;
+the private grant was created and the frozen v2 run started after that approval.
+It has now finished all 18 units: 16 completed, two call-layer failures, no pending
+units, and no independently accepted repairs. It used 71/78 attempts; with the
+preserved original 30, the combined consumption is 101/108. Full results are in the
+[dated report](real-evaluation-results-2026-10-23.md), including three unknown
+response outcomes and the verified zero-request completed resume.
+The [original incomplete run](ch01c-interrupted-2026-10-23.md)
+and its 30 requests remain preserved. The corrected experiment uses only the
 remaining **78 requests**, including failures/retries, with the original combined
 ceiling of 108. Each new defect/strategy/repeat unit is still capped at six.
 Original exhausted units are not reset under their old identities.
@@ -36,12 +42,12 @@ asserts that mismatched metadata is rejected; runtime SDK pin checks remain stri
 The first CI failure was caused by the runner installing newer allowed SDKs, not a
 real provider request or a weakening of the experiment's version requirements.
 
-The private corrected grant must be explicitly created after user confirmation as
-`.local/evaluation-authorization/ch01c-v2.json`. It must name prior consumption 30,
+The private corrected grant was explicitly created after user confirmation as
+`.local/evaluation-authorization/ch01c-v2.json`. It names prior consumption 30,
 new maximum 78 and total ceiling 108. Startup validates the old reservation history,
 retains its IDs and marks the old authorization superseded before allowing the
 new one. Both grants share one OS lock; new config/directories cannot reset their
-respective ledgers. No corrected grant has been manufactured by the runner.
+respective ledgers. The runner does not manufacture grants.
 
 Primary/secondary outcomes and interpretation remain as in the
 [original predeclared plan](ch01c-experiment-plan-2026-10-23.md). Three purposive
@@ -53,6 +59,6 @@ v1; no prompts, routing or retrieval parameters were tuned from its results.
 Verification summary:
 [2026-10-23-ch01c-baseline-correction.json](evidence/2026-10-23-ch01c-baseline-correction.json).
 Default planning remains read-only: `python -m repopilot.eval_protocol`.
-Only after confirmation, `--run` uses the same trusted source mappings as v1 and
+After the recorded confirmation, `--run` uses the same trusted source mappings as v1 and
 the separately bound v2 grant/directory. Existing real results from 2026-09-09 are
 unchanged.

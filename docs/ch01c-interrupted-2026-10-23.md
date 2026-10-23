@@ -42,7 +42,8 @@ Private/raw records remain in `reports/ch01c-holdout-20261023-v1/` and
 `.local/evaluation-authorization/ch01c.json`. Unknown token usage and dollar cost
 remain unknown. The 2026-09-09 historical quality results are unchanged.
 
-CH-01C remains incomplete until a consistent corrected experiment finishes within
-an explicitly bound budget. A proposed fresh run may use only the remaining 78
-attempts, with the original 30 retained and each new unit capped at six; it needs
-explicit confirmation because previously exhausted unit identities would restart.
+This interrupted v1 experiment remains incomplete and is never resumed or mixed
+with corrected results. On 2026-10-23 the user explicitly approved a separate v2
+experiment using only the remaining 78 attempts, with the original 30 retained and
+each new unit capped at six. Its separate authorization supersedes the old grant
+without clearing its reservation IDs; see the [corrected plan](ch01c-corrected-plan-2026-10-23.md).

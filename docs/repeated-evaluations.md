@@ -2,8 +2,10 @@
 
 CH-07C adds `repeat-evaluation-v1` and aggregate report schema 3. Legacy evaluation
 records and report schema 2 remain readable; historical results are not rewritten.
-The real evaluator is version 12. `auto` is reserved for CH-01B and is not accepted
-by the current CLI.
+CH-01B enabled `oneshot / workflow / auto` in evaluator v13. Evaluator v14 also
+binds the private baseline built from the exported buggy tree and requires artifact
+preparation for every selected case before inference. Historical evaluator v12
+records retain their original behavior and identities.
 
 Each cohort fixes its run ID, strategy version, selected cases, repeat count,
 model/runtime policy and rotating order in its fingerprint. Each repeat has its
@@ -49,3 +51,11 @@ eight execution units, four successes, mean paired effect 0 and interval [-1, 1]
 It validates arithmetic only. The [verification record](ch07c-verification-2026-10-23.md)
 records runtime and recovery checks; neither artifact measures real-model repair
 quality.
+
+The [CH-01C corrected real pilot](real-evaluation-results-2026-10-23.md) applies
+this protocol to three defects, three strategies and two repeats. All 18 units are
+terminal; all strategy successes are zero. Degenerate [0, 0] paired intervals for
+these all-zero observations do not establish equivalence. Two quota resumes kept
+7 and 15 earlier terminal units unchanged, and a completed resume changed no unit
+or reservation file and sent zero new model requests. Three unknown response
+outcomes remain consumed budget; they are distinct from orphan reservations.
