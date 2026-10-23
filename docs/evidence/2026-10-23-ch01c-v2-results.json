@@ -2167,6 +2167,25 @@
       "reserved_api_attempts": 71
     },
     "historical_results_mixed": false,
-    "raw_model_text_or_patches_included": false
+    "raw_model_text_or_patches_included": false,
+    "ci": {
+      "commit": "55c82544413c62a8a9a72a44084c06ff42d2696a",
+      "workflow_run_id": 39954126599,
+      "job_id": 120415593761,
+      "conclusion": "success",
+      "passed": 494,
+      "skipped": 45,
+      "coverage_percent": 86.01,
+      "mock_passed": 10,
+      "mock_selected": 10,
+      "lint": "passed"
+    },
+    "delivery": {
+      "pull_request": 16,
+      "merged": true,
+      "target_branch": "codex/ch-07a-project-adapters",
+      "merge_commit": "e23cf54ad4838f620b0448fa69b5e060bc6a63f9",
+      "main_integration_pull_request": 17
+    }
   }
 }

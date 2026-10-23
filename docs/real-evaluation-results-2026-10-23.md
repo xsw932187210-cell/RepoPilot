@@ -106,8 +106,11 @@ v14 的全部三题在付费调用前通过导出基线、候选捕获和空初�
 [基线修正](evidence/2026-10-23-ch01c-baseline-correction.json)（29 项边界、3 题 Mock/Docker），
 [CH-01B 容器验收](ch01b-verification-2026-10-23.md)（固定源码 4b6f7c9 的 538 项、Mock 10/10、
 smoke 和两条实际 Worker 审批重启路径）。这些已有回归没有在本轮重复冒充为新源码全量测试。
-最终源码 CI 与 PR 状态以 [#16](https://github.com/xsw932187210-cell/RepoPilot/pull/16) 为准，
-完整功能链的 main 集成入口是 [#17](https://github.com/xsw932187210-cell/RepoPilot/pull/17)。
+报告提交 `55c82544413c62a8a9a72a44084c06ff42d2696a` 的 [CI](https://github.com/xsw932187210-cell/RepoPilot/actions/runs/39954126599)
+通过 lint、494 passed / 45 skipped、86.01% 与 Mock 10/10；这不替代上面的零跳过容器服务验收。
+[PR #16](https://github.com/xsw932187210-cell/RepoPilot/pull/16) 已合并为功能分支
+`e23cf54ad4838f620b0448fa69b5e060bc6a63f9`；完整功能链的 main 集成入口是
+[PR #17](https://github.com/xsw932187210-cell/RepoPilot/pull/17)。
 
 本卡完成了固定条件的三组实验及负结果交付，没有得到可宣传的修复质量提升。
 保留显式路由和完整记账能力，默认策略继续为 workflow，不据此把 auto 升为默认。
