@@ -2185,7 +2185,11 @@
       "merged": true,
       "target_branch": "codex/ch-07a-project-adapters",
       "merge_commit": "e23cf54ad4838f620b0448fa69b5e060bc6a63f9",
-      "main_integration_pull_request": 17
+      "main_integration_pull_request": 17,
+      "main_integration_merged": true,
+      "main_merge_commit": "ff7006c4681a68d48f89891b06d23071f25c2408",
+      "main_integration_ci_run": 39955467425,
+      "main_integration_ci_conclusion": "success"
     }
   }
 }

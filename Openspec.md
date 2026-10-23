@@ -1,6 +1,6 @@
 # RepoPilot 项目规范与迭代验收
 
-> 更新日期：2026-10-23；五卡 CH-07A/B/C、CH-01B/C 均完成验收并经功能 PR 合并，CH-01C 合并提交 `e23cf54`（PR #16）；完整依赖链 main 集成及实时状态见 PR #17。修正后的 18 单元真实对照三组均 0/6，16 completed / 2 failed / 0 pending；新 71 次加初试 30 次，共 101/108，无质量提升主张。
+> 更新日期：2026-10-23；五卡 CH-07A/B/C、CH-01B/C 及 CH-06C/OAuth/混合模型依赖已由 PR #17 合入 main，集成提交 `ff7006c4681a68d48f89891b06d23071f25c2408`，合并前检查 2/2 通过。修正后的 18 单元真实对照三组均 0/6，16 completed / 2 failed / 0 pending；新 71 次加初试 30 次，共 101/108，无质量提升主张。
 > 本文是现有项目的规范入口，记录当前行为、证据和后续变更的验收标准。
 > 本次建立的是单文件规范，尚未接入 OpenSpec CLI，也不代表已建立其提案、归档或自动校验流程。
 > 规划版本：Roadmap v3。CH-01～CH-08、CH-21 为主题编号，具体开发选带字母的子任务；新增的上下文与历史案例探索按需启动。
@@ -314,7 +314,7 @@ S/M/L 表示相对范围：S 通常是独立诊断或小接口；M 是一组紧�
 
 2026-10-19 确认的质量迭代顺序：先做 CH-01A 失败归因，再通过 CH-07A/B/C 建立跨项目开发集和冻结保留集；按证据选择 CH-13 Reviewer 校准或 CH-01B 任务路由，每次只验证一个主要策略变化。CH-14 的片段检索、CH-21 的压缩/历史案例复用由大文件、长任务或重复仓库任务的瓶颈触发；CH-12 多用户权限由明确使用需求触发，不作为本轮前置功能。
 
-CH-01A、CH-02B、CH-03A、CH-05A、CH-03B 的依赖历史由 PR #8 合并为 `main@554012e`；CH-06A 由 PR #9 合并为 `main@4d55a5b`。CH-02A、CH-09、CH-10 已合并，CH-06C 已验收。用户确认五卡路线 **CH-07A → CH-07B → CH-07C → CH-01B → CH-01C**；CH-07A 与 OAuth/混合接入由 PR #10/#11/#12、B/C/路由由 PR #13/#14/#15 合入功能链。CH-01C 修正实验已验收并由 PR #16 合并为功能分支 `e23cf54`；完整依赖链的 main 集成入口为 PR #17，实时合并状态以远端为准。初试 30 次保留，用户批准的修正 v2 最多 78 次实际用了 71 次，每单元最多 6 次，两次共 101/108，余 7 次未使用；此前 6 次连接预算另计且已耗尽。真实对照未观察到质量提升，历史结果保持。
+CH-01A、CH-02B、CH-03A、CH-05A、CH-03B 的依赖历史由 PR #8 合并为 `main@554012e`；CH-06A 由 PR #9 合并为 `main@4d55a5b`。CH-02A、CH-09、CH-10 已合并，CH-06C 已由 PR #17 合入 main。用户确认五卡路线 **CH-07A → CH-07B → CH-07C → CH-01B → CH-01C**；CH-07A 与 OAuth/混合接入由 PR #10/#11/#12、B/C/路由由 PR #13/#14/#15 合入功能链。CH-01C 修正实验已验收并由 PR #16 合并为功能分支 `e23cf54`；完整依赖链已由 PR #17 合入 `main@ff7006c`（2026-10-23 12:48:35 UTC，合并前检查 2/2 通过）。初试 30 次保留，用户批准的修正 v2 最多 78 次实际用了 71 次，每单元最多 6 次，两次共 101/108，余 7 次未使用；此前 6 次连接预算另计且已耗尽。真实对照未观察到质量提升，历史结果保持。
 
 ### 8.4 跨任务接口约定（已落实项与待实现设计）
 
@@ -381,7 +381,7 @@ CH-01B 接口映射（2026-10-23，已实现并通过集中验收）：迁移 `2
 
 #### CH-01B：增加有预算约束的任务路由
 
-- **状态**：MERGED（2026-10-23，路由实现 `06f656b`，集中验收源码 `4b6f7c9`；隔离 Docker 538 passed / 0 skipped、87.20%，Mock 10/10、smoke、workflow 3→3 / oneshot 1→1 Worker 重启通过；[PR #15](https://github.com/xsw932187210-cell/RepoPilot/pull/15) 合入功能分支 `482ae04`，CI 2/2；尚未进入 main）。**优先级/规模**：P1 / M。**硬依赖**：CH-01A、CH-02B、CH-10。
+- **状态**：MERGED（2026-10-23，路由实现 `06f656b`，集中验收源码 `4b6f7c9`；隔离 Docker 538 passed / 0 skipped、87.20%，Mock 10/10、smoke、workflow 3→3 / oneshot 1→1 Worker 重启通过；[PR #15](https://github.com/xsw932187210-cell/RepoPilot/pull/15) 合入功能分支 `482ae04`，CI 2/2；已由 PR #17 合入 `main@ff7006c`）。**优先级/规模**：P1 / M。**硬依赖**：CH-01A、CH-02B、CH-10。
 - **入口**：`graph/builder.py`、`graph/state.py`、`models.py`、`config.py`；建议新增 `routing.py`。
 - **实施步骤**：
   1. 支持显式 `oneshot / workflow / auto` 策略，保存 route、理由和策略版本；旧请求默认保持原路径，避免无意改变已有结果。
@@ -395,7 +395,7 @@ CH-01B 接口映射（2026-10-23，已实现并通过集中验收）：迁移 `2
 
 #### CH-01C：完成 one-shot / workflow / auto 三组对照
 
-- **状态**：MERGED（PR #16，功能分支合并 `e23cf54ad4838f620b0448fa69b5e060bc6a63f9`；2026-10-23，修正 v2 的 18 单元全部终态：16 completed / 2 调用层 failed / 0 pending，三组各 0/6 独立修复；调用分别 14/27/30 次。原 30 次保留，新 71/78，两次共 101/108；3 次未知响应保守扣预算，orphan=0。两次限流续跑保留原 7/15 个终态，再次执行复用 18 条记录且新增请求 0。没有调优或质量提升主张。[结果报告](docs/real-evaluation-results-2026-10-23.md)、[机器证据](docs/evidence/2026-10-23-ch01c-v2-results.json)、PR #16）。**优先级/规模**：P1 / M。**硬依赖**：CH-01B、CH-07B、CH-07C。
+- **状态**：MERGED（PR #16，功能分支合并 `e23cf54ad4838f620b0448fa69b5e060bc6a63f9`，并由 PR #17 合入 `main@ff7006c`；2026-10-23，修正 v2 的 18 单元全部终态：16 completed / 2 调用层 failed / 0 pending，三组各 0/6 独立修复；调用分别 14/27/30 次。原 30 次保留，新 71/78，两次共 101/108；3 次未知响应保守扣预算，orphan=0。两次限流续跑保留原 7/15 个终态，再次执行复用 18 条记录且新增请求 0。没有调优或质量提升主张。[结果报告](docs/real-evaluation-results-2026-10-23.md)、[机器证据](docs/evidence/2026-10-23-ch01c-v2-results.json)、PR #16）。**优先级/规模**：P1 / M。**硬依赖**：CH-01B、CH-07B、CH-07C。
 - **入口**：`real_evaluation.py`、`eval_runtime.py`、`eval_report.py`、冻结的评测清单。
 - **实施步骤**：
   1. 开跑前冻结模型精确标识、策略配置、路由阈值、案例选择、主要指标、重复次数和预算；保留配置摘要。
@@ -567,7 +567,7 @@ CH-01B 接口映射（2026-10-23，已实现并通过集中验收）：迁移 `2
 
 #### CH-06C：在线日志、事件与持久化数据审计
 
-- **状态**：VERIFIED（2026-10-22，352 passed / 0 skipped，85.42% coverage；40 项服务入口、Mock/smoke/Worker 重启均通过，未合并）。**优先级/规模**：P0 / M。**硬依赖**：无。
+- **状态**：MERGED（2026-10-22，352 passed / 0 skipped，85.42% coverage；40 项服务入口、Mock/smoke/Worker 重启均通过；已由 PR #17 合入 `main@ff7006c`）。**优先级/规模**：P0 / M。**硬依赖**：无。
 - **入口**：`security.py`、`events.py`、`worker.py`、`api.py`、`llm.py`、`eval_runtime.py`。
 - **实施步骤**：
   1. 枚举数据出口：logger/traceback、事件 message/payload、API error/result、checkpoint、模型输入和评测报告；分别定义可公开和私有执行数据。
@@ -584,7 +584,7 @@ CH-01B 接口映射（2026-10-23，已实现并通过集中验收）：迁移 `2
 
 #### CH-07A：解除真实评测对单仓库的硬编码
 
-- **状态**：MERGED（PR #10 已合入 CH-06C 功能分支，尚未进入 main；固定验收源码 `81dae39`，Linux 392 passed / 0 skipped、87.20%，原 20 例兼容/复现与第二项目 Docker 路径、Mock/smoke/Worker 重启通过）。**优先级/规模**：P1 / M。**硬依赖**：CH-02A。
+- **状态**：MERGED（PR #10 已合入 CH-06C 功能分支，已由 PR #17 合入 `main@ff7006c`；固定验收源码 `81dae39`，Linux 392 passed / 0 skipped、87.20%，原 20 例兼容/复现与第二项目 Docker 路径、Mock/smoke/Worker 重启通过）。**优先级/规模**：P1 / M。**硬依赖**：CH-02A。
 - **入口**：`real_tasks.py`、`real_evaluation.py`、`acceptance.py`、`evals/real/manifest.json`。
 - **实施步骤**：
   1. 在 manifest/schema 中显式记录 project、source roots、只读路径、buggy/fixed commit、可见/隐藏测试策略、runtime image 身份和许可。
@@ -598,7 +598,7 @@ CH-01B 接口映射（2026-10-23，已实现并通过集中验收）：迁移 `2
 
 #### CH-07B：固定跨项目开发集与保留评测集
 
-- **状态**：MERGED（2026-10-23，固定源码 `1c5e61b`；冻结 23 例/3 项目，20 开发 + 3 保留，Docker 复现 23/23；宿主 445 passed / 42 skipped、85.92%，Linux 边界 29/29；[PR #13](https://github.com/xsw932187210-cell/RepoPilot/pull/13) 合入 CH-07A 功能分支 `58d581b`，尚未进入 main）。**优先级/规模**：P1 / L。**硬依赖**：CH-07A。
+- **状态**：MERGED（2026-10-23，固定源码 `1c5e61b`；冻结 23 例/3 项目，20 开发 + 3 保留，Docker 复现 23/23；宿主 445 passed / 42 skipped、85.92%，Linux 边界 29/29；[PR #13](https://github.com/xsw932187210-cell/RepoPilot/pull/13) 合入 CH-07A 功能分支 `58d581b`，已由 PR #17 合入 `main@ff7006c`）。**优先级/规模**：P1 / L。**硬依赖**：CH-07A。
 - **入口**：真实任务 manifest、overlays、镜像配方、`docs/real-task-corpus.md`。
 - **实施步骤**：
   1. 从公开 Python 项目挑选有可核查 Issue、buggy/fixed 版本和可运行测试的缺陷，记录来源与排除理由；先建立少量多项目 pilot，再以约 50 例为扩展目标。
@@ -612,7 +612,7 @@ CH-01B 接口映射（2026-10-23，已实现并通过集中验收）：迁移 `2
 
 #### CH-07C：重复实验、统计口径与报告版本
 
-- **状态**：MERGED（2026-10-23，固定源码 `3615d6b`；宿主 470 passed / 42 skipped、86.23%；隔离 Linux 512 passed / 0 skipped、87.56%，Mock 10/10、smoke 和 Worker 重启通过；[PR #14](https://github.com/xsw932187210-cell/RepoPilot/pull/14) 合入功能分支 `c77fde6`，CI 2/2；尚未进入 main）。**优先级/规模**：P1 / M。**硬依赖**：CH-07A。
+- **状态**：MERGED（2026-10-23，固定源码 `3615d6b`；宿主 470 passed / 42 skipped、86.23%；隔离 Linux 512 passed / 0 skipped、87.56%，Mock 10/10、smoke 和 Worker 重启通过；[PR #14](https://github.com/xsw932187210-cell/RepoPilot/pull/14) 合入功能分支 `c77fde6`，CI 2/2；已由 PR #17 合入 `main@ff7006c`）。**优先级/规模**：P1 / M。**硬依赖**：CH-07A。
 - **入口**：`eval_runtime.py`、`eval_report.py`、`real_evaluation.py`、相应测试。
 - **实施步骤**：
   1. 引入 repeat/run ID、策略版本和运行顺序，纳入指纹与路径；明确 provider 不支持 seed 时仍可能有随机波动。
@@ -1251,3 +1251,5 @@ smoke 使用已经运行的服务。若 `.env` 选择真实模型，应按 [READ
 - 交付：[结果报告](docs/real-evaluation-results-2026-10-23.md)、[脱敏汇总](docs/evidence/2026-10-23-ch01c-v2-results.json)、[CH-01C PR #16](https://github.com/xsw932187210-cell/RepoPilot/pull/16)；完整依赖链 main 集成入口为 [PR #17](https://github.com/xsw932187210-cell/RepoPilot/pull/17)。不自动开始其他卡或消耗余下预算。
 
 - 远端交付：CH-01C PR #16 于 2026-10-23 12:38:51 UTC 合并为功能分支 `e23cf54ad4838f620b0448fa69b5e060bc6a63f9`。最后报告提交 `55c8254` 的 CI 两项检查通过；PR workflow 39954126599：lint、494 passed / 45 skipped、86.01%、Mock 10/10。此前 538 项零跳过容器服务验收仍独立保留。当前私有凭据的已知值/编码变体扫描未命中 Git 可达对象，私有文件未跟踪，离线测试容器已退出。完整功能链通过 PR #17 交付 main；本轮不自动开始其他卡。
+
+- main 交付确认：PR #17 于 2026-10-23 12:48:35 UTC 以保留历史的 merge commit 合入 `ff7006c4681a68d48f89891b06d23071f25c2408`；完整依赖链 35 个提交均保留。最终功能提交 `4cb4cf3` 的 PR CI 39955467425 成功且页面检查 2/2；本地 main 快进同步、工作区干净，程序/测试树与真实实验源码一致，历史四份评测资产未改。模型账本为 completed，合计 101/108，余 7 次未消耗；本条后的文档修正不运行新模型实验。

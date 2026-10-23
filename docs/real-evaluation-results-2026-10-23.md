@@ -110,7 +110,8 @@ smoke 和两条实际 Worker 审批重启路径）。这些已有回归没有在
 通过 lint、494 passed / 45 skipped、86.01% 与 Mock 10/10；这不替代上面的零跳过容器服务验收。
 [PR #16](https://github.com/xsw932187210-cell/RepoPilot/pull/16) 已合并为功能分支
 `e23cf54ad4838f620b0448fa69b5e060bc6a63f9`；完整功能链的 main 集成入口是
-[PR #17](https://github.com/xsw932187210-cell/RepoPilot/pull/17)。
+[PR #17](https://github.com/xsw932187210-cell/RepoPilot/pull/17)，已于 2026-10-23 12:48:35 UTC 合入
+`main@ff7006c4681a68d48f89891b06d23071f25c2408`，最终功能提交的检查 2/2 通过。
 
 本卡完成了固定条件的三组实验及负结果交付，没有得到可宣传的修复质量提升。
 保留显式路由和完整记账能力，默认策略继续为 workflow，不据此把 auto 升为默认。
