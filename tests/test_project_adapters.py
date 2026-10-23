@@ -410,9 +410,12 @@ class FixtureModel(MockAgentModel):
 async def test_second_project_full_docker_generation_and_hidden_acceptance(tmp_path, mode):
     manifest = SYNTHETIC
     if os.getenv("REPOPILOT_CH18_ADAPTER_FIXTURE") == "1":
-        with docker.from_env() as client:
+        client = docker.from_env()
+        try:
             image = client.images.get(Settings(_env_file=None).sandbox_image)
             environment = dict(item.split("=", 1) for item in image.attrs["Config"]["Env"])
+        finally:
+            client.close()
         python_version = ".".join(environment["PYTHON_VERSION"].split(".")[:2])
         manifest = current_synthetic_runtime(tmp_path / "corpus", image.id, python_version)
     task = load_real_task_manifest(manifest).tasks[0]
