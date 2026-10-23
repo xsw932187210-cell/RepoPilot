@@ -51,6 +51,7 @@ repopilot-migrate = "repopilot.migrations.cli:main"
 repopilot-publish = "repopilot.publication_cli:main"
 repopilot-chatgpt = "repopilot.chatgpt_auth:main"
 repopilot-doctor = "repopilot.doctor:main"
+repopilot-demo = "repopilot.demo:main"
 
 [dependency-groups]
 build = ["hatchling==1.27.0", "editables==0.5"]
