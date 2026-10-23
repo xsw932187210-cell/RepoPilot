@@ -85,6 +85,13 @@ async def test_frozen_workflow_supports_history_free_evaluation_export(tmp_path)
     for args in [("git", "add", "."), ("git", "commit", "-m", "offline fixture")]:
         assert (await run_process(*args, cwd=source))[0] == 0
     sha = await source_manager.base_commit(source)
+    # A gitlink is absent from the exported benchmark checkout. It must not
+    # weaken the general artifact reader's rejection of raw Git submodules.
+    assert (await run_process(
+        "git", "update-index", "--add", "--cacheinfo", f"160000,{sha},docs/external", cwd=source,
+    ))[0] == 0
+    assert (await run_process("git", "commit", "-m", "gitlink fixture", cwd=source))[0] == 0
+    sha = await source_manager.base_commit(source)
     task = SimpleNamespace(
         adapter=corpus_task().adapter,
         source=SimpleNamespace(buggy_commit=sha, license_file="LICENSE"),
@@ -129,7 +136,9 @@ async def test_frozen_workflow_supports_history_free_evaluation_export(tmp_path)
         config={"configurable": {"thread_id": "history-free-export"}},
     )
     assert result["__interrupt__"] and result["test_result"]["exit_code"] == 0
-    assert result["base_sha"] == result["candidate"]["base_sha"] == sha
+    assert result["base_sha"] == result["candidate"]["base_sha"] == manager.baseline_sha
+    assert manager.baseline_sha != sha
+    assert manager.base_repository(manager.destination) != source
     assert not (manager.destination / ".git").exists()
     assert all(
         ".git" not in item["path"].split("/") for item in result["candidate"]["manifest"]["entries"]

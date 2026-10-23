@@ -221,11 +221,26 @@ case/mode pairs, and keeps quota-pending pairs separate from ordinary failures; 
 CH-07A adds [trusted project adapters](docs/project-adapters.md): schema-2 manifests bind
 source/read-only/test paths, immutable runtime images and verified evaluator recipes/overlays.
 Source caches are mapped per project; old manifests and experiment directories remain read-only.
-The real corpus still contains 20 The Fuck cases. The second project is a synthetic Docker
-fixture for adapter correctness and adds no model-quality claim.
+The original corpus contains 20 The Fuck cases. CH-07A used a second, synthetic Docker
+fixture for adapter correctness; that fixture adds no model-quality claim.
 The [CH-07A verification](docs/ch07a-verification-2026-10-22.md) records 392 Linux tests
 with zero skips and 87.20% coverage, original-corpus compatibility/reproduction 20/20,
 two synthetic Docker evaluation paths, Mock 10/10 and approval restart recovery.
+
+CH-07B subsequently froze [python-pilot-v1](docs/real-task-corpus.md): the historical
+20 development defects plus three held-out defects from tqdm and Cookiecutter,
+with 23/23 buggy/fixed focused reproductions. CH-07C adds
+[independent repeats and descriptive paired reports](docs/repeated-evaluations.md).
+The [CH-01B Docker acceptance](docs/ch01b-verification-2026-10-23.md) records 538 tests,
+Mock 10/10, smoke and both strategy approval-restart paths. These engineering and
+corpus checks do not establish a repair-quality improvement.
+
+The [2026-10-23 corrected three-strategy pilot](docs/real-evaluation-results-2026-10-23.md)
+finished 18 units on three held-out defects from two projects: one-shot, workflow
+and auto each observed 0/6 independently accepted repairs. They used 14, 27 and 30
+API attempts respectively; two auto units failed at the call layer. This is a small
+negative result, with no quality-lift claim. Original and corrected attempts total
+101/108; quota resumes preserved records, and a completed resume sent zero requests.
 
 Run `make eval-real-retrieval` to measure issue-only target-file ranking on the same commits without
 calling a model. Its local JSON report is separate from both repair quality and the mock workflow

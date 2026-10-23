@@ -1,6 +1,6 @@
 # RepoPilot 项目规范与迭代验收
 
-> 更新日期：2026-10-23；用户已恢复开发。CH-07C 经 PR #14 合入功能分支 `c77fde6`；当前实现 CH-01B，随后准备 CH-01C，按用户要求统一端到端验收。依赖链尚未整体进入 main（最近核对 `4d55a5b`）。最近完整真实模型质量评测：2026-09-09。
+> 更新日期：2026-10-23；CH-07A/B/C、CH-01B 已合入功能链。CH-01C 修正后的 18 单元真实对照已 VERIFIED：16 completed、2 调用层错误、0 pending，三组均 0/6；新 71 次加初试 30 次，共 101/108。完整结果见本文证据与任务卡；CH-01C PR #16 及 main 集成 PR #17 状态以远端为准。
 > 本文是现有项目的规范入口，记录当前行为、证据和后续变更的验收标准。
 > 本次建立的是单文件规范，尚未接入 OpenSpec CLI，也不代表已建立其提案、归档或自动校验流程。
 > 规划版本：Roadmap v3。CH-01～CH-08、CH-21 为主题编号，具体开发选带字母的子任务；新增的上下文与历史案例探索按需启动。
@@ -195,7 +195,7 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 - 每个 case-mode 独立原子落盘；相同配置续跑时复用 `completed` 与 `failed`，重试尚未完成或 `pending_quota` 的记录。schema 4 在每次预留/发起/结果后持久化计数，续跑保留预算并把未定响应转为 `unknown`。失败案例不会自动无限重跑。
 - 指纹覆盖数据集、案例选择、精确 provider/模型、配置、调用策略、实现和镜像等身份；`evaluation-call-budget-v2` 与旧 schema-3 记录不混用，fallback/模型切换使用新实验身份。
 - 限流和临时故障进行有上限的退避；所有 API 尝试计入预算，SDK 隐式重试关闭。配额耗尽保留已完成进度和独立 pending 状态。
-- v8 引入的模型案例存储约束在当前 v13 保留：去除原始 Diff、命令、进程输出、逐测试标识，保留聚合计数和脱敏失败原因；未执行的配额占位项不计入时延统计。
+- v8 引入的模型案例存储约束在当前 v14 保留：去除原始 Diff、命令、进程输出、逐测试标识，保留聚合计数和脱敏失败原因；未执行的配额占位项不计入时延统计。
 - 以上持久化约束不自动覆盖复现缓存、在线图状态和事件 payload；这些数据仍需按用途审查。未知 Token 或金额记录为缺失，不能估造。
 
 验证入口：[真实评测协议](docs/real-evaluation-protocol.md)、[test_eval_runtime.py](tests/test_eval_runtime.py)、[test_acceptance.py](tests/test_acceptance.py)、[test_eval_report.py](tests/test_eval_report.py)。
@@ -214,6 +214,7 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 | CH-06C 数据出口与私有状态 | 2026-10-22：Linux 352 passed / 0 skipped，85.42%；40 项服务入口实跑，31 项边界/2 项评测/5 项服务新增回归，真实 PostgreSQL checkpoint、Mock 10/10、smoke/Worker 重启通过，90/48 文件来源一致 | 仅已知模式/字段投影，源码与证据摘要不重写；保留期人工管理，不是任意秘密发现、生产加密、多用户隔离或新真实模型效果 |
 | CH-07A 项目适配与评测身份 | 2026-10-22：Linux 392 passed / 0 skipped，87.20%；40 项服务与两个新增 Docker 路径实跑，Mock 10/10、smoke/Worker 重启通过；原 20 例元数据/4996 个文件实例权限/初始检索等价、Docker 复现 20/20；91/48/37 文件来源一致 | 第二项目是自有合成夹具；没有新增真实缺陷、保留集、路由收益或真实模型质量实验 |
 | CH-07B 冻结真实语料 | 2026-10-23：23/23 固定镜像 buggy/fixed 聚焦复现，三例独立公开症状检查，5399 个导出文件实例；宿主 445 passed / 42 skipped、85.92%，Linux 冻结/语料边界 29/29 | 20 开发 + 3 保留、3 项目；保留集极小、公开训练污染未知，未运行新的模型修复对照 |
+| CH-01C 三策略真实对照 | 2026-10-23：3 缺陷 / 2 项目 × 3 策略 × 2 轮，16 completed / 2 failed / 0 pending；每策略独立修复 0/6，调用 14/27/30；新 71 次 + 原 30 次 = 101/108，未知响应 3 次均扣预算；完成后续跑新增 0 请求 | 小型负结果；4 个可观测 auto 路由均 workflow，2 个无路由结果；未观察到质量收益，未知 token/金额为空，原始历史不拼接 |
 | CH-01A 离线诊断 | 2026-10-19：核对 40 个 case-mode，公开 12 个未通过项的观察分类与未知根因；lint、154 passed / 3 skipped、80.78% 行覆盖率 | 对 2026-09-09 v7 历史记录做离线分析；不是新真实模型实验，也不补足 CH-02B 集成验收 |
 | CH-02B 服务验收 | 2026-10-19：PostgreSQL 16.15 / Redis / Docker 下 6 项专项通过，容器内 Mock 10/10，API smoke 和实际 Worker 审批重启恢复通过，专属资源清理确认 | 中途 checkpoint 经测试入口显式恢复；未实现自动队列找回。离线套件 154 passed / 9 skipped，80.78%；6 项服务测试另行实跑，另外 3 项 PostgreSQL 条件入口未重跑 |
 | Mock 工作流回归 | 10/10 | 验证流程及确定性夹具，不代表 LLM 编码能力 |
@@ -227,13 +228,13 @@ SSE 当前没有完整的 `Last-Event-ID` 续传协议，历史读取与 Pub/Sub
 
 失败记录包括 9 个验收不匹配、1 个无法生成验收报告的候选，以及 2 个两次违反修改范围而被拒绝的 workflow。记录到 1 个候选破坏既有通过项；这不是整个上游项目的回归率。模型响应仅提供了不完整的 Token 数据，不报告完整总成本。
 
-**当前结论：多角色工作流已展示编排、治理和恢复能力，但在这批任务中没有超过 one-shot，调用量约为其 3.1 倍。后续质量提升必须由新实验验证。**
+**2026-09-09 历史结论：多角色工作流展示了编排、治理和恢复能力，但在该批任务中没有超过 one-shot，调用量约为其 3.1 倍。2026-10-23 的独立三策略小型 pilot 也未观察到质量提升；两批模型、数据与执行器不同，不拼接比较。**
 
 ## 6. 已知缺口与失败时的当前行为
 
 | 缺口 | 当前表现 | 对应后续变更 |
 | --- | --- | --- |
-| 项目级权限适配 | schema-2 受信任项目策略与 23 例/3 项目冻结 pilot 已验收，原 20 例保持；新保留集仅 3 例 | CH-07C 重复统计、CH-01C 真实对照 |
+| 项目级权限适配与质量证据 | schema-2 策略、23 例/3 项目冻结 pilot、重复统计及三组对照已完成；新保留集仅 3 例，各策略 0/6，无质量提升证据 | 后续质量迭代另立开发集方案、独立验证与预算 |
 | 任意外部 writer / 产物保留 | 已有私有暂存、OS 锁、完整代次 CAS 和改动检测；管理员可绕过应用边界，尚无回收/保留期策略 | CH-04B、CH-16 |
 | 发布与远端变化的原子性 | 已按获批 SHA/完整 artifact 构建并持久化意图/对账；基线检查与 GitHub 移动不原子，重验标记保留；尚无多 Worker fencing 或自动恢复调度 | CH-04B/C |
 | 队列出队后崩溃 / 锁到期 | 无自动回收或阻止过期 Worker 副作用的机制 | CH-04 |
@@ -313,7 +314,7 @@ S/M/L 表示相对范围：S 通常是独立诊断或小接口；M 是一组紧�
 
 2026-10-19 确认的质量迭代顺序：先做 CH-01A 失败归因，再通过 CH-07A/B/C 建立跨项目开发集和冻结保留集；按证据选择 CH-13 Reviewer 校准或 CH-01B 任务路由，每次只验证一个主要策略变化。CH-14 的片段检索、CH-21 的压缩/历史案例复用由大文件、长任务或重复仓库任务的瓶颈触发；CH-12 多用户权限由明确使用需求触发，不作为本轮前置功能。
 
-CH-01A、CH-02B、CH-03A 已于 2026-10-19、CH-05A 于 2026-10-21、CH-03B 于 2026-10-22 完成验收，依赖历史已由 PR #8 合并为 `main@554012e`。CH-06A 于 2026-10-22 验收并由 PR #9 合并为 `main@4d55a5b`。CH-02A、CH-09、CH-10 已合并。CH-06C 已验收；CH-07A 已经 PR #10 合入其功能分支，OAuth/混合模型已由 PR #11/#12 合入 CH-07A 功能分支，整条依赖链尚未进入 main。用户确认五卡路线 **CH-07A → CH-07B → CH-07C → CH-01B → CH-01C**；CH-07B 已由 PR #13 合入功能分支，CH-07C 已验收，用户明确暂停于 CH-01B 开始前；恢复顺序与私有预算状态见冻结交接。CH-01C 新确认上限为 3 个保留案例 × 3 策略 × 2 重复，每单元最多 6 次、总计最多 108 次请求（含失败/重试，尚未启动）；此前 6 次连接预算另计且已耗尽。执行顺序以硬依赖为准，不预设真实模型收益。
+CH-01A、CH-02B、CH-03A、CH-05A、CH-03B 的依赖历史由 PR #8 合并为 `main@554012e`；CH-06A 由 PR #9 合并为 `main@4d55a5b`。CH-02A、CH-09、CH-10 已合并，CH-06C 已验收。用户确认五卡路线 **CH-07A → CH-07B → CH-07C → CH-01B → CH-01C**；CH-07A 与 OAuth/混合接入由 PR #10/#11/#12、B/C/路由由 PR #13/#14/#15 合入功能链。CH-01C 修正实验已 VERIFIED，交付 PR #16；完整依赖链的 main 集成入口为 PR #17，实时合并状态以远端为准。初试 30 次保留，用户批准的修正 v2 最多 78 次实际用了 71 次，每单元最多 6 次，两次共 101/108，余 7 次未使用；此前 6 次连接预算另计且已耗尽。真实对照未观察到质量提升，历史结果保持。
 
 ### 8.4 跨任务接口约定（已落实项与待实现设计）
 
@@ -341,7 +342,7 @@ CH-05A 接口映射（2026-10-21，已实现并验收）：新增 `candidate_gen
 
 CH-03A 接口映射（2026-10-19，已实现并验收）：`ArtifactStore.freeze/materialize/read_diff` 保存 `sha256:<manifest_digest>` 引用；manifest 覆盖除根目录 `.git` 元数据以外的完整普通文件，包含原始字节摘要与文件权限，目录规范为 0755，拒绝链接与特殊文件。`candidate-v1` 绑定 base SHA、代次、能力策略和完整 Diff 摘要，`test-evidence-v1` 绑定镜像实际 ID、规范命令、运行策略、结果与时间。新增四张表由 `20261019_0004` 迁移建立；失败测试也保留候选与证据。
 
-无 Git 历史的真实评测导出目录由受信任 `OfflineWorkspace` 适配器提供固定 buggy commit 和源仓库 `base_repository`，只读取对应树/blob，不把 `.git` 或历史交给模型/沙箱。其实现变更进入评测指纹；不得复用历史模型记录来宣称新运行时已实测。
+无 Git 历史的真实评测导出目录由受信任 `OfflineWorkspace` 适配器准备。evaluator v14 的 `base_repository` 是按实际导出 buggy 文件创建的独立私有 Git 对象库；`candidate.base_sha` 是该导出基线提交，上游 buggy SHA 另行保存。这样不会因原仓库未检出的文档 submodule 与归档导出不一致而阻断候选初始化；不下载 submodule，不运行 upstream attributes/filter/hooks，不把 Git 对象或历史交给模型/沙箱。基线仅用于离线评测，禁止发布；线上发布仍绑定原仓库真实 base SHA 并保持原链接拒绝策略。每个选中案例在任何付费请求前验证快照可创建且初始 Diff 为空。实现变更进入评测指纹，不复用 v13 模型记录来宣称 v14 已实测。
 
 审批 API 保留 `/api/v1/tasks/{id}/approval` 路径，但请求强制 `schema_version=approval-v2`、`approval_id/request_version/candidate_id/evidence_digest/approved`；旧布尔请求明确 422，不补齐成最新候选。GET 返回审批摘要、Reviewer 风险、manifest 与测试证据，受现有 API Key 访问控制；候选 `/candidates/{candidate_id}/diff` 返回未截断 Diff。`request_version` 为进入等待审批时的任务版本。decision 与 `awaiting_approval → queued` CAS、恢复意图及审计事件同一事务保存；Redis 失败返回 202 和 `saved=true / dispatch_state=pending / queue_delivery_failed`，可用 `/approval/dispatch` 显式重投同一 decision。`enqueued` 只代表尝试被 Redis 接受，不是消费确认；CH-04A 之前没有后台自动投递或崩溃重领。Worker 从数据库读取决定，不信任队列中的布尔值。完全相同的重试返回原决定，相反决定或旧绑定 409。缺少冻结候选的旧审批 checkpoint 不自动转换，GET 明确 409 `legacy_approval_requires_revalidation`；可取消旧任务并创建新任务重新测试。
 
@@ -380,7 +381,7 @@ CH-01B 接口映射（2026-10-23，已实现并通过集中验收）：迁移 `2
 
 #### CH-01B：增加有预算约束的任务路由
 
-- **状态**：VERIFIED（2026-10-23，路由实现 `06f656b`，集中验收源码 `4b6f7c9`；隔离 Docker 538 passed / 0 skipped、87.20%，Mock 10/10、smoke、workflow 3→3 / oneshot 1→1 Worker 重启通过；尚未创建本卡 PR）。**优先级/规模**：P1 / M。**硬依赖**：CH-01A、CH-02B、CH-10。
+- **状态**：MERGED（2026-10-23，路由实现 `06f656b`，集中验收源码 `4b6f7c9`；隔离 Docker 538 passed / 0 skipped、87.20%，Mock 10/10、smoke、workflow 3→3 / oneshot 1→1 Worker 重启通过；[PR #15](https://github.com/xsw932187210-cell/RepoPilot/pull/15) 合入功能分支 `482ae04`，CI 2/2；尚未进入 main）。**优先级/规模**：P1 / M。**硬依赖**：CH-01A、CH-02B、CH-10。
 - **入口**：`graph/builder.py`、`graph/state.py`、`models.py`、`config.py`；建议新增 `routing.py`。
 - **实施步骤**：
   1. 支持显式 `oneshot / workflow / auto` 策略，保存 route、理由和策略版本；旧请求默认保持原路径，避免无意改变已有结果。
@@ -394,7 +395,7 @@ CH-01B 接口映射（2026-10-23，已实现并通过集中验收）：迁移 `2
 
 #### CH-01C：完成 one-shot / workflow / auto 三组对照
 
-- **状态**：TODO。**优先级/规模**：P1 / M。**硬依赖**：CH-01B、CH-07B、CH-07C。
+- **状态**：VERIFIED（2026-10-23，修正 v2 的 18 单元全部终态：16 completed / 2 调用层 failed / 0 pending，三组各 0/6 独立修复；调用分别 14/27/30 次。原 30 次保留，新 71/78，两次共 101/108；3 次未知响应保守扣预算，orphan=0。两次限流续跑保留原 7/15 个终态，再次执行复用 18 条记录且新增请求 0。没有调优或质量提升主张。[结果报告](docs/real-evaluation-results-2026-10-23.md)、[机器证据](docs/evidence/2026-10-23-ch01c-v2-results.json)、PR #16）。**优先级/规模**：P1 / M。**硬依赖**：CH-01B、CH-07B、CH-07C。
 - **入口**：`real_evaluation.py`、`eval_runtime.py`、`eval_report.py`、冻结的评测清单。
 - **实施步骤**：
   1. 开跑前冻结模型精确标识、策略配置、路由阈值、案例选择、主要指标、重复次数和预算；保留配置摘要。
@@ -1230,3 +1231,21 @@ smoke 使用已经运行的服务。若 `.env` 选择真实模型，应按 [READ
 - 三种策略经真实 API/Worker 测试后停在绑定审批；人工拒绝阻止发布。Mock 10/10、smoke 通过；workflow 3→3、oneshot 1→1 的真实 Worker 审批重启均保持候选、manifest、证据与决定，unknown=0。
 - 111 份源码/测试与测试/API 各 57 份实际包源码匹配固定验收提交；专属 project `repopilot_ch01b_20261023` 容器/卷/网络清理确认，镜像保留。首轮宿主 57 passed / 1 夹具缺省计数断言失败保留，修正后在集中容器回归通过；没有重复完整宿主测试。
 - 证据：[验收](docs/ch01b-verification-2026-10-23.md)、[机器摘要](docs/evidence/2026-10-23-ch01b-verification.json)、[路由契约](docs/task-routing.md)。本卡真实模型请求为 0，历史质量报告/失败账本不变；调用差异不是修复率增益。PR 与后续真实对照另行按实际结果记账。
+
+### 2026-10-23 · CH-01C · 真实初试中断与评测基线修正
+
+- 原实验固定源码 `93079302b7f6ed4dfa24eb89028bfa8f5c77826b` / evaluator v13，预先提交 v1 方案；3 保留题 × 3 策略 × 2 轮，每单元最多 6 次，总上限 108。所有题均先通过相同固定镜像的 buggy/fixed 复现。
+- 真实记账 30 次（Google Cloud 22、ChatGPT 8，含 5 次 transport retry，无 orphan），余 78；18 单元中 6 completed、3 Cookiecutter-003 快照准备失败、9 pending。已完成单元未观察到通过独立验收的修复，但不能由不完整/存在基础设施失败的试验宣布策略优劣。原目录、计数及零/失败结果保留。
+- Cookiecutter-003 原提交含 `docs/HelloCookieCutter1` gitlink；归档导出略过该引用，而通用 artifact raw-base 校验正确拒绝非 blob，暴露两处基线不一致。v14 只修正离线评测：对实际导出文件构建外置、无历史的确定性 Git 基线，线上 raw-base/链接拒绝不变；所有选中案例在付费请求前完成 artifact/空初始 Diff 预检。没有调整修复提示、路由阈值、检索预算或隐藏验收。
+- 修正后 29 项边界通过；同样 3 题经完整 Mock 图与断网 Docker visible/hidden 路径通过，每题 1 次 Mock、0 次真实请求，无改动候选被正确拒绝。初版诊断缺 await 的失败日志保留，修正后最终诊断通过。CI 单测为固定 SDK 元数据加入 mock 并独立验证错误版本拒绝；真实运行仍严格校验 SDK。
+- 原 v1 实验不得在新代码下混续。用户已明确批准 v2：新身份、同样 18 单元、每单元仍 6 次，最多只追加剩余 78 次，旧 30 保留、两次总计最多 108。私有授权在确认后创建，旧授权标为 superseded 且保留原 30 个预留 ID；v2 启动并在限流后沿同一身份、目录和账本续跑。
+- [PR #16](https://github.com/xsw932187210-cell/RepoPilot/pull/16) 在初试中断时保持 Draft；后续修正实验结果见下条验收记录；[中断说明](docs/ch01c-interrupted-2026-10-23.md)、[部分脱敏记录](docs/evidence/2026-10-23-ch01c-v1-interrupted.json)、[修正方案](docs/ch01c-corrected-plan-2026-10-23.md)。B/C 工程通过不代替质量实验，历史 2026-09-09 报告和失败账本不变。
+
+### 2026-10-23 · CH-01C · 固定三策略对照验收
+
+- 固定源码 `d1025b008cb1b1b0ae8988b5d6a3f7b2a06149fa`，evaluator v14，计划 fingerprint `c5390b31ee6ac1dc633f767cd9b425c504fe40a3bc5e18a5ebaeae1f4836856d`。用户确认后创建独立 v2 私有授权；仅文档整理，不改模型、提示、路由或隐藏验收。
+- 18 单元全部终态，16 completed、2 调用层错误、0 pending；oneshot/workflow/auto 独立修复均 0/6、审批 3/3/1、API 14/27/30。两项运行错误为 GPT Reviewer 不可重试响应和既定 64 KB 本地大小上限；不把它们都称为远端故障。
+- 新实验 71 次预留/发起（Cloud Planner 16、Coder 42，GPT Reviewer 13），成功调用 42、已知失败 26、未知 3；实际预留 transport retry 19，计划重试计数 22，orphan 0。原 30 保留，共 101/108，余 7；usage 不完整，金额未知。
+- 两次限流后保持 7/15 个旧终态完整不变；最终同命令续跑的 18 份记录及预留账本哈希相同，新增模型请求 0。三题事前均完成 Docker 复现与空初始 Diff / artifact 预检；已有 538 项服务回归与修正的 29 项边界证据分开记录，不冒充新全量服务重跑。
+- 三个缺陷、两个项目的描述性 pilot 全零，成对区间退化，不证明等效或泛化；所有可见 auto 路由均 workflow，没有覆盖轻路径收益。保留负结果与默认 workflow，不新增对外质量主张。原 2026-09-09 报告、失败账本及 Mock 案例不变。
+- 交付：[结果报告](docs/real-evaluation-results-2026-10-23.md)、[脱敏汇总](docs/evidence/2026-10-23-ch01c-v2-results.json)、[CH-01C PR #16](https://github.com/xsw932187210-cell/RepoPilot/pull/16)；完整依赖链 main 集成入口为 [PR #17](https://github.com/xsw932187210-cell/RepoPilot/pull/17)。不自动开始其他卡或消耗余下预算。

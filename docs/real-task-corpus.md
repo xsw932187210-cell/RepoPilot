@@ -130,6 +130,13 @@ provenance, exclusions, license copies and evaluator-only public-symptom probes.
 Fingerprint: `c616e16419a9313b46ff733dc201a8f0a8bd86de313301f1b9fae266099c2adf`.
 There are 23 real defects, not synthetic mutations or repeated executions.
 
+Reproduction verifies the focused buggy/fixed behavior, not every future graph
+integration. The first CH-01C run exposed Cookiecutter case 3's upstream documentation
+gitlink: its archive export was valid, but the raw artifact-base reader correctly
+refused that non-blob entry. Evaluator v14 adds an exported-file baseline and a
+mandatory all-case artifact preflight; see the
+[runtime correction](ch01c-corrected-plan-2026-10-23.md). No submodule is fetched.
+
 | Partition | Project | Cases | Selection |
 | --- | --- | --- | --- |
 | development | The Fuck | 20 | Original records/fingerprints unchanged; previously analyzed |

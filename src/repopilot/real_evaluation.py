@@ -33,6 +33,7 @@ from repopilot.data_boundary import require_secret_free, safe_error
 from repopilot.eval_repeats import RepeatConfig, RepeatedEvaluationRuntime
 from repopilot.eval_report import build_eval_report, render_markdown
 from repopilot.eval_runtime import EvaluationConfig, EvaluationRuntime, ModelCallBudget
+from repopilot.export_baseline import EXPORTED_BASELINE_VERSION, exported_baseline
 from repopilot.frozen_corpus import load_frozen_corpus
 from repopilot.github import GitHubPublisher
 from repopilot.graph.builder import GraphDependencies, build_graph
@@ -53,11 +54,12 @@ from repopilot.security import (
     CapabilityAction,
     CapabilityError,
     CapabilityReason,
+    SecurityError,
     contains_known_secret,
     safe_workspace_path,
 )
 
-EVALUATOR_CONFIG_VERSION = 13
+EVALUATOR_CONFIG_VERSION = 14
 
 
 def save_json(path: Path, value: object) -> None:
@@ -133,6 +135,8 @@ class OfflineWorkspace(WorkspaceManager):
         )
         self.task, self.source, self.destination = task, source, destination
         self.original: dict[str, str] = {}
+        self.baseline_repository = destination.parent / "exported-baseline.git"
+        self.baseline_sha: str | None = None
 
     async def prepare(self, task_id: str, repository_url: str, base_branch: str) -> Path:
         del task_id, repository_url, base_branch
@@ -147,15 +151,20 @@ class OfflineWorkspace(WorkspaceManager):
                 content = path.read_text(encoding="utf-8")
                 if not contains_known_secret(content):
                     self.original[relative] = content
+        self.baseline_sha = await exported_baseline(
+            self.destination, self.baseline_repository, self.task.source.buggy_commit,
+        )
         return self.destination
 
     async def base_commit(self, workspace: Path) -> str:
-        return self.task.source.buggy_commit
+        if self.baseline_sha is None:
+            raise ValueError("Exported baseline must be prepared before artifact capture")
+        return self.baseline_sha
 
     def base_repository(self, workspace: Path) -> Path:
-        # Keep Git history/metadata outside the model/test workspace. ArtifactStore
-        # reads only this pinned commit's tree/blobs from the trusted source checkout.
-        return self.source
+        # Exact exported buggy bytes, without a dangling upstream submodule entry.
+        # This private history-free object store is not a publication base.
+        return self.baseline_repository
 
     def inspect(self, workspace: Path, issue_text: str, search_terms: list[str]):
         del search_terms
@@ -253,7 +262,9 @@ async def execute_candidate(
         ExitStack() as snapshots,
     ):
         root = Path(temporary)
-        settings = settings.model_copy(update={"workspace_root": root / "workspaces"})
+        settings = settings.model_copy(update={
+            "workspace_root": root / "workspaces", "github_write_enabled": False,
+        })
         manager = OfflineWorkspace(settings, task, source, root / "agent")
         visible_command = shlex.join(task.test.visible_argv)
         acceptance_command = shlex.join(task.test.acceptance_argv)
@@ -332,6 +343,34 @@ async def execute_candidate(
             "policy_error_code": state.get("policy_error_code"),
             "node_metrics": state.get("node_metrics", []),
             "duration_ms": int((time.perf_counter() - started) * 1000),
+        }
+
+
+async def validate_artifact_preparation(task: RealTask, source: Path, settings: Settings) -> dict:
+    """Validate every selected graph's preparation before any paid request."""
+    with tempfile.TemporaryDirectory(prefix="repopilot-preflight-") as temporary:
+        root = Path(temporary)
+        settings = settings.model_copy(update={
+            "workspace_root": root / "workspaces", "github_write_enabled": False,
+        })
+        manager = OfflineWorkspace(settings, task, source, root / "agent")
+        workspace = await manager.prepare(task.id, task.source.repository_url, "benchmark")
+        base = await manager.base_commit(workspace)
+        artifacts = ArtifactStore(settings.workspace_root / ".artifacts")
+        candidate = await artifacts.freeze(
+            workspace, task_id=task.id, base_sha=base, generation=0,
+            policy_version=manager.capability_policy.version,
+            base_repository=manager.base_repository(workspace),
+        )
+        if artifacts.read_diff(candidate).strip():
+            raise SecurityError("exported_baseline_has_initial_diff")
+        return {
+            "case_id": task.id, "verified": True,
+            "baseline_version": EXPORTED_BASELINE_VERSION,
+            "upstream_buggy_commit": task.source.buggy_commit,
+            "exported_baseline_commit": base,
+            "manifest_digest": candidate.artifact_digest,
+            "initial_diff_empty": True,
         }
 
 
@@ -440,6 +479,7 @@ async def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
     evaluator_identity = {
         "manifest_schema_version": manifest.schema_version,
         "evaluator_config_version": EVALUATOR_CONFIG_VERSION,
+        "artifact_baseline": EXPORTED_BASELINE_VERSION,
         "projects": identities,
     }
     dataset_digest = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
@@ -456,6 +496,7 @@ async def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
             "temperature": base_settings.model_temperature,
             "model_roles": model_role_profile(base_settings),
             "routing_policy": RoutingPolicy.from_settings(base_settings).__dict__,
+            "experiment_protocol": getattr(args, "protocol_identity", None),
             "max_calls": args.max_calls,
             "repeat": {
                 "run_id": run_id, "repeats": repeats,
@@ -526,6 +567,11 @@ async def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
             "Every selected task must pass buggy/fixed reproduction before model evaluation"
         )
 
+    preparation = [await validate_artifact_preparation(
+        task, sources[task.project], settings_by_project[task.project],
+    ) for task in tasks]
+    save_json(args.output / "artifact-preparation.json", preparation)
+
     config = EvaluationConfig(
         dataset_sha256=dataset_digest,
         provider=base_settings.model_provider,
@@ -538,6 +584,7 @@ async def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
         evaluator_config={
             "model_roles": model_role_profile(base_settings),
             "routing_policy": RoutingPolicy.from_settings(base_settings).__dict__,
+            "experiment_protocol": getattr(args, "protocol_identity", None),
             "acceptance": evaluator_identity,
             "implementation_sha256": implementation_digest,
             "max_iterations": 2,
@@ -563,7 +610,8 @@ async def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
     runtime = (
         RepeatedEvaluationRuntime(
             RepeatConfig(config, run_id, repeats, args.strategy_version, args.max_total_calls),
-            args.output / "model-records", **policy,
+            args.output / "model-records",
+            reservation_observer=getattr(args, "reservation_observer", None), **policy,
         ) if run_id else EvaluationRuntime(config, args.output / "model-records", **policy)
     )
 

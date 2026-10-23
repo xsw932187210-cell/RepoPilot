@@ -9,10 +9,11 @@ with the original 20 as development and three project-disjoint holdout cases.
 See [freeze and contamination rules](real-task-corpus.md#frozen-cross-project-pilot-v1).
 This adds no model-quality result or replacement for the historical experiment identity.
 
-The current implementation uses manifest schema **2**, evaluator configuration **11**,
+The current implementation uses manifest schema **2**, evaluator configuration **14**,
 acceptance protocol **4** and `withheld-junit-v2`. Trusted project adapters declare source
-roots, read-only/test paths and immutable runtime images. The current real corpus still
-permits only existing `thefuck/**/*.py` source files. The separate `tinyledger` fixture is
+roots, read-only/test paths and immutable runtime images. The original corpus permits
+only existing `thefuck/**/*.py` files; the cross-project pilot uses each trusted adapter's
+source capabilities. The separate `tinyledger` fixture is
 synthetic and contributes no real repair results. See the [adapter and migration
 contract](project-adapters.md). New experiments require a new output directory.
 
@@ -22,6 +23,13 @@ latency excludes unattempted quota placeholders. It does not change prompts, ret
 execution or the acceptance decision. The published 2026-09-09 comparison was captured under
 version 7 immediately before this storage hardening. Version 9 adds explicit project/environment
 binding and refuses to write old directories; it does not rerun or replace that historical report.
+
+Version 11 binds native Cloud and ChatGPT role profiles, version 12 adds independent
+repeats, and version 13 sends all three strategies through the same graph gates.
+Version 14 initializes private artifact baselines from the exact exported buggy
+files and preflights every selected case before inference. This handles omitted
+upstream gitlinks without fetching submodules or relaxing online raw-Git checks.
+Baselines live outside Agent/test workspaces; benchmark publication stays disabled.
 
 CH-10 separately versions the model-call checkpoint envelope as evaluation schema `4` with
 `evaluation-call-budget-v2`. It preserves reserved/started/outcome counters across process restart,
@@ -66,11 +74,12 @@ explicitly marked and evaluated under a separate experiment identity.
 - The trusted orchestrator can read upstream history and benchmark metadata.
   Agent context receives only an archive of the buggy commit, without `.git`,
   reference patches, fixed source, or the hidden overlay.
-- Both arms initially retrieve from the same issue text, using the same 12-file /
+- All selected strategies initially retrieve from the same issue text, using the same 12-file /
   70,000-character limits. Planner search terms are deliberately disabled in this
   experiment to hold initial retrieval constant. Thus this comparison tests role
   planning/review/retry, **not retrieval gain**. A retrieval ablation remains separate.
-- Only existing `thefuck/**/*.py` source can be edited. Tests/config cannot be edited.
+- Only existing source files permitted by the trusted project adapter can be edited;
+  for the original The Fuck corpus this is `thefuck/**/*.py`. Tests/config remain read-only.
   Readable context and edit capabilities are separate: selected tests may be shown for
   reasoning, but only allowed source paths appear in the model's edit-path contract.
   A generated edit batch is completely preflighted before any write. The workflow may
@@ -83,15 +92,28 @@ explicitly marked and evaluated under a separate experiment identity.
 
 ## Comparison and measurement
 
-`oneshot` calls the same coder once, with a fixed minimal plan. `workflow` uses the
+Since evaluator v13, `oneshot` calls the same coder once, with a fixed minimal plan,
+then uses deterministic permissions, visible-test and human-approval gates without
+model planning/review. `workflow` uses the
 actual LangGraph planner, coder, visible-test runner and reviewer, with up to two coder
 iterations. Deterministic rejection triggers a retry. After tests pass, a concrete
 medium/high-risk reviewer finding may trigger one bounded remediation, while low-risk or
 test-coverage-only concerns go directly to HITL; the second candidate is always escalated.
-Both share the model, temperature, corpus, context limits, Docker image,
-acceptance suite and a maximum of six API attempts per pair by default. Their
+`auto` selects one of these paths from first visible retrieval, with at most one
+budgeted upgrade after a visible one-shot failure; see [task routing](task-routing.md).
+All strategies share primary/Reviewer profiles where those roles are present, corpus,
+context limits, project Docker images and acceptance suites. The frozen CH-01C plan
+caps each defect/strategy/repeat at six requests, including failures and retries. Their
 **actual costs need not be equal**. Report those costs alongside outcomes; do not
 describe this as an equal-token experiment. Failed provider attempts consume the cap.
+
+The [2026-10-23 corrected CH-01C result](real-evaluation-results-2026-10-23.md) uses
+the opt-in `repopilot.eval_protocol` wrapper and `ch01c-pilot-v2.json`, with a separately
+confirmed 78-attempt grant after preserving the original 30. It finished 18 units,
+each strategy observed 0/6 accepted repairs, and combined use was 101/108. The wrapper's
+default is read-only planning; `--run` requires an existing bound private grant.
+A completed same-directory resume was checked to send zero new model requests.
+These results do not replace or merge with historical evaluator-v7 quality metrics.
 
 Before model execution, every selected case must fail in the buggy version and pass
 in the fixed version, with the same JUnit test identities. Collection/environment

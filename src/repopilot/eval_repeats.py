@@ -81,10 +81,14 @@ class RepeatedEvaluationRuntime:
     No transaction or exactly-once claim is made across files/provider transport.
     """
 
-    def __init__(self, config: RepeatConfig, record_dir: Path, **runtime_options: Any):
+    def __init__(
+        self, config: RepeatConfig, record_dir: Path, *,
+        reservation_observer=None, **runtime_options: Any,
+    ):
         self.config = config
         self.record_dir = record_dir
         self.runtime_options = runtime_options
+        self.reservation_observer = reservation_observer
         self.writer = EvaluationRuntime(config.base, record_dir, **runtime_options)
         self.identity: dict = {}
         self.budget: dict = {}
@@ -188,6 +192,11 @@ class RepeatedEvaluationRuntime:
         updated = {**self.budget, "reservations": [*reservations, {"unit": unit, **allowed}]}
         self.writer._atomic_write(self.record_dir / "api-reservations.json", updated)
         self.budget = updated
+        if self.reservation_observer is not None:
+            # Persist the cohort first, then mirror its reservation identities in
+            # the authorization record before local reservation/transport starts.
+            # A crash in this handoff consumes the durable cohort reservation.
+            await self.reservation_observer(updated)
 
     def _runtime(self, repeat: int, mode: str, unit: str) -> EvaluationRuntime:
         base = self.config.base.as_dict()
