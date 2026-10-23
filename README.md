@@ -16,6 +16,10 @@ known limitations, and acceptance criteria for the next iterations (Chinese).
 ## What it demonstrates
 
 - Explicit LangGraph state machine with Planner, Researcher, Test Analyst, Coder, and Reviewer roles.
+- [Budgeted routing](docs/task-routing.md): explicit `oneshot / workflow / auto`,
+  deterministic visible-input rules, one bounded upgrade on the same call ledger,
+  and persisted route explanations. Omitted strategy retains workflow; one-shot
+  explicitly omits model review and still requires Docker test evidence and human approval.
 - Parallel research/test-analysis fan-out, deterministic-failure retries, one bounded remediation
   for concrete reviewer findings, and reviewer-risk escalation to the human approval gate.
 - Single graph writer with a versioned read/write/create policy, full-batch edit preflight,

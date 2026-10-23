@@ -132,7 +132,7 @@ For an existing deployment:
 2. Confirm no task is actively executing and take a database backup appropriate to the deployment.
 3. Deploy the new image and run exactly one migrator: `repopilot-migrate upgrade`. With Compose,
    `docker compose run --rm migrate` uses the same entry point.
-4. Verify `repopilot-migrate current` reports `20261022_0007`. Back up the artifact volume with SQL.
+4. Verify `repopilot-migrate current` reports `20261023_0008`. Back up the artifact volume with SQL.
 5. Start only the new API and Worker image, then run the normal smoke checks.
 
 A fresh `docker compose up --build -d` performs step 3 through the one-shot `migrate` service. Do

@@ -15,7 +15,7 @@
 - [ ] Model-generated paths remain inside the task workspace.
 - [ ] Test execution remains shell-free, network-disabled, and resource-limited.
 - [ ] No token, credential, private repository content, or `.env` value is logged or committed.
-- [ ] GitHub writes remain disabled by default and gated by reviewer plus human approval.
+- [ ] GitHub writes remain disabled by default and require bound test evidence plus human approval; whether model review ran is recorded explicitly.
 
 ## Resume claim impact
 
