@@ -1,6 +1,8 @@
 # CH-18 交付验证记录
 
-状态：本地验收通过，PR 合并前核对远端 CI。验证从 2026-10-23 持续至 2026-10-24。
+状态：MERGED，已由 [PR #20](https://github.com/xsw932187210-cell/RepoPilot/pull/20)
+合入 main，提交 `2a23317742f5b7be640bbffe56f558ff7e425082`，合并前 3/3 检查通过。
+验证从 2026-10-23 持续至 2026-10-24。
 
 基线为 `main@5201a8ee9d682551ef8aa06b178c68a1fc256607`，工作开始时干净。
 用户范围为离线失败分析、CH-18、CH-19；本轮没有真实模型请求授权扩展。
@@ -48,7 +50,7 @@ Python 3.12 sandbox，oneshot/workflow **2 passed、39 deselected，8.52 秒**�
 保留于 `reports/ch18-adapter-docker-fix.log`，通过日志为
 `reports/ch18-adapter-docker-fix-current.log`。定向检查不代替完整 CI。
 
-## 最终验证
+## 本地完整验证（原输入快照）
 
 第二轮专属项目 `repopilot_ch18_20261023_67635`：**551 passed、0 failed、0 skipped，
 87.00% 行覆盖率，285.89 秒**。完整服务矩阵、doctor、Mock **10/10**、API smoke、
@@ -70,3 +72,19 @@ workflow/oneshot 两条实际 Worker 审批重启路径全部通过；验证输�
 
 本轮真实模型请求为 0，原 101/108 的账本未变。上述结论只覆盖已运行的平台与故障矩阵，
 不增加修复质量、任意崩溃自动恢复、Worker fencing 或实际 GitHub 发布的主张。
+
+## 修正后的远端完整 CI
+
+Feature 提交为 `e924d6e91b5afae609f5b288f98f56a5572dfea6`；
+[完整服务 run 39993198687](https://github.com/xsw932187210-cell/RepoPilot/actions/runs/39993198687)
+通过：**552 passed、0 failed、0 skipped，86.98%**，pytest 510.96 秒。
+doctor、Mock 10/10、API smoke、workflow/oneshot 实际 Worker 审批重启、安装包/API 源码
+一致、输入未变及专属容器/卷/网络清理全部通过。
+[快 CI 39993198823](https://github.com/xsw932187210-cell/RepoPilot/actions/runs/39993198823)
+也通过；条件测试的 skip 不计为服务通过。
+
+CI checkout 为临时 PR merge commit `e2d0a1ff3be2bbe7344efbe855fb134dff3db2f3`；
+源码/测试树摘要 `070169af64f969bdcdd3beba55ef4bf82b414601f7c0dc7122a3ba966f1c63f2`
+与 feature 提交中 118 份 Python 文件的逐文件计算一致。此记录没有把早期 551 项的本地
+快照改写成修正后的源码。公开[远端汇总](evidence/2026-10-24-remote-delivery.json)同时保留
+feature、CI checkout 和合并身份；当前集成状态见[交付记录](delivery-status-2026-10-24.md)。

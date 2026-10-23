@@ -67,7 +67,8 @@ evidence, not a quality-lift claim; [results](docs/real-evaluation-results-2026-
 
 ## Quick start
 
-Requirements: Docker Desktop and Docker Compose.
+Requirements: Docker Desktop/Engine, Compose v2, Make and Git. Full service verification also
+uses host Python 3 for small helper scripts; project SDKs run inside the containers.
 
 ```bash
 make demo

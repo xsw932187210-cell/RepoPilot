@@ -1,0 +1,121 @@
+{
+  "schema_version": "delivery-ci-v1",
+  "verified_date": "2026-10-24",
+  "cards": {
+    "CH-19": {
+      "schema_version": "remote-delivery-evidence-v1",
+      "card": "CH-19",
+      "pr": 21,
+      "feature_head": "af4b8ebd9521da36641e48d67448e568381e604a",
+      "run_url": "https://github.com/xsw932187210-cell/RepoPilot/actions/runs/39993208626",
+      "job_id": 120549971004,
+      "source_matches_committed_feature_tree": true,
+      "verification": {
+        "schema_version": "delivery-verification-v1",
+        "ok": true,
+        "base_commit": "f0273ad5214585a793ab1f7492782d838d4f5fe6",
+        "checks": {
+          "runner_completed": true,
+          "doctor": true,
+          "full_test_matrix": true,
+          "coverage_floor": true,
+          "mock": true,
+          "installed_source_identity": true,
+          "inputs_unchanged_during_verification": true,
+          "smoke": true,
+          "recovery": true,
+          "recovery-oneshot": true,
+          "resources_removed": true
+        },
+        "tests": {
+          "tests": 555,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "coverage_percent": 87.07,
+        "mock": {
+          "count": 10,
+          "successful": 10
+        },
+        "source_tree_sha256": "d38653ccaf18ab23f0a7663094dfd98e1dd9983fec703559cc8fd623798e9039",
+        "runtime_versions": {
+          "checkpoint_postgres": "3.2.0",
+          "langgraph": "1.2.16",
+          "langsmith": "0.14.11",
+          "pytest": "8.4.2",
+          "python": "3.12.15"
+        },
+        "lock_sha256": "09a88bb2bad64d04cecc1a4859a93bda155f3c47ae3324589db853e836e78fa1",
+        "model_requests_issued": 0,
+        "provider_quality_verified": false
+      },
+      "fast_ci": {
+        "run_url": "https://github.com/xsw932187210-cell/RepoPilot/actions/runs/39993208569",
+        "passed": 510,
+        "skipped": 45,
+        "coverage_percent": 85.97,
+        "mock_selected": 10,
+        "mock_passed": 10,
+        "skips_are_not_service_verification": true
+      },
+      "main_merge_commit": "5659dda1793580daf17d699fb779f74e13e82b0d",
+      "checks_succeeded_before_merge": true
+    },
+    "CH-18": {
+      "schema_version": "remote-delivery-evidence-v1",
+      "card": "CH-18",
+      "pr": 20,
+      "feature_head": "e924d6e91b5afae609f5b288f98f56a5572dfea6",
+      "run_url": "https://github.com/xsw932187210-cell/RepoPilot/actions/runs/39993198687",
+      "job_id": 120549936374,
+      "source_matches_committed_feature_tree": true,
+      "verification": {
+        "schema_version": "delivery-verification-v1",
+        "ok": true,
+        "base_commit": "e2d0a1ff3be2bbe7344efbe855fb134dff3db2f3",
+        "checks": {
+          "runner_completed": true,
+          "doctor": true,
+          "full_test_matrix": true,
+          "coverage_floor": true,
+          "mock": true,
+          "installed_source_identity": true,
+          "inputs_unchanged_during_verification": true,
+          "smoke": true,
+          "recovery": true,
+          "recovery-oneshot": true,
+          "resources_removed": true
+        },
+        "tests": {
+          "tests": 552,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "coverage_percent": 86.98,
+        "mock": {
+          "count": 10,
+          "successful": 10
+        },
+        "source_tree_sha256": "070169af64f969bdcdd3beba55ef4bf82b414601f7c0dc7122a3ba966f1c63f2",
+        "runtime_versions": {
+          "checkpoint_postgres": "3.2.0",
+          "langgraph": "1.2.16",
+          "langsmith": "0.14.11",
+          "pytest": "8.4.2",
+          "python": "3.12.15"
+        },
+        "lock_sha256": "09a88bb2bad64d04cecc1a4859a93bda155f3c47ae3324589db853e836e78fa1",
+        "model_requests_issued": 0,
+        "provider_quality_verified": false
+      },
+      "main_merge_commit": "2a23317742f5b7be640bbffe56f558ff7e425082",
+      "checks_succeeded_before_merge": true
+    }
+  },
+  "new_real_model_requests": 0,
+  "historical_total_attempts": 101,
+  "historical_approved_cap": 108,
+  "unused_historical_attempts": 7
+}
