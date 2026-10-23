@@ -55,6 +55,22 @@ def _measure(records: list[dict], repeats: int) -> dict:
         "approval_reached": sum(
             (r.get("result") or {}).get("workflow_gate_passed") is True for r in records
         ),
+        "initial_routes": dict(Counter(
+            ((r.get("result") or {}).get("routing_history") or [{}])[0].get(
+                "selected", "unreported"
+            ) for r in records
+        )),
+        "final_routes": dict(Counter(
+            ((r.get("result") or {}).get("routing") or {}).get("selected", "unreported")
+            for r in records
+        )),
+        "route_upgrades": sum(
+            int(((r.get("result") or {}).get("routing") or {}).get("upgrades", 0))
+            for r in records
+        ),
+        "model_review_performed": sum(
+            (r.get("result") or {}).get("review_performed") is True for r in records
+        ),
         "pending_by_status": dict(Counter(
             r["status"] for r in records if r["status"] not in {"completed", "failed"}
         )),

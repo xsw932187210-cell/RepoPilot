@@ -456,6 +456,7 @@ async def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
             "temperature": base_settings.model_temperature,
             "model_roles": model_role_profile(base_settings),
             "routing_policy": RoutingPolicy.from_settings(base_settings).__dict__,
+            "experiment_protocol": getattr(args, "protocol_identity", None),
             "max_calls": args.max_calls,
             "repeat": {
                 "run_id": run_id, "repeats": repeats,
@@ -538,6 +539,7 @@ async def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
         evaluator_config={
             "model_roles": model_role_profile(base_settings),
             "routing_policy": RoutingPolicy.from_settings(base_settings).__dict__,
+            "experiment_protocol": getattr(args, "protocol_identity", None),
             "acceptance": evaluator_identity,
             "implementation_sha256": implementation_digest,
             "max_iterations": 2,
@@ -563,7 +565,8 @@ async def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
     runtime = (
         RepeatedEvaluationRuntime(
             RepeatConfig(config, run_id, repeats, args.strategy_version, args.max_total_calls),
-            args.output / "model-records", **policy,
+            args.output / "model-records",
+            reservation_observer=getattr(args, "reservation_observer", None), **policy,
         ) if run_id else EvaluationRuntime(config, args.output / "model-records", **policy)
     )
 

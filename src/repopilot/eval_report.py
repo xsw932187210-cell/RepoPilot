@@ -278,6 +278,11 @@ def _safe_case_summary(record: Mapping[str, Any]) -> dict[str, Any]:
     }
     if isinstance(result, Mapping):
         summary["result_category"] = _result_category(record)
+        if isinstance(result.get("routing"), Mapping):
+            from repopilot.data_boundary import public_routing
+
+            summary["routing"] = public_routing(result["routing"])
+            summary["review_performed"] = result.get("review_performed")
     if comparison is not None:
         regression_count = _number(comparison.get("regression_count"))
         regressions = comparison.get("regressions")
