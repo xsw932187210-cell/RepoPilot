@@ -31,6 +31,7 @@ separately.
 | `20261021_0005` | Adds CH-05A's generation records/current pointer; seeds existing explicit CH-03A approval bindings without retesting or editing artifacts |
 | `20261022_0006` | Adds `publish_intents`, unique decision binding, immutable payload digest and receipt CAS; does not invent historical publication outcomes |
 | `20261022_0007` | Adds durable stop requests, owned resource/cleanup evidence and separate execution/queue/approval accounting; historical deadlines and stop confirmations remain null |
+| `20261023_0008` | Persists `execution_strategy`; old tasks and omitted inputs retain `workflow`. Stop old Workers and migrate before starting new code; routed checkpoints require the same routing-policy fingerprint |
 
 `Database.setup()` now runs the same upgrade path as the CLI. Compose also has a one-shot `migrate`
 service, and API/Worker startup waits for that service to finish successfully.
@@ -131,7 +132,7 @@ For an existing deployment:
 2. Confirm no task is actively executing and take a database backup appropriate to the deployment.
 3. Deploy the new image and run exactly one migrator: `repopilot-migrate upgrade`. With Compose,
    `docker compose run --rm migrate` uses the same entry point.
-4. Verify `repopilot-migrate current` reports `20261022_0007`. Back up the artifact volume with SQL.
+4. Verify `repopilot-migrate current` reports `20261023_0008`. Back up the artifact volume with SQL.
 5. Start only the new API and Worker image, then run the normal smoke checks.
 
 A fresh `docker compose up --build -d` performs step 3 through the one-shot `migrate` service. Do

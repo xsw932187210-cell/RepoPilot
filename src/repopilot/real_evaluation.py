@@ -37,7 +37,7 @@ from repopilot.frozen_corpus import load_frozen_corpus
 from repopilot.github import GitHubPublisher
 from repopilot.graph.builder import GraphDependencies, build_graph
 from repopilot.llm import build_agent_model, model_role_profile
-from repopilot.models import FileEdit, PlanOutput
+from repopilot.models import FileEdit
 from repopilot.real_tasks import (
     ProjectAdapter,
     RealTask,
@@ -47,6 +47,7 @@ from repopilot.real_tasks import (
     prepare_reference_workspace,
 )
 from repopilot.repository import WorkspaceManager
+from repopilot.routing import STRATEGIES, RoutingPolicy
 from repopilot.sandbox import DockerSandbox
 from repopilot.security import (
     CapabilityAction,
@@ -56,7 +57,7 @@ from repopilot.security import (
     safe_workspace_path,
 )
 
-EVALUATOR_CONFIG_VERSION = 12
+EVALUATOR_CONFIG_VERSION = 13
 
 
 def save_json(path: Path, value: object) -> None:
@@ -243,7 +244,7 @@ async def execute_candidate(
     Only issue text, the buggy tree and visible command enter the graph/model. The
     trusted caller retains reference metadata and performs acceptance after generation.
     """
-    if task.adapter is None or mode not in {"oneshot", "workflow"}:
+    if task.adapter is None or mode not in STRATEGIES:
         raise ValueError("A current project adapter and supported evaluation mode are required")
     issue_body = task.issue.body
     started = time.perf_counter()
@@ -256,52 +257,38 @@ async def execute_candidate(
         manager = OfflineWorkspace(settings, task, source, root / "agent")
         visible_command = shlex.join(task.test.visible_argv)
         acceptance_command = shlex.join(task.test.acceptance_argv)
-        state: dict[str, Any] = {}
-        if mode == "workflow":
-            graph = build_graph(
-                GraphDependencies(
-                    settings=settings,
-                    model=model,
-                    workspaces=manager,
-                    sandbox=DockerSandbox(
-                        settings, pythonpath=task.adapter.runtime.container_pythonpath
-                    ),
-                    publisher=GitHubPublisher(settings),
+        graph = build_graph(
+            GraphDependencies(
+                settings=settings,
+                model=model,
+                workspaces=manager,
+                sandbox=DockerSandbox(
+                    settings, pythonpath=task.adapter.runtime.container_pythonpath
                 ),
-                InMemorySaver(),
-            )
-            state = await graph.ainvoke(
-                {
-                    "task_id": task.id,
-                    "repository_url": task.source.repository_url,
-                    "base_branch": "benchmark",
-                    "issue_title": task.issue.title,
-                    "issue_body": issue_body,
-                    "test_command": visible_command,
-                    "max_iterations": 2,
-                    "policy_retry_count": 0,
-                },
-                {"configurable": {"thread_id": task.id}},
-            )
-            # Stop at HITL. No synthetic approval and no GitHub publication in a benchmark.
-        else:
-            workspace = await manager.prepare(task.id, task.source.repository_url, "benchmark")
-            context = manager.inspect(workspace, f"{task.issue.title}\n{task.issue.body}", [])
-            plan = PlanOutput(
-                summary="Generate one minimal candidate", steps=["Fix the described behavior"]
-            )
-            changes = await model.propose_changes(
-                task.issue.title, task.issue.body, plan, context, []
-            )
-            manager.apply_edits(workspace, changes.edits, expected_contents=context.files)
-        candidate_workspace = manager.destination
-        if mode == "workflow":
-            artifact_store = ArtifactStore(settings.workspace_root / ".artifacts")
-            candidate = Candidate.model_validate(state["candidate"])
-            candidate_workspace = snapshots.enter_context(artifact_store.materialize(candidate))
-            diff = artifact_store.read_diff(candidate).decode("utf-8", errors="replace")[:100_000]
-        else:
-            diff = await manager.diff(candidate_workspace)
+                publisher=GitHubPublisher(settings),
+            ),
+            InMemorySaver(),
+        )
+        state = await graph.ainvoke(
+            {
+                "task_id": task.id,
+                "repository_url": task.source.repository_url,
+                "base_branch": "benchmark",
+                "issue_title": task.issue.title,
+                "issue_body": issue_body,
+                "test_command": visible_command,
+                "max_iterations": 2,
+                "policy_retry_count": 0,
+                "execution_strategy": mode,
+            },
+            {"configurable": {"thread_id": task.id}},
+        )
+        # All strategies stop at the same HITL gate. Never synthesize approval
+        # or publish a benchmark candidate. Hidden acceptance runs only below.
+        artifact_store = ArtifactStore(settings.workspace_root / ".artifacts")
+        candidate = Candidate.model_validate(state["candidate"])
+        candidate_workspace = snapshots.enter_context(artifact_store.materialize(candidate))
+        diff = artifact_store.read_diff(candidate).decode("utf-8", errors="replace")[:100_000]
         # Replay only allowed source changes into a pristine tree, then add hidden tests.
         evaluation = prepare_agent_workspace(task, source, root / "acceptance")
         changed_files = []
@@ -334,10 +321,15 @@ async def execute_candidate(
             "workflow_status": (
                 "awaiting_approval" if workflow_interrupted else state.get("status")
             ),
-            "workflow_gate_passed": workflow_interrupted if mode == "workflow" else None,
-            "review": state.get("review") if mode == "workflow" else None,
+            "workflow_gate_passed": workflow_interrupted,
+            "review": state.get("review"),
             "iterations": state.get("iteration", 1),
             "policy_retry_count": state.get("policy_retry_count", 0),
+            "routing": state.get("routing"),
+            "routing_history": state.get("routing_history", []),
+            "review_performed": state.get("review_performed"),
+            "route_error_code": state.get("route_error_code"),
+            "policy_error_code": state.get("policy_error_code"),
             "node_metrics": state.get("node_metrics", []),
             "duration_ms": int((time.perf_counter() - started) * 1000),
         }
@@ -407,6 +399,8 @@ async def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
                    or not getattr(args, "max_total_calls", None)):
         raise ValueError("Repeated runs require strategy version and total API ceiling")
     modes = tuple(getattr(args, "modes", None) or ("oneshot", "workflow"))
+    if not modes or len(set(modes)) != len(modes) or any(m not in STRATEGIES for m in modes):
+        raise ValueError("Evaluation modes must be unique supported strategies")
     projects = tuple(dict.fromkeys(task.project for task in tasks))
     sources = {
         project: await asyncio.to_thread(Path(value).resolve, strict=True)
@@ -461,6 +455,7 @@ async def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
             "model": base_settings.model_name,
             "temperature": base_settings.model_temperature,
             "model_roles": model_role_profile(base_settings),
+            "routing_policy": RoutingPolicy.from_settings(base_settings).__dict__,
             "max_calls": args.max_calls,
             "repeat": {
                 "run_id": run_id, "repeats": repeats,
@@ -542,6 +537,7 @@ async def run_experiment(args: argparse.Namespace) -> dict[str, Any]:
         test_evaluator="withheld-junit-v2",
         evaluator_config={
             "model_roles": model_role_profile(base_settings),
+            "routing_policy": RoutingPolicy.from_settings(base_settings).__dict__,
             "acceptance": evaluator_identity,
             "implementation_sha256": implementation_digest,
             "max_iterations": 2,
@@ -607,7 +603,7 @@ def main() -> None:
     parser.add_argument("--repeats", type=int, default=1)
     parser.add_argument("--strategy-version")
     parser.add_argument("--max-total-calls", type=int)
-    parser.add_argument("--modes", nargs="+", choices=["oneshot", "workflow"])
+    parser.add_argument("--modes", nargs="+", choices=list(STRATEGIES))
     parser.add_argument("--max-output-tokens", type=int)
     parser.add_argument("--temperature", type=float)
     parser.add_argument(

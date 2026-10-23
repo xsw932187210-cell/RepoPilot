@@ -12,6 +12,11 @@ class RepoPilotState(TypedDict, total=False):
     base_branch: str
     test_command: str
     max_iterations: int
+    execution_strategy: str
+    routing: dict[str, Any]
+    routing_history: list[dict[str, Any]]
+    route_error_code: str | None
+    review_performed: bool
     workspace: str
     base_sha: str
     candidate: dict[str, Any]
