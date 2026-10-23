@@ -58,6 +58,10 @@ def prepare_plan(protocol: dict, settings: Settings, root: Path) -> dict:
         or asdict(RoutingPolicy.from_settings(settings)) != protocol["routing_policy"]
     ):
         raise ValueError("configured_limits_differ_from_frozen_protocol")
+    if any(
+        getattr(settings, key) != value for key, value in protocol["execution_limits"].items()
+    ):
+        raise ValueError("configured_execution_limits_differ_from_frozen_protocol")
     dependencies = {name: version(name) for name in protocol["sdk_versions"]}
     if dependencies != protocol["sdk_versions"]:
         raise ValueError("configured_sdk_versions_differ_from_frozen_protocol")
@@ -150,6 +154,8 @@ class AuthorizedExperiment:
 async def execute_protocol(protocol: dict, sources: list[str], root: Path) -> dict:
     settings = Settings(
         sandbox_backend="docker", github_write_enabled=False,
+        sandbox_timeout_seconds=120, max_context_files=12, max_context_chars=70_000,
+        max_iterations=2,
         model_name=protocol["primary"]["model"],
         model_temperature=protocol["temperature"],
         model_max_calls=protocol["max_calls_per_unit"],
@@ -201,6 +207,9 @@ def main() -> None:
             result = asyncio.run(execute_protocol(protocol, args.source, Path.cwd()))
         else:
             settings = Settings(
+                sandbox_backend="docker", github_write_enabled=False,
+                sandbox_timeout_seconds=120, max_context_files=12, max_context_chars=70_000,
+                max_iterations=2,
                 model_name=protocol["primary"]["model"],
                 model_temperature=protocol["temperature"],
                 model_max_calls=protocol["max_calls_per_unit"],

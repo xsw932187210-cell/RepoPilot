@@ -41,7 +41,7 @@
     "min_issue_chars": 40,
     "max_issue_chars": 1500
   },
-  "implementation_sha256": "15e672182ce936843ef3bca4d7a8e194f7326e987ad90b48e20a7c2e7ab8f413",
+  "implementation_sha256": "271bafdd373e12431465ef706b09de306ada30be647c2f58e4fa4bf6655ef3de",
   "primary_metric": "withheld acceptance resolved without pass-to-pass regressions",
   "secondary_metrics": [
     "approval reached",
@@ -59,5 +59,13 @@
   "hypothesis": "Evaluate whether the predeclared visible-input router reduces requests while retaining repair success; no improvement is assumed.",
   "interpretation": "Three purposively selected defects across two held-out projects. Repeats are not new defects. Project-cluster intervals are descriptive; incomplete pairs do not establish a winner. Unknown usage and money remain null.",
   "change_scope": "Execution strategy only. Primary/reviewer profiles, retrieval budgets, Coder/Reviewer prompts, source permissions, visible tests and withheld acceptance remain fixed across arms. The single-Coder arm omits LLM planning/review by definition and still requires visible test and human approval gates. This does not isolate individual role effects.",
-  "output_limit_rationale": "A generic complete-file JSON edit can exceed 4096 output tokens for an allowed 120KB source file. Choose 32768 before inference, equally for all Gemini roles/arms, without hidden-result tuning. ChatGPT supports only the existing local byte/time limit, not a server output-token cap."
+  "output_limit_rationale": "A generic complete-file JSON edit can exceed 4096 output tokens for an allowed 120KB source file. Choose 32768 before inference, equally for all Gemini roles/arms, without hidden-result tuning. ChatGPT supports only the existing local byte/time limit, not a server output-token cap.",
+  "execution_limits": {
+    "max_context_files": 12,
+    "max_context_chars": 70000,
+    "max_file_bytes": 120000,
+    "sandbox_timeout_seconds": 120,
+    "sandbox_memory": "512m",
+    "max_iterations": 2
+  }
 }

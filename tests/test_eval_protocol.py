@@ -107,3 +107,5 @@ def test_protocol_plan_is_read_only_and_rejects_wrong_models_or_design():
         prepare_plan({**protocol, "repeats": 3}, settings, root)
     with pytest.raises(ValueError, match="configured_model"):
         prepare_plan(protocol, settings.model_copy(update={"review_model_name": "another"}), root)
+    with pytest.raises(ValueError, match="configured_execution_limits"):
+        prepare_plan(protocol, settings.model_copy(update={"max_file_bytes": 80_000}), root)
