@@ -21,6 +21,13 @@
    容器的 `MODEL_MAX_CALLS` 覆盖，临时 `.env` 没有生效。测试显式移除该环境变量后重验，
    没有放宽配置校验或验收条件。首轮专属资源已清理，失败记录保留于
    `reports/repopilot_ch18_20261023_66677/`，不作为通过证据。
+3. 远端 Ubuntu CI 首轮（[run 39984330712](https://github.com/xsw932187210-cell/RepoPilot/actions/runs/39984330712)）
+   **536 passed、15 failed、0 skipped，86.16%**。容器内 Docker SDK 明确返回 socket
+   `PermissionError`；集成 Compose 原来固定附加组 0，仅适配了 Docker Desktop 的 VM。
+   已改为 Linux 读取宿主 socket 的数字 GID、macOS Desktop 使用 0，并允许显式数字覆盖；
+   Worker 与 probe 使用同一映射。没有修改 socket 权限、改用 root 或放宽沙箱隔离。
+   新增容器内 Docker 连接预检，避免相同环境问题扩散成多项 Worker 失败。
+   失败 CI 及其 `ok=false` 汇总保留，修正后的远端结果另行记录。
 
 ## 最终验证
 

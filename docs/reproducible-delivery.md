@@ -40,6 +40,11 @@ verify 使用随机专属项目名 `repopilot_ch18_*`、自动选择的本机端
 不挂载 `.env`、OAuth 目录或已有任务工作区。默认 Dockerfile 会重新安装当前源码，不接受
 旧缓存依赖镜像替代锁文件安装。构建缓存可以复用，但不替代源码与安装包摘要核对。
 
+原生 Linux 使用 `/var/run/docker.sock` 的实际数字组，macOS Docker Desktop 使用 VM
+内的组 0；集成脚本将其传给 Worker/probe 的附加组，保持容器非 root 用户。特殊 Docker
+主机可显式设置 `CH06A_DOCKER_SOCKET_GID`（只接受数字）；不能用修改 socket 为全员可写
+的方式绕过连接失败。完整验证先在 probe 容器中检查 Docker 连接，再开始故障矩阵。
+
 输出位于忽略目录 `reports/repopilot_ch18_*/`。其中 `delivery-summary.json` 只含计数、
 版本、源码/锁摘要和验证状态；公开 CI 只上传这一份白名单汇总，不上传整个 reports。
 `cleanup.json` 确认专属容器、网络和卷已清理。镜像作为构建缓存保留；不运行全局 prune。

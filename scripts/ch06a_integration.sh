@@ -25,6 +25,19 @@ case "$project" in
 esac
 
 docker version --format '{{.Server.Version}}'
+# Docker Desktop exposes a root-group socket inside its Linux VM. Native Linux
+# keeps the host socket's numeric group, which is not necessarily zero in CI.
+if [ -z "${CH06A_DOCKER_SOCKET_GID:-}" ]; then
+  case "$(uname -s)" in
+    Darwin) CH06A_DOCKER_SOCKET_GID=0 ;;
+    Linux) CH06A_DOCKER_SOCKET_GID=$(stat -c '%g' /var/run/docker.sock) ;;
+    *) printf 'Set CH06A_DOCKER_SOCKET_GID for this Docker host\n' >&2; exit 1 ;;
+  esac
+fi
+case "$CH06A_DOCKER_SOCKET_GID" in
+  *[!0-9]*|'') printf 'Invalid Docker socket group\n' >&2; exit 1 ;;
+esac
+export CH06A_DOCKER_SOCKET_GID
 if [ -n "$(docker ps -a --filter "label=com.docker.compose.project=$project" --format '{{.ID}}')" ] ||
    [ -n "$(docker volume ls --filter "label=com.docker.compose.project=$project" --format '{{.Name}}')" ] ||
    [ -n "$(docker network ls --filter "label=com.docker.compose.project=$project" --format '{{.ID}}')" ]; then
@@ -103,6 +116,10 @@ while ! curl -fsS "http://127.0.0.1:$port/health" >/dev/null 2>&1; do
 done
 
 if [ "$verification_card" = CH-18 ]; then
+  # Fail at the infrastructure boundary, before cascading into Worker tests.
+  compose run --rm --no-deps probe python -c \
+    'import docker; client=docker.from_env(); print(client.version()["Version"]); client.close()' \
+    >"$report_root/container-docker-version.txt"
   compose run --rm --no-deps probe repopilot-doctor >"$report_root/doctor.json"
 fi
 

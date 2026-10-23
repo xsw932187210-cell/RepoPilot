@@ -86,7 +86,7 @@ services:
   worker:
     <<: *app
     command: ["python", "-m", "repopilot.worker"]
-    group_add: ["0"]
+    group_add: ["${CH06A_DOCKER_SOCKET_GID:-0}"]
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -108,7 +108,7 @@ services:
         PYTHON_IMAGE: ${CH06A_PYTHON_IMAGE:-python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1}
         DEPENDENCY_IMAGE: ${CH06A_DEPENDENCY_IMAGE:-}
     command: ["python", "-m", "pytest", "tests/test_execution_integration.py", "-q", "-s"]
-    group_add: ["0"]
+    group_add: ["${CH06A_DOCKER_SOCKET_GID:-0}"]
     environment:
       <<: *probe-environment
       REPOPILOT_CH03B_POSTGRES_TEST_URL: postgresql+asyncpg://repopilot:repopilot@postgres:5432/repopilot_ch03b_test
