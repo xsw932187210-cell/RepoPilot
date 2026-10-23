@@ -12,12 +12,23 @@ build:
 logs:
 	docker compose logs -f api worker
 
-test:
+.PHONY: test-image check doctor verify
+test-image:
 	docker build -f Dockerfile --target integration-test -t repopilot:test .
-	docker run --rm repopilot:test python -m pytest --cov=repopilot --cov-report=term-missing --cov-fail-under=70 -q
 
-lint:
-	docker run --rm -v "$$(pwd):/workspace" -w /workspace repopilot-sandbox:local ruff check .
+test: test-image
+	docker run --rm --network none repopilot:test python -m pytest --cov=repopilot --cov-report=term-missing --cov-fail-under=70 -q
+
+lint: test-image
+	docker run --rm --network none repopilot:test ruff check .
+
+check: lint test eval
+
+doctor: test-image
+	docker run --rm --network none repopilot:test repopilot-doctor
+
+verify:
+	./scripts/ch18_integration.sh
 
 migration-test:
 	./scripts/migration_integration.sh
@@ -43,8 +54,8 @@ smoke:
 smoke-recovery:
 	./scripts/recovery_smoke.sh
 
-eval:
-	docker compose run --rm api sh -c 'pip install -q --user ".[dev]" && python -m repopilot.evaluation --provider mock --dataset evals/cases.jsonl --fail-on-regression'
+eval: test-image
+	docker run --rm --network none repopilot:test python -m repopilot.evaluation --provider mock --dataset evals/cases.jsonl --fail-on-regression
 
 eval-real:
 	bash scripts/eval_real.sh

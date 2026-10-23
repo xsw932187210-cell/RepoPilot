@@ -8,6 +8,7 @@ case "$verification_card" in
   CH-07A) project_prefix=repopilot_ch07a_ ;;
   CH-07C) project_prefix=repopilot_ch07c_ ;;
   CH-01B) project_prefix=repopilot_ch01b_ ;;
+  CH-18) project_prefix=repopilot_ch18_ ;;
   *) printf 'Unsupported verification card\n' >&2; exit 1 ;;
 esac
 project="${CH06A_COMPOSE_PROJECT:-${project_prefix}$(date +%Y%m%d)_$$}"
@@ -64,6 +65,9 @@ cleanup() {
   fi
   printf '{"project":"%s","resources_removed":%s}\n' "$project" "$cleanup_verified" \
     >"$report_root/cleanup.json"
+  if [ "$verification_card" = CH-18 ]; then
+    python3 scripts/verification_summary.py "$report_root" || probe_exit=1
+  fi
   exit "$probe_exit"
 }
 trap cleanup EXIT INT TERM
@@ -79,6 +83,9 @@ git archive 12b9e3d src | tar -x -C "$CH06A_LEGACY_ROOT"
 git archive a1e5f41 src | tar -x -C "$CH06A_APPROVAL_LEGACY_ROOT"
 printf '%s project=%s api_port=%s report_dir=%s legacy=12b9e3d,approval=a1e5f41\n' \
   "$verification_card" "$project" "$port" "$report_root"
+if [ "$verification_card" = CH-18 ]; then
+  python3 scripts/verification_summary.py "$report_root" --snapshot
+fi
 if ! compose build api sandbox probe >"$report_root/build.log" 2>&1; then
   tail -n 100 "$report_root/build.log"
   exit 1
@@ -95,16 +102,21 @@ while ! curl -fsS "http://127.0.0.1:$port/health" >/dev/null 2>&1; do
   sleep 1
 done
 
+if [ "$verification_card" = CH-18 ]; then
+  compose run --rm --no-deps probe repopilot-doctor >"$report_root/doctor.json"
+fi
+
 compose exec -T postgres createdb -U repopilot repopilot_ch06a_test
 compose exec -T postgres createdb -U repopilot repopilot_ch03b_test
 compose exec -T postgres createdb -U repopilot repopilot_ch09_test
 compose exec -T postgres createdb -U repopilot repopilot_ch10_test
-if [ "$verification_card" = CH-06C ] || [ "$verification_card" = CH-07A ] || [ "$verification_card" = CH-07C ] || [ "$verification_card" = CH-01B ]; then
+if [ "$verification_card" = CH-06C ] || [ "$verification_card" = CH-07A ] || [ "$verification_card" = CH-07C ] || [ "$verification_card" = CH-01B ] || [ "$verification_card" = CH-18 ]; then
   compose exec -T postgres createdb -U repopilot repopilot_ch06c_test
 fi
 if ! compose run --rm --no-deps probe python -m pytest \
   --cov-config=tests/coverage.ch06a.ini \
   --cov=repopilot --cov-report=term-missing --cov-fail-under=70 \
+  --cov-report=xml:/workspaces/ch06a-coverage.xml \
   -q -s --junitxml=/workspaces/ch06a-integration.xml >"$report_root/integration.log" 2>&1; then
   cat "$report_root/integration.log"
   compose cp api:/workspaces/ch06a-integration.xml "$report_root/integration.xml" || true
@@ -112,6 +124,7 @@ if ! compose run --rm --no-deps probe python -m pytest \
 fi
 cat "$report_root/integration.log"
 compose cp api:/workspaces/ch06a-integration.xml "$report_root/integration.xml"
+compose cp api:/workspaces/ch06a-coverage.xml "$report_root/coverage.xml"
 compose run --rm --no-deps probe python -m repopilot.evaluation --provider mock \
   --dataset evals/cases.jsonl --output /workspaces/ch06a-mock-evaluation.json --fail-on-regression \
   >"$report_root/mock-run.log"
@@ -135,7 +148,7 @@ REPOPILOT_API_URL="http://127.0.0.1:$port" ./scripts/smoke.sh >"$report_root/smo
 REPOPILOT_API_URL="http://127.0.0.1:$port" \
 REPOPILOT_COMPOSE_PROJECT="$project" REPOPILOT_COMPOSE_FILE="$compose_file" \
   ./scripts/recovery_smoke.sh >"$report_root/recovery.jsonl"
-if [ "$verification_card" = CH-01B ]; then
+if [ "$verification_card" = CH-01B ] || [ "$verification_card" = CH-18 ]; then
   REPOPILOT_API_URL="http://127.0.0.1:$port" \
   REPOPILOT_COMPOSE_PROJECT="$project" REPOPILOT_COMPOSE_FILE="$compose_file" \
   REPOPILOT_EXECUTION_STRATEGY=oneshot \
@@ -144,4 +157,7 @@ fi
 compose exec -T postgres psql -U repopilot -d repopilot_ch05a_test -Atc 'SHOW server_version' \
   >"$report_root/postgres-version.txt"
 compose ps --format json >"$report_root/services.jsonl"
+if [ "$verification_card" = CH-18 ]; then
+  printf '{"completed":true}\n' >"$report_root/completed.json"
+fi
 printf '%s integration, mock eval, API smoke and Worker restart: passed\n' "$verification_card"
