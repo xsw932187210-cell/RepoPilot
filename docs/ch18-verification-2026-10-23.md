@@ -35,6 +35,18 @@
    recipe/lock 与 adapter/task 指纹。原 frozen manifest、测试 overlay、真实语料和模型
    实验没有修改；相同的可见测试、独立验收与上下文隔离断言继续执行。新增用例验证
    历史字节不变及新旧身份分开。该新运行不宣称复现了历史 Python 3.8 环境。
+5. 第三轮 Ubuntu CI（[run 39991304139](https://github.com/xsw932187210-cell/RepoPilot/actions/runs/39991304139)）
+   **550 passed、2 failed、0 skipped，86.27%**。新增测试准备代码误将 Docker SDK client
+   用作 context manager；当前固定版本不支持该协议。已改为显式 `try/finally close()`，
+   先以真实 Docker 单独验证这两项，再执行完整 CI。该失败不作为通过证据。
+
+修正后的定向 Docker 验证：本机 CPython 3.13.5 控制器调用 Linux aarch64 的锁定
+Python 3.12 sandbox，oneshot/workflow **2 passed、39 deselected，8.52 秒**。
+独立验收仍检查 2 个 fail-to-pass、1 个 pass-to-pass，以及修改范围与隐藏上下文隔离。
+实际镜像为 `sha256:015313d0ce7a48d42b11b8fa904b14452bca8e2ce636a8fa8e793f8cc80dae4c`；
+新 adapter/task 身份与原冻结夹具分开。首次尝试使用已不存在的旧标签而失败的本地日志
+保留于 `reports/ch18-adapter-docker-fix.log`，通过日志为
+`reports/ch18-adapter-docker-fix-current.log`。定向检查不代替完整 CI。
 
 ## 最终验证
 
